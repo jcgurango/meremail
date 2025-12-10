@@ -234,6 +234,9 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   const content = parsed.text || parsed.html || ''
 
   // Insert email
+  // Sent emails are automatically marked as read
+  const isRead = isSentFolder
+
   const emailResult = db
     .insert(emails)
     .values({
@@ -243,6 +246,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       inReplyTo,
       references,
       folder,
+      isRead,
       subject,
       headers: parsed.headers ? Object.fromEntries(
         Array.from(parsed.headers.entries()).map(([k, v]) => [k, String(v)])

@@ -9,6 +9,7 @@ export const emails = sqliteTable('emails', {
   inReplyTo: text('in_reply_to'),
   references: text('references', { mode: 'json' }).$type<string[]>(),
   folder: text('folder').notNull().default('INBOX'),
+  isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
   subject: text('subject').notNull(),
   headers: text('headers', { mode: 'json' }).$type<Record<string, string>>(),
   content: text('content').notNull(),
