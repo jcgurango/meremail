@@ -46,7 +46,8 @@ export async function* fetchEmails(
 
     for await (const message of messages) {
       const raw = message.source
-      const parsed = await simpleParser(raw)
+      // skipImageLinks: don't auto-convert cid: references to data URIs
+      const parsed = await simpleParser(raw, { skipImageLinks: true })
 
       yield {
         uid: message.uid,

@@ -1,6 +1,9 @@
 import { eq, desc } from 'drizzle-orm'
 import { db } from '../../db'
-import { emails, emailThreads, contacts, emailContacts } from '../../db/schema'
+import { emails, emailThreads, contacts, emailContacts, attachments } from '../../db/schema'
+import { proxyImagesInHtml } from '../../utils/proxy-images'
+import { sanitizeEmailHtml } from '../../utils/sanitize-email-html'
+import { replaceCidReferences } from '../../utils/replace-cid'
 
 export default defineEventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '')
@@ -59,7 +62,29 @@ export default defineEventHandler(async (event) => {
       .filter((r) => r.role !== 'from')
 
     // Prefer HTML for rendering, fall back to text (wrapped in pre for formatting)
-    const content = email.contentHtml || `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
+    // Pipeline: sanitize -> replace CID references -> proxy external images
+    let content: string
+    if (email.contentHtml) {
+      const sanitized = sanitizeEmailHtml(email.contentHtml)
+      const withCidReplaced = replaceCidReferences(sanitized, email.id)
+      content = proxyImagesInHtml(withCidReplaced)
+    } else {
+      content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
+    }
+
+    // Get non-inline attachments for this email (inline ones are embedded in HTML)
+    const emailAttachments = db
+      .select({
+        id: attachments.id,
+        filename: attachments.filename,
+        mimeType: attachments.mimeType,
+        size: attachments.size,
+        isInline: attachments.isInline,
+      })
+      .from(attachments)
+      .where(eq(attachments.emailId, email.id))
+      .all()
+      .filter((a) => !a.isInline)
 
     return {
       id: email.id,
@@ -70,6 +95,7 @@ export default defineEventHandler(async (event) => {
       isRead: email.isRead,
       sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
       recipients,
+      attachments: emailAttachments,
     }
   })
 

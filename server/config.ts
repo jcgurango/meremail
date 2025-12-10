@@ -51,6 +51,11 @@ export const config = {
   database: {
     path: envStr('DATABASE_PATH', './data/meremail.db'),
   },
+  imageProxy: {
+    // URL template with {url} placeholder for the encoded image URL
+    // Set to empty string to disable proxying
+    urlTemplate: envStr('IMAGE_PROXY_URL', 'https://images.weserv.nl/?url={url}'),
+  },
 } as const
 
 export type Config = typeof config

@@ -15,6 +15,13 @@ import type { FetchedEmail } from './imap'
 const ATTACHMENTS_DIR = process.env.ATTACHMENTS_PATH || './data/attachments'
 
 /**
+ * Check if subject indicates this is a reply/forward (has Re:, Fwd:, etc.)
+ */
+function isReplyOrForward(subject: string): boolean {
+  return /^(re|fwd|fw|aw|sv|vs|ref)(\[\d+\])?:\s*/i.test(subject)
+}
+
+/**
  * Normalize subject for thread matching
  * Strips Re:, Fwd:, etc. prefixes
  */
@@ -76,14 +83,21 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
 
 /**
  * Find existing thread by message references or subject
+ *
+ * Threading strategy:
+ * 1. Primary: Use In-Reply-To and References headers (reliable)
+ * 2. Fallback: Only use subject matching if the email looks like a reply
+ *    (has Re:/Fwd: prefix). This avoids grouping unrelated transactional
+ *    emails like "Please verify your email" or payment notifications.
  */
 function findThread(
   messageId: string | undefined,
   inReplyTo: string | undefined,
   references: string[],
-  normalizedSubject: string
+  normalizedSubject: string,
+  isReply: boolean
 ): number | null {
-  // First, try to find by In-Reply-To or References
+  // First, try to find by In-Reply-To or References (most reliable)
   const refIds = [inReplyTo, ...references].filter(Boolean) as string[]
 
   if (refIds.length > 0) {
@@ -98,14 +112,21 @@ function findThread(
     }
   }
 
-  // Fall back to subject matching for threads
-  const existingThread = db
-    .select({ id: emailThreads.id })
-    .from(emailThreads)
-    .where(eq(emailThreads.subject, normalizedSubject))
-    .get()
+  // Only fall back to subject matching if this looks like a reply/forward
+  // This prevents grouping unrelated emails with generic subjects
+  if (isReply) {
+    const existingThread = db
+      .select({ id: emailThreads.id })
+      .from(emailThreads)
+      .where(eq(emailThreads.subject, normalizedSubject))
+      .get()
 
-  return existingThread?.id ?? null
+    if (existingThread) {
+      return existingThread.id
+    }
+  }
+
+  return null
 }
 
 /**
@@ -130,6 +151,8 @@ function saveAttachment(
     contentType?: string
     size?: number
     content?: Buffer
+    cid?: string  // Content-ID for inline images
+    contentDisposition?: string
   }
 ): void {
   const filename = attachment.filename || `attachment_${Date.now()}`
@@ -146,6 +169,9 @@ function saveAttachment(
     writeFileSync(filePath, attachment.content)
   }
 
+  // Determine if this is an inline attachment (embedded in HTML)
+  const isInline = !!attachment.cid || attachment.contentDisposition === 'inline'
+
   // TODO: Extract text from attachment for search
   // This would involve using libraries like pdf-parse, mammoth (docx), etc.
   const extractedText: string | null = null
@@ -156,6 +182,8 @@ function saveAttachment(
     mimeType: attachment.contentType,
     size: attachment.size,
     filePath,
+    contentId: attachment.cid || null,
+    isInline,
     extractedText,
   }).run()
 }
@@ -176,6 +204,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   }
 
   const subject = parsed.subject || '(no subject)'
+  const isReply = isReplyOrForward(subject)
   const normalizedSubject = normalizeSubject(subject)
   const inReplyTo = parsed.inReplyTo
   const references = Array.isArray(parsed.references)
@@ -185,7 +214,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       : []
 
   // Find or create thread
-  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject)
+  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject, isReply)
   if (!threadId) {
     threadId = createThread(normalizedSubject)
   }

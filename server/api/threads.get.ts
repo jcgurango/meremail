@@ -5,7 +5,10 @@ import { emails, emailThreads, contacts, emailThreadContacts } from '../db/schem
 // Strip HTML tags and decode entities for plain text snippets
 function stripHtml(html: string): string {
   return html
-    .replace(/<[^>]*>/g, ' ')           // Remove HTML tags
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')  // Remove <style> blocks entirely
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove <script> blocks entirely
+    .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')    // Remove <head> blocks entirely
+    .replace(/<[^>]*>/g, ' ')           // Remove remaining HTML tags
     .replace(/&nbsp;/gi, ' ')            // Decode &nbsp;
     .replace(/&amp;/gi, '&')             // Decode &amp;
     .replace(/&lt;/gi, '<')              // Decode &lt;
@@ -71,13 +74,22 @@ export default defineEventHandler(async (event) => {
       .limit(1)
       .get()
 
-    const snippet = latestEmail
-      ? (latestEmail.contentText || stripHtml(latestEmail.contentHtml || '')).substring(0, 150)
-      : ''
+    let snippet = ''
+    if (latestEmail) {
+      const text = latestEmail.contentText || ''
+      // Check if text looks like CSS (common patterns)
+      const looksLikeCss = /\{[^}]*:[^}]*\}|@media|@font-face|\.[\w-]+\s*\{/i.test(text.substring(0, 500))
+      if (text && !looksLikeCss) {
+        snippet = text.substring(0, 150)
+      } else {
+        snippet = stripHtml(latestEmail.contentHtml || '').substring(0, 150)
+      }
+    }
 
     return {
       ...thread,
-      latestEmailAt: thread.latestEmailAt ? new Date(thread.latestEmailAt) : null,
+      // Raw SQL MAX() returns seconds, need to convert to milliseconds for Date
+      latestEmailAt: thread.latestEmailAt ? new Date(thread.latestEmailAt * 1000) : null,
       participants: participants.filter((p) => !p.isMe),
       snippet,
     }
