@@ -1,5 +1,22 @@
 <script setup lang="ts">
+const route = useRoute()
+const router = useRouter()
+
+// Get initial values from URL
+const searchQuery = ref((route.query.q as string) || '')
+const selectedType = ref<string | null>((route.query.fileType as string) || null)
+const selectedContactId = ref<number | null>(route.query.contactId ? Number(route.query.contactId) : null)
+
 useHead({ title: 'Attachments - MereMail' })
+
+// Sync filters to URL
+function updateUrl() {
+  const query: Record<string, string> = {}
+  if (searchQuery.value.trim()) query.q = searchQuery.value.trim()
+  if (selectedType.value) query.fileType = selectedType.value
+  if (selectedContactId.value) query.contactId = String(selectedContactId.value)
+  router.replace({ query })
+}
 
 interface Sender {
   id: number
@@ -39,21 +56,36 @@ const categories = ref<Record<string, number>>({})
 const filterContacts = ref<FilterContact[]>([])
 const loading = ref(false)
 
-// Active filters
-const selectedType = ref<string | null>(null)
-const selectedContactId = ref<number | null>(null)
+// Active filters (selectedType and selectedContactId initialized above from URL)
 const contactSearch = ref('')
 const searchingContacts = ref(false)
+const typeDropdownOpen = ref(false)
+const contactDropdownOpen = ref(false)
+const typeDropdown = ref<HTMLElement | null>(null)
 const contactDropdown = ref<HTMLElement | null>(null)
 
-// Click outside to clear search
+// Click outside to close dropdowns
 function handleClickOutside(e: MouseEvent) {
+  if (typeDropdown.value && !typeDropdown.value.contains(e.target as Node)) {
+    typeDropdownOpen.value = false
+  }
   if (contactDropdown.value && !contactDropdown.value.contains(e.target as Node)) {
+    contactDropdownOpen.value = false
     if (contactSearch.value) {
       contactSearch.value = ''
       searchContacts('')
     }
   }
+}
+
+function toggleTypeDropdown() {
+  typeDropdownOpen.value = !typeDropdownOpen.value
+  contactDropdownOpen.value = false
+}
+
+function toggleContactDropdown() {
+  contactDropdownOpen.value = !contactDropdownOpen.value
+  typeDropdownOpen.value = false
 }
 
 onMounted(() => {
@@ -64,13 +96,18 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-// Debounce helper
+// Debounce helpers
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
+let textSearchTimeout: ReturnType<typeof setTimeout> | null = null
 
 async function searchContacts(query: string) {
   searchingContacts.value = true
   try {
     const params = new URLSearchParams({ limit: '1', contactSearch: query })
+    // If there's a text search, pass it so contacts are filtered to those with matching attachments
+    if (searchQuery.value.trim()) {
+      params.set('q', searchQuery.value.trim())
+    }
     const data = await $fetch<ApiResponse>(`/api/attachments?${params}`)
     filterContacts.value = data.filters.contacts
   } finally {
@@ -82,6 +119,14 @@ function onContactSearchInput() {
   if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
     searchContacts(contactSearch.value)
+  }, 300)
+}
+
+function onTextSearchInput() {
+  if (textSearchTimeout) clearTimeout(textSearchTimeout)
+  textSearchTimeout = setTimeout(() => {
+    updateUrl()
+    loadAttachments(true)
   }, 300)
 }
 
@@ -104,6 +149,9 @@ async function loadAttachments(reset = false) {
     const offset = reset ? 0 : attachments.value.length
     const params = new URLSearchParams({ limit: '50', offset: String(offset) })
 
+    if (searchQuery.value.trim()) {
+      params.set('q', searchQuery.value.trim())
+    }
     if (selectedType.value) {
       params.set('fileType', selectedType.value)
     }
@@ -128,6 +176,7 @@ async function loadAttachments(reset = false) {
 
 // Watch filter changes
 watch([selectedType, selectedContactId], () => {
+  updateUrl()
   loadAttachments(true)
 })
 
@@ -181,7 +230,7 @@ function formatShortDate(dateStr: string): string {
   if (date.getFullYear() === now.getFullYear()) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function getSelectedContactName(): string {
@@ -207,10 +256,21 @@ function clearContactFilter() {
       <h1>Attachments</h1>
     </header>
 
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input
+        v-model="searchQuery"
+        type="text"
+        placeholder="Search attachments..."
+        class="search-input"
+        @input="onTextSearchInput"
+      />
+    </div>
+
     <div class="filters">
       <div class="filter-group">
-        <div class="filter-dropdown">
-          <button class="filter-btn" :class="{ active: selectedType }">
+        <div class="filter-dropdown" :class="{ open: typeDropdownOpen }" ref="typeDropdown">
+          <button class="filter-btn" :class="{ active: selectedType }" @click="toggleTypeDropdown">
             {{ selectedType ? categoryLabels[selectedType] : 'All files' }}
             <span class="arrow">▾</span>
           </button>
@@ -218,7 +278,7 @@ function clearContactFilter() {
             <button
               v-if="selectedType"
               class="dropdown-item clear"
-              @click="clearTypeFilter"
+              @click="clearTypeFilter(); typeDropdownOpen = false"
             >
               All files
             </button>
@@ -227,7 +287,7 @@ function clearContactFilter() {
               :key="category"
               class="dropdown-item"
               :class="{ selected: selectedType === category }"
-              @click="selectedType = category"
+              @click="selectedType = category; typeDropdownOpen = false"
             >
               {{ categoryLabels[category] || category }}
               <span class="count">{{ count }}</span>
@@ -235,26 +295,25 @@ function clearContactFilter() {
           </div>
         </div>
 
-        <div class="filter-dropdown" ref="contactDropdown">
-          <button class="filter-btn" :class="{ active: selectedContactId }">
+        <div class="filter-dropdown" :class="{ open: contactDropdownOpen }" ref="contactDropdown">
+          <button class="filter-btn" :class="{ active: selectedContactId }" @click="toggleContactDropdown">
             {{ getSelectedContactName() }}
             <span class="arrow">▾</span>
           </button>
           <div class="dropdown-menu contacts-menu">
-            <div class="search-box">
+            <div class="contact-search-box">
               <input
                 v-model="contactSearch"
                 type="text"
                 placeholder="Search contacts..."
-                class="search-input"
-                @click.stop
+                class="contact-search-input"
                 @input="onContactSearchInput"
               />
             </div>
             <button
               v-if="selectedContactId"
               class="dropdown-item clear"
-              @click="clearContactFilter"
+              @click="clearContactFilter(); contactDropdownOpen = false"
             >
               Everyone
             </button>
@@ -268,7 +327,7 @@ function clearContactFilter() {
                   :key="contact.id"
                   class="dropdown-item contact-item"
                   :class="{ selected: selectedContactId === contact.id }"
-                  @click="selectedContactId = contact.id"
+                  @click="selectedContactId = contact.id; contactDropdownOpen = false"
                 >
                   <span class="contact-name">{{ contact.name || contact.email.split('@')[0] }}</span>
                   <span class="contact-email">{{ contact.email }}</span>
@@ -288,24 +347,17 @@ function clearContactFilter() {
     </div>
 
     <div class="attachments-list">
-      <a
+      <NuxtLink
         v-for="attachment in attachments"
         :key="attachment.id"
-        :href="`/api/attachments/${attachment.id}`"
-        target="_blank"
+        :to="`/attachment/${attachment.id}`"
         class="attachment-item"
       >
         <div class="attachment-icon">{{ getFileIcon(attachment.mimeType, attachment.filename) }}</div>
         <div class="attachment-info">
           <div class="filename">{{ attachment.filename }}</div>
           <div class="thread-subject">
-            <NuxtLink
-              :to="`/thread/${attachment.threadId}`"
-              class="thread-link"
-              @click.stop
-            >
-              {{ attachment.threadSubject }}
-            </NuxtLink>
+            {{ attachment.threadSubject }}
           </div>
           <div class="meta">
             <span v-if="attachment.size" class="size">{{ formatFileSize(attachment.size) }}</span>
@@ -313,7 +365,7 @@ function clearContactFilter() {
             <span class="date">{{ formatShortDate(attachment.sentAt) }}</span>
           </div>
         </div>
-      </a>
+      </NuxtLink>
     </div>
 
     <div v-if="hasMore" class="load-more">
@@ -351,6 +403,28 @@ h1 {
   font-size: 24px;
   font-weight: 600;
   margin: 0;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.search-icon {
+  font-size: 18px;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 16px;
 }
 
 .filters {
@@ -411,14 +485,16 @@ h1 {
 
 .contacts-menu {
   min-width: 240px;
+  max-height: none;
+  overflow: visible;
 }
 
-.search-box {
+.contact-search-box {
   padding: 8px;
   border-bottom: 1px solid #eee;
 }
 
-.search-input {
+.contact-search-input {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #ddd;
@@ -427,7 +503,7 @@ h1 {
   outline: none;
 }
 
-.search-input:focus {
+.contact-search-input:focus {
   border-color: #999;
 }
 
@@ -459,8 +535,7 @@ h1 {
   text-align: center;
 }
 
-.filter-dropdown:hover .dropdown-menu,
-.filter-dropdown:focus-within .dropdown-menu {
+.filter-dropdown.open .dropdown-menu {
   display: block;
 }
 
@@ -551,16 +626,6 @@ h1 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.thread-link {
-  color: #666;
-  text-decoration: none;
-}
-
-.thread-link:hover {
-  color: #000;
-  text-decoration: underline;
 }
 
 .meta {

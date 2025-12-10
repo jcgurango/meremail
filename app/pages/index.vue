@@ -64,8 +64,10 @@ function formatDate(dateStr: string | null): string {
     return 'Yesterday'
   } else if (days < 7) {
     return date.toLocaleDateString([], { weekday: 'short' })
-  } else {
+  } else if (date.getFullYear() === now.getFullYear()) {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
   }
 }
 
@@ -79,6 +81,8 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   }
   return names.join(', ')
 }
+
+const searchOpen = ref(false)
 </script>
 
 <template>
@@ -130,6 +134,10 @@ function getParticipantDisplay(participants: Thread['participants']): string {
     </main>
 
     <nav class="bottom-nav">
+      <button class="nav-pill search" @click="searchOpen = true">
+        <span class="nav-icon">🔍</span>
+        <span class="nav-label">Search</span>
+      </button>
       <NuxtLink to="/screener" class="nav-pill screener">
         <span class="nav-icon">👤</span>
         <span class="nav-label">Screener</span>
@@ -139,6 +147,8 @@ function getParticipantDisplay(participants: Thread['participants']): string {
         <span class="nav-label">Attachments</span>
       </NuxtLink>
     </nav>
+
+    <SearchModal :open="searchOpen" @close="searchOpen = false" />
   </div>
 </template>
 
@@ -192,6 +202,13 @@ function getParticipantDisplay(participants: Thread['participants']): string {
 .nav-pill:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.nav-pill.search {
+  background: #f3e8ff;
+  color: #7c3aed;
+  border: none;
+  cursor: pointer;
 }
 
 .nav-pill.screener {
