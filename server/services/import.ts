@@ -300,7 +300,10 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       isRead,
       subject,
       headers: parsed.headers ? Object.fromEntries(
-        Array.from(parsed.headers.entries()).map(([k, v]) => [k, String(v)])
+        Array.from(parsed.headers.entries()).map(([k, v]) => [
+          k,
+          typeof v === 'object' ? JSON.stringify(v) : String(v)
+        ])
       ) : {},
       contentText,
       contentHtml,

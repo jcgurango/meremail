@@ -129,7 +129,7 @@ function formatDateTime(dateStr: string | null): string {
   if (date.getFullYear() === now.getFullYear()) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' })
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 function getFileIcon(mimeType: string | null, filename: string): string {
@@ -226,8 +226,10 @@ function formatFileSize(bytes: number | null): string {
       <div class="headers-title">Email Headers</div>
       <dl class="headers-list">
         <template v-for="(value, key) in email.headers" :key="key">
-          <dt>{{ key }}</dt>
-          <dd>{{ value }}</dd>
+          <template v-if="value && value !== '[object Object]'">
+            <dt>{{ key }}</dt>
+            <dd>{{ value }}</dd>
+          </template>
         </template>
       </dl>
     </div>
