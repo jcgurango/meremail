@@ -108,8 +108,10 @@ function seeMore(type: string) {
   emit('close')
   if (type === 'attachment') {
     router.push(`/attachments?q=${encodeURIComponent(searchQuery.value)}`)
+  } else if (type === 'contact') {
+    router.push(`/contacts?q=${encodeURIComponent(searchQuery.value)}`)
   } else {
-    router.push(`/search?q=${encodeURIComponent(searchQuery.value)}&type=${type}`)
+    router.push(`/search?q=${encodeURIComponent(searchQuery.value)}`)
   }
 }
 

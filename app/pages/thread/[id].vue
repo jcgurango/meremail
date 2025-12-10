@@ -43,7 +43,7 @@ useHead({ title: pageTitle })
 <template>
   <div class="thread-view">
     <header class="header">
-      <NuxtLink to="#" class="back-link" @click.prevent="$router.back()">&larr; Back</NuxtLink>
+      <button class="back-link" @click="$router.back()">&larr; Back</button>
       <h1 v-if="thread">{{ thread.subject }}</h1>
     </header>
 
@@ -81,6 +81,10 @@ useHead({ title: pageTitle })
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .back-link:hover {

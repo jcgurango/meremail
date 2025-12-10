@@ -1,5 +1,22 @@
 <script setup lang="ts">
 const searchOpen = ref(false)
+
+// Fetch unscreened count
+const unscreenedCount = ref(0)
+
+async function loadUnscreenedCount() {
+  try {
+    const data = await $fetch<{ counts: Record<string, number> }>('/api/contacts?limit=1')
+    unscreenedCount.value = data.counts.unsorted || 0
+  } catch (e) {
+    console.error('Failed to load unscreened count:', e)
+  }
+}
+
+// Load on mount
+onMounted(() => {
+  loadUnscreenedCount()
+})
 </script>
 
 <template>
@@ -8,9 +25,10 @@ const searchOpen = ref(false)
       <span class="nav-icon">🔍</span>
       <span class="nav-label">Search</span>
     </button>
-    <NuxtLink to="/screener" class="nav-pill screener">
+    <NuxtLink to="/contacts" class="nav-pill contacts">
       <span class="nav-icon">👤</span>
-      <span class="nav-label">Screener</span>
+      <span class="nav-label">Contacts</span>
+      <span v-if="unscreenedCount > 0" class="nav-badge">{{ unscreenedCount }}</span>
     </NuxtLink>
     <NuxtLink to="/attachments" class="nav-pill attachments">
       <span class="nav-icon">📎</span>
@@ -60,7 +78,7 @@ const searchOpen = ref(false)
   cursor: pointer;
 }
 
-.nav-pill.screener {
+.nav-pill.contacts {
   background: #e0f2fe;
   color: #0369a1;
 }
@@ -76,5 +94,19 @@ const searchOpen = ref(false)
 
 .nav-label {
   font-weight: 500;
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
 }
 </style>

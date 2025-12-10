@@ -49,7 +49,8 @@ export default defineEventHandler(async (event) => {
       JOIN email_threads t ON e.thread_id = t.id
       LEFT JOIN contacts c ON e.sender_id = c.id
       WHERE attachments_fts MATCH ?
-        AND a.is_inline = 0`
+        AND a.is_inline = 0
+        AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
 
     const ftsParams: any[] = [searchTerm]
 
@@ -78,8 +79,14 @@ export default defineEventHandler(async (event) => {
     }))
   } else {
     // Regular query without FTS
-    // Build WHERE conditions
-    const conditions = [eq(attachments.isInline, false)]
+    // Build WHERE conditions - exclude quarantined contacts
+    const conditions = [
+      eq(attachments.isInline, false),
+      or(
+        sql`${contacts.bucket} IS NULL`,
+        sql`${contacts.bucket} != 'quarantine'`
+      )!
+    ]
 
     // File type filter
     if (fileType && FILE_CATEGORIES[fileType]) {
@@ -135,8 +142,10 @@ export default defineEventHandler(async (event) => {
       FROM attachments_fts
       JOIN attachments a ON attachments_fts.rowid = a.id
       JOIN emails e ON a.email_id = e.id
+      LEFT JOIN contacts c ON e.sender_id = c.id
       WHERE attachments_fts MATCH ?
-        AND a.is_inline = 0`
+        AND a.is_inline = 0
+        AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
     const countParams: any[] = [searchTerm]
 
     if (contactId) {
@@ -163,8 +172,14 @@ export default defineEventHandler(async (event) => {
       }
     }
   } else {
-    // No text search - count with optional contact filter
-    const countConditions = [eq(attachments.isInline, false)]
+    // No text search - count with optional contact filter, excluding quarantined
+    const countConditions = [
+      eq(attachments.isInline, false),
+      or(
+        sql`${contacts.bucket} IS NULL`,
+        sql`${contacts.bucket} != 'quarantine'`
+      )!
+    ]
     if (contactId) {
       countConditions.push(eq(emails.senderId, contactId))
     }
@@ -176,6 +191,7 @@ export default defineEventHandler(async (event) => {
       })
       .from(attachments)
       .innerJoin(emails, eq(attachments.emailId, emails.id))
+      .leftJoin(contacts, eq(emails.senderId, contacts.id))
       .where(and(...countConditions))
       .groupBy(attachments.mimeType)
 
@@ -201,7 +217,7 @@ export default defineEventHandler(async (event) => {
   let senderContacts: { id: number; name: string | null; email: string }[] = []
 
   if (textSearch && textSearch.length >= 2) {
-    // Use FTS to find contacts with matching attachments
+    // Use FTS to find contacts with matching attachments, excluding quarantined
     const searchTerm = textSearch.replace(/['"*()]/g, ' ').trim() + '*'
     let contactSql = `
       SELECT DISTINCT c.id, c.name, c.email
@@ -210,7 +226,8 @@ export default defineEventHandler(async (event) => {
       JOIN emails e ON a.email_id = e.id
       JOIN contacts c ON e.sender_id = c.id
       WHERE attachments_fts MATCH ?
-        AND a.is_inline = 0`
+        AND a.is_inline = 0
+        AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
     const contactParams: any[] = [searchTerm]
 
     if (contactSearch) {
@@ -222,8 +239,14 @@ export default defineEventHandler(async (event) => {
     contactSql += ` ORDER BY c.name LIMIT 20`
     senderContacts = sqlite.prepare(contactSql).all(...contactParams) as any[]
   } else {
-    // No text search - show all contacts with attachments
-    const contactConditions = [eq(attachments.isInline, false)]
+    // No text search - show all contacts with attachments, excluding quarantined
+    const contactConditions = [
+      eq(attachments.isInline, false),
+      or(
+        sql`${contacts.bucket} IS NULL`,
+        sql`${contacts.bucket} != 'quarantine'`
+      )!
+    ]
     if (contactSearch) {
       const searchPattern = `%${contactSearch}%`
       contactConditions.push(

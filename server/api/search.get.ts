@@ -75,7 +75,7 @@ export default defineEventHandler(async (event) => {
     const emailParams: any[] = []
 
     if (hasSearchTerm) {
-      // FTS search
+      // FTS search - exclude quarantined contacts
       emailSql = `
         SELECT
           e.id,
@@ -88,10 +88,11 @@ export default defineEventHandler(async (event) => {
         FROM emails_fts
         JOIN emails e ON emails_fts.rowid = e.id
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE emails_fts MATCH ?`
+        WHERE emails_fts MATCH ?
+          AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
       emailParams.push(searchTerm)
     } else {
-      // Browse emails (no search term, but has filters)
+      // Browse emails (no search term, but has filters) - exclude quarantined contacts
       emailSql = `
         SELECT
           e.id,
@@ -103,7 +104,7 @@ export default defineEventHandler(async (event) => {
           c.email as senderEmail
         FROM emails e
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE 1=1`
+        WHERE (c.bucket IS NULL OR c.bucket != 'quarantine')`
     }
 
     if (senderId) {
@@ -185,7 +186,7 @@ export default defineEventHandler(async (event) => {
     const attachmentParams: any[] = []
 
     if (hasSearchTerm) {
-      // FTS search
+      // FTS search - exclude quarantined contacts
       attachmentSql = `
         SELECT
           a.id,
@@ -201,10 +202,11 @@ export default defineEventHandler(async (event) => {
         JOIN attachments a ON attachments_fts.rowid = a.id
         JOIN emails e ON a.email_id = e.id
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE attachments_fts MATCH ?`
+        WHERE attachments_fts MATCH ?
+          AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
       attachmentParams.push(searchTerm)
     } else {
-      // Browse all attachments (no search term)
+      // Browse all attachments (no search term) - exclude quarantined contacts
       attachmentSql = `
         SELECT
           a.id,
@@ -219,7 +221,8 @@ export default defineEventHandler(async (event) => {
         FROM attachments a
         JOIN emails e ON a.email_id = e.id
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE a.is_inline = 0`
+        WHERE a.is_inline = 0
+          AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
     }
 
     if (senderId) {

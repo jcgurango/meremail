@@ -121,7 +121,7 @@ loadThreads(true)
 <template>
   <div class="contact-page">
     <header class="page-header">
-      <a href="#" class="back-link" @click.prevent="$router.back()">&larr; Back</a>
+      <button class="back-link" @click="$router.back()">&larr; Back</button>
 
       <div v-if="contact" class="contact-header">
         <h1>{{ contact.name || contact.email }}</h1>
@@ -198,6 +198,10 @@ loadThreads(true)
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 12px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .back-link:hover {
