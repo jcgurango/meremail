@@ -1,6 +1,9 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
 import { emailThreads } from './email-threads'
 
+// Email status: 'draft' for unsent, 'sent' for sent/received emails
+export type EmailStatus = 'draft' | 'sent'
+
 export const emails = sqliteTable('emails', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   threadId: integer('thread_id').notNull().references(() => emailThreads.id),
@@ -10,6 +13,7 @@ export const emails = sqliteTable('emails', {
   references: text('references', { mode: 'json' }).$type<string[]>(),
   folder: text('folder').notNull().default('INBOX'),
   isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
+  status: text('status').$type<EmailStatus>().notNull().default('sent'),
   subject: text('subject').notNull(),
   headers: text('headers', { mode: 'json' }).$type<Record<string, string>>(),
   contentText: text('content_text').notNull(),

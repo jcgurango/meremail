@@ -34,6 +34,8 @@ export default defineEventHandler(async (event) => {
       isRead: emails.isRead,
       senderId: emails.senderId,
       headers: emails.headers,
+      messageId: emails.messageId,
+      references: emails.references,
     })
     .from(emails)
     .where(eq(emails.threadId, id))
@@ -122,6 +124,7 @@ export default defineEventHandler(async (event) => {
       id: email.id,
       subject: email.subject,
       content,
+      contentText: email.contentText,  // Plain text for quoting
       sentAt: email.sentAt,
       receivedAt: email.receivedAt,
       isRead: email.isRead,
@@ -130,6 +133,8 @@ export default defineEventHandler(async (event) => {
       attachments: emailAttachments,
       replyTo,
       headers,
+      messageId: email.messageId,
+      references: email.references,
     }
   })
 
@@ -139,10 +144,26 @@ export default defineEventHandler(async (event) => {
     .where(eq(emails.threadId, id))
     .run()
 
+  // Find the first "me" identity in this thread (for default From)
+  let defaultFromId: number | null = null
+  for (const email of emailsWithParticipants) {
+    if (email.sender?.isMe) {
+      defaultFromId = email.sender.id
+      break
+    }
+    // Check recipients too
+    const meRecipient = email.recipients.find(r => r.isMe)
+    if (meRecipient) {
+      defaultFromId = meRecipient.id
+      break
+    }
+  }
+
   return {
     id: thread.id,
     subject: thread.subject,
     createdAt: thread.createdAt,
     emails: emailsWithParticipants,
+    defaultFromId,
   }
 })
