@@ -18,22 +18,23 @@ interface ThreadsResponse {
 
 const threads = ref<Thread[]>([])
 const hasMore = ref(false)
+const loading = ref(true)
 const loadingMore = ref(false)
+const error = ref<Error | null>(null)
 
-// Initial load - use unique key to prevent caching stale data on navigation
-const { data, error, status, refresh } = await useFetch<ThreadsResponse>('/api/threads', {
-  key: `threads-${Date.now()}`,
-})
-
-// Sync data to local refs for loadMore to work
-watch(data, (newData) => {
-  if (newData) {
-    threads.value = newData.threads
-    hasMore.value = newData.hasMore
+async function loadThreads() {
+  loading.value = true
+  error.value = null
+  try {
+    const data = await $fetch<ThreadsResponse>('/api/threads')
+    threads.value = data.threads
+    hasMore.value = data.hasMore
+  } catch (e) {
+    error.value = e as Error
+  } finally {
+    loading.value = false
   }
-}, { immediate: true })
-
-const pending = computed(() => status.value === 'pending')
+}
 
 async function loadMore() {
   if (loadingMore.value || !hasMore.value) return
@@ -82,23 +83,28 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   return names.join(', ')
 }
 
-const searchOpen = ref(false)
+await loadThreads()
 </script>
 
 <template>
   <div class="page">
     <header class="header">
-      <h1>MereMail</h1>
+      <h1>Inbox</h1>
+      <nav class="tab-nav">
+        <NuxtLink to="/" class="tab-pill active">Inbox</NuxtLink>
+        <NuxtLink to="/feed" class="tab-pill">Feed</NuxtLink>
+        <NuxtLink to="/paper-trail" class="tab-pill">Paper Trail</NuxtLink>
+      </nav>
     </header>
 
     <main class="main">
-      <div v-if="pending" class="loading">Loading...</div>
+      <div v-if="loading" class="loading">Loading...</div>
 
       <div v-else-if="error" class="error">
         Failed to load threads: {{ error?.message }}
       </div>
 
-      <div v-else-if="threads && threads.length === 0" class="empty">
+      <div v-else-if="threads.length === 0" class="empty">
         No threads yet
       </div>
 
@@ -126,29 +132,14 @@ const searchOpen = ref(false)
         </li>
       </ul>
 
-      <div v-if="hasMore && !pending" class="load-more">
+      <div v-if="hasMore && !loading" class="load-more">
         <button @click="loadMore" :disabled="loadingMore" class="load-more-btn">
           {{ loadingMore ? 'Loading...' : 'Load More' }}
         </button>
       </div>
     </main>
 
-    <nav class="bottom-nav">
-      <button class="nav-pill search" @click="searchOpen = true">
-        <span class="nav-icon">🔍</span>
-        <span class="nav-label">Search</span>
-      </button>
-      <NuxtLink to="/screener" class="nav-pill screener">
-        <span class="nav-icon">👤</span>
-        <span class="nav-label">Screener</span>
-      </NuxtLink>
-      <NuxtLink to="/attachments" class="nav-pill attachments">
-        <span class="nav-icon">📎</span>
-        <span class="nav-label">Attachments</span>
-      </NuxtLink>
-    </nav>
-
-    <SearchModal :open="searchOpen" @close="searchOpen = false" />
+    <BottomNav />
   </div>
 </template>
 
@@ -159,7 +150,7 @@ const searchOpen = ref(false)
 }
 
 .header {
-  padding: 24px 20px;
+  padding: 24px 20px 16px;
   border-bottom: 1px solid #e5e5e5;
 }
 
@@ -167,66 +158,39 @@ const searchOpen = ref(false)
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 0;
+  margin: 0 0 16px 0;
+}
+
+.tab-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.tab-pill {
+  padding: 8px 16px;
+  border: 1px solid #e5e5e5;
+  border-radius: 20px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.tab-pill:hover {
+  border-color: #ccc;
+  color: #333;
+}
+
+.tab-pill.active {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
 }
 
 .main {
   padding: 0;
-}
-
-.bottom-nav {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 12px;
-  padding: 8px;
-  background: #fff;
-  border-radius: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-.nav-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 20px;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-
-.nav-pill:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.nav-pill.search {
-  background: #f3e8ff;
-  color: #7c3aed;
-  border: none;
-  cursor: pointer;
-}
-
-.nav-pill.screener {
-  background: #e0f2fe;
-  color: #0369a1;
-}
-
-.nav-pill.attachments {
-  background: #fef3c7;
-  color: #b45309;
-}
-
-.nav-icon {
-  font-size: 16px;
-}
-
-.nav-label {
-  font-weight: 500;
 }
 
 .loading,
