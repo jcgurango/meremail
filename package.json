@@ -13,6 +13,7 @@
     "mail:import": "tsx server/cli/import.ts",
     "mail:folders": "tsx server/cli/list-folders.ts",
     "db:backup": "tsx server/cli/backup.ts",
+    "db:backfill-creators": "tsx server/cli/backfill-thread-creators.ts",
     "reset": "rm -rf data/* && yarn db:migrate"
   },
   "dependencies": {

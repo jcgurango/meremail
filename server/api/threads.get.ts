@@ -25,8 +25,8 @@ export default defineEventHandler(async (event) => {
   const offset = parseInt(query.offset as string) || 0
 
   // Get all threads, ordered by: unread first, then by latest email date
-  // Filter out threads created by unscreened (null bucket) or blocked contacts
-  // Thread creator = sender of the first (earliest) email in the thread
+  // Filter by thread creator (sender of first email) - must be approved or "me"
+  // Uses denormalized creator_id on email_threads for O(n) instead of O(n²)
   const threadsWithUnread = db
     .select({
       id: emailThreads.id,
@@ -38,21 +38,10 @@ export default defineEventHandler(async (event) => {
     })
     .from(emailThreads)
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
+    .innerJoin(contacts, eq(contacts.id, emailThreads.creatorId))
     .where(
-      // Filter: thread creator must be screened (has bucket) and not blocked
-      sql`(
-        SELECT c.bucket FROM emails e
-        INNER JOIN contacts c ON c.id = e.sender_id
-        WHERE e.thread_id = ${emailThreads.id}
-        ORDER BY e.sent_at ASC
-        LIMIT 1
-      ) = 'approved' OR (
-        SELECT c.is_me FROM emails e
-        INNER JOIN contacts c ON c.id = e.sender_id
-        WHERE e.thread_id = ${emailThreads.id}
-        ORDER BY e.sent_at ASC
-        LIMIT 1
-      ) = 1`
+      // Filter: thread creator must be approved or is "me"
+      sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
     )
     .groupBy(emailThreads.id)
     .orderBy(

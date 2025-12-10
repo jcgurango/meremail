@@ -151,15 +151,41 @@ function findThread(
 }
 
 /**
- * Create a new thread
+ * Create a new thread with creator
  */
-function createThread(subject: string): number {
+function createThread(subject: string, creatorId: number): number {
   const result = db
     .insert(emailThreads)
-    .values({ subject })
+    .values({ subject, creatorId })
     .returning({ id: emailThreads.id })
     .get()
   return result.id
+}
+
+/**
+ * Update thread creator if this email is older than current first email
+ */
+function maybeUpdateThreadCreator(
+  threadId: number,
+  emailSentAt: Date | undefined,
+  senderId: number
+): void {
+  // Get the current first email in the thread
+  const firstEmail = db
+    .select({ sentAt: emails.sentAt })
+    .from(emails)
+    .where(eq(emails.threadId, threadId))
+    .orderBy(emails.sentAt)
+    .limit(1)
+    .get()
+
+  // If no emails yet, or this email is older, update the creator
+  if (!firstEmail || (emailSentAt && firstEmail.sentAt && emailSentAt < firstEmail.sentAt)) {
+    db.update(emailThreads)
+      .set({ creatorId: senderId })
+      .where(eq(emailThreads.id, threadId))
+      .run()
+  }
 }
 
 /**
@@ -234,12 +260,6 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       ? [parsed.references]
       : []
 
-  // Find or create thread
-  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject, isReply)
-  if (!threadId) {
-    threadId = createThread(normalizedSubject)
-  }
-
   // Process From address - this is the sender
   const fromAddr = parsed.from?.value?.[0]
   const fromParsed = parseEmailAddress(fromAddr)
@@ -278,6 +298,16 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   } else {
     // No from address - create unknown sender
     senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false)
+  }
+
+  // Find or create thread
+  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject, isReply)
+  const isNewThread = !threadId
+  if (isNewThread) {
+    threadId = createThread(normalizedSubject, senderId)
+  } else {
+    // Check if this email is older than the current first email - update creator if so
+    maybeUpdateThreadCreator(threadId, parsed.date, senderId)
   }
 
   // Get email content - store both text and HTML
