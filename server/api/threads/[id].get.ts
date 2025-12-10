@@ -94,8 +94,28 @@ export default defineEventHandler(async (event) => {
     const replyToRaw = headers?.['reply-to']
     let replyTo: string | null = null
     if (replyToRaw) {
-      // reply-to header can be in various formats, extract just the email/name
-      replyTo = replyToRaw
+      // reply-to header was JSON.stringified during import if it was an object
+      // Try to parse and extract the text representation
+      try {
+        const parsed = JSON.parse(replyToRaw)
+        if (parsed && typeof parsed === 'object') {
+          // mailparser format: { value: [{address, name}], text: "...", html: "..." }
+          if (parsed.text) {
+            replyTo = parsed.text
+          } else if (Array.isArray(parsed.value)) {
+            // Fallback: format from value array
+            replyTo = parsed.value
+              .map((v: { name?: string; address?: string }) =>
+                v.name ? `${v.name} <${v.address}>` : v.address
+              )
+              .filter(Boolean)
+              .join(', ')
+          }
+        }
+      } catch {
+        // Not JSON, use as-is (plain string header)
+        replyTo = replyToRaw
+      }
     }
 
     return {
