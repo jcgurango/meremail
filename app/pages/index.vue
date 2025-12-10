@@ -80,6 +80,9 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   <div>
     <header class="header">
       <h1>MereMail</h1>
+      <nav class="nav">
+        <NuxtLink to="/attachments" class="nav-link">Attachments</NuxtLink>
+      </nav>
     </header>
 
     <main class="main">
@@ -128,6 +131,9 @@ function getParticipantDisplay(participants: Thread['participants']): string {
 
 <style scoped>
 .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 24px 20px;
   border-bottom: 1px solid #e5e5e5;
 }
@@ -136,6 +142,17 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.nav-link {
+  color: #666;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.nav-link:hover {
+  color: #000;
 }
 
 .main {
