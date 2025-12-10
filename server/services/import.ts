@@ -230,8 +230,9 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
     senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false)
   }
 
-  // Get email content (prefer text, fall back to html)
-  const content = parsed.text || parsed.html || ''
+  // Get email content - store both text and HTML
+  const contentText = parsed.text || ''
+  const contentHtml = parsed.html || null
 
   // Insert email
   // Sent emails are automatically marked as read
@@ -251,7 +252,8 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       headers: parsed.headers ? Object.fromEntries(
         Array.from(parsed.headers.entries()).map(([k, v]) => [k, String(v)])
       ) : {},
-      content,
+      contentText,
+      contentHtml,
       sentAt: parsed.date,
       receivedAt: new Date(),
     })

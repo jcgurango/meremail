@@ -1,11 +1,3 @@
-CREATE TABLE `sender_addresses` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`name` text NOT NULL,
-	`email` text NOT NULL,
-	`created_at` integer NOT NULL
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `sender_addresses_email_unique` ON `sender_addresses` (`email`);--> statement-breakpoint
 CREATE TABLE `email_threads` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`subject` text NOT NULL,
@@ -16,15 +8,23 @@ CREATE TABLE `email_threads` (
 CREATE TABLE `emails` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`thread_id` integer NOT NULL,
+	`sender_id` integer NOT NULL,
+	`message_id` text,
+	`in_reply_to` text,
+	`references` text,
+	`folder` text DEFAULT 'INBOX' NOT NULL,
+	`is_read` integer DEFAULT false NOT NULL,
 	`subject` text NOT NULL,
 	`headers` text,
-	`content` text NOT NULL,
+	`content_text` text NOT NULL,
+	`content_html` text,
 	`sent_at` integer,
 	`received_at` integer,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`thread_id`) REFERENCES `email_threads`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `emails_message_id_unique` ON `emails` (`message_id`);--> statement-breakpoint
 CREATE TABLE `attachments` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`email_id` integer NOT NULL,
@@ -41,6 +41,7 @@ CREATE TABLE `contacts` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text,
 	`email` text NOT NULL,
+	`is_me` integer DEFAULT false NOT NULL,
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint

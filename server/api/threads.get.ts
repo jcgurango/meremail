@@ -2,9 +2,25 @@ import { eq, desc, sql, and } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, emailThreads, contacts, emailThreadContacts } from '../db/schema'
 
+// Strip HTML tags and decode entities for plain text snippets
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')           // Remove HTML tags
+    .replace(/&nbsp;/gi, ' ')            // Decode &nbsp;
+    .replace(/&amp;/gi, '&')             // Decode &amp;
+    .replace(/&lt;/gi, '<')              // Decode &lt;
+    .replace(/&gt;/gi, '>')              // Decode &gt;
+    .replace(/&quot;/gi, '"')            // Decode &quot;
+    .replace(/&#\d+;/g, '')              // Remove numeric entities
+    .replace(/\s+/g, ' ')                // Collapse whitespace
+    .trim()
+}
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const unreadOnly = query.unreadOnly !== 'false'
+  const limit = Math.min(parseInt(query.limit as string) || 25, 100)
+  const offset = parseInt(query.offset as string) || 0
 
   // Get threads with unread emails, ordered by latest email date
   const threadsWithUnread = db
@@ -21,10 +37,15 @@ export default defineEventHandler(async (event) => {
     .groupBy(emailThreads.id)
     .having(unreadOnly ? sql`unread_count > 0` : sql`1=1`)
     .orderBy(desc(sql`latest_email_at`))
+    .limit(limit + 1)  // Fetch one extra to check if there's more
+    .offset(offset)
     .all()
 
+  const hasMore = threadsWithUnread.length > limit
+  const threads = hasMore ? threadsWithUnread.slice(0, limit) : threadsWithUnread
+
   // Get participants for each thread
-  const threadsWithParticipants = threadsWithUnread.map((thread) => {
+  const threadsWithParticipants = threads.map((thread) => {
     const participants = db
       .select({
         id: contacts.id,
@@ -38,11 +59,11 @@ export default defineEventHandler(async (event) => {
       .where(eq(emailThreadContacts.threadId, thread.id))
       .all()
 
-    // Get snippet from latest email
+    // Get snippet from latest email - prefer text, fall back to stripped HTML
     const latestEmail = db
       .select({
-        content: emails.content,
-        senderId: emails.senderId,
+        contentText: emails.contentText,
+        contentHtml: emails.contentHtml,
       })
       .from(emails)
       .where(eq(emails.threadId, thread.id))
@@ -50,17 +71,20 @@ export default defineEventHandler(async (event) => {
       .limit(1)
       .get()
 
-    const snippet = latestEmail?.content
-      ? latestEmail.content.substring(0, 150).replace(/\s+/g, ' ').trim()
+    const snippet = latestEmail
+      ? (latestEmail.contentText || stripHtml(latestEmail.contentHtml || '')).substring(0, 150)
       : ''
 
     return {
       ...thread,
-      latestEmailAt: thread.latestEmailAt ? new Date(thread.latestEmailAt * 1000) : null,
+      latestEmailAt: thread.latestEmailAt ? new Date(thread.latestEmailAt) : null,
       participants: participants.filter((p) => !p.isMe),
       snippet,
     }
   })
 
-  return threadsWithParticipants
+  return {
+    threads: threadsWithParticipants,
+    hasMore,
+  }
 })
