@@ -19,14 +19,17 @@ interface Email {
   subject: string
   content: string
   contentText: string
+  contentHtml?: string | null
   sentAt: string | null
   receivedAt: string | null
   isRead: boolean
+  status: 'draft' | 'sent'
   sender: Participant | null
   recipients: Participant[]
   attachments: Attachment[]
   messageId?: string | null
   references?: string[] | null
+  inReplyTo?: string | null
   replyTo?: string | null
 }
 
@@ -39,14 +42,53 @@ interface Thread {
 }
 
 const route = useRoute()
-const { data: thread, pending, error } = await useFetch<Thread>(`/api/threads/${route.params.id}`)
+const { data: thread, pending, error, refresh } = await useFetch<Thread>(`/api/threads/${route.params.id}`)
 
 const pageTitle = computed(() => thread.value?.subject ? `${thread.value.subject} - MereMail` : 'MereMail')
 useHead({ title: pageTitle })
 
-// Composer state - track which email we're replying to
+// Sort emails: drafts appear above the email they're replying to
+const sortedEmails = computed(() => {
+  if (!thread.value?.emails) return []
+
+  const emails = [...thread.value.emails]
+  const result: Email[] = []
+  const drafts: Email[] = []
+
+  // Separate drafts from sent emails
+  for (const email of emails) {
+    if (email.status === 'draft') {
+      drafts.push(email)
+    } else {
+      result.push(email)
+    }
+  }
+
+  // Sort sent emails by date descending
+  result.sort((a, b) => {
+    const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0
+    const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0
+    return dateB - dateA
+  })
+
+  // Insert each draft above the email it's replying to
+  for (const draft of drafts) {
+    const targetMessageId = draft.inReplyTo
+    const targetIndex = result.findIndex(e => e.messageId === targetMessageId)
+    if (targetIndex !== -1) {
+      result.splice(targetIndex, 0, draft) // Insert at target's index (pushes target down, so draft appears above)
+    } else {
+      result.unshift(draft) // No target found, put at top
+    }
+  }
+
+  return result
+})
+
+// Composer state - track which email we're replying to or draft we're editing
 const replyingToEmailId = ref<number | null>(null)
 const replyAll = ref(false)
+const editingDraftId = ref<number | null>(null)
 
 // Find the email being replied to
 const replyToEmail = computed(() => {
@@ -54,7 +96,16 @@ const replyToEmail = computed(() => {
   return thread.value.emails.find(e => e.id === replyingToEmailId.value) || null
 })
 
+// Find the draft being edited
+const editingDraft = computed(() => {
+  if (!editingDraftId.value || !thread.value) return null
+  return thread.value.emails.find(e => e.id === editingDraftId.value) || null
+})
+
 function handleReply(emailId: number, all: boolean) {
+  // Close any draft editing
+  editingDraftId.value = null
+
   // If clicking same email's reply, toggle off
   if (replyingToEmailId.value === emailId && replyAll.value === all) {
     replyingToEmailId.value = null
@@ -64,8 +115,26 @@ function handleReply(emailId: number, all: boolean) {
   replyAll.value = all
 }
 
+function handleEditDraft(emailId: number) {
+  // Close any reply composer
+  replyingToEmailId.value = null
+
+  // Toggle draft editing
+  if (editingDraftId.value === emailId) {
+    editingDraftId.value = null
+    return
+  }
+  editingDraftId.value = emailId
+}
+
 function closeComposer() {
   replyingToEmailId.value = null
+  editingDraftId.value = null
+}
+
+async function onDraftDiscarded() {
+  closeComposer()
+  await refresh() // Refresh to remove deleted draft from list
 }
 
 function onDraftSaved(draftId: number) {
@@ -89,8 +158,8 @@ function onDraftSaved(draftId: number) {
 
       <template v-else-if="thread">
         <div class="emails">
-          <template v-for="email in thread.emails" :key="email.id">
-            <!-- Inline composer appears above the email being replied to -->
+          <template v-for="email in sortedEmails" :key="email.id">
+            <!-- Inline composer for replying -->
             <div v-if="replyingToEmailId === email.id" class="inline-composer">
               <EmailComposer
                 :thread-id="thread.id"
@@ -108,10 +177,46 @@ function onDraftSaved(draftId: number) {
                 :reply-all="replyAll"
                 :default-from-id="thread.defaultFromId || undefined"
                 @close="closeComposer"
+                @discarded="onDraftDiscarded"
                 @sent="onDraftSaved"
               />
             </div>
+
+            <!-- Inline composer for editing draft -->
+            <div v-if="editingDraftId === email.id && email.status === 'draft'" class="inline-composer">
+              <EmailComposer
+                :thread-id="thread.id"
+                :existing-draft="{
+                  id: email.id,
+                  subject: email.subject,
+                  contentText: email.contentText,
+                  contentHtml: email.contentHtml,
+                  sender: email.sender,
+                  recipients: email.recipients.map(r => ({ id: r.id, email: r.email, name: r.name, role: r.role || 'to' })),
+                }"
+                :default-from-id="thread.defaultFromId || undefined"
+                @close="closeComposer"
+                @discarded="onDraftDiscarded"
+                @sent="onDraftSaved"
+              />
+            </div>
+
+            <!-- Draft email - show as editable -->
+            <article v-if="email.status === 'draft' && editingDraftId !== email.id" class="draft-email" @click="handleEditDraft(email.id)">
+              <div class="draft-badge">Draft</div>
+              <div class="draft-preview">
+                <div class="draft-to" v-if="email.recipients.length">
+                  To: {{ email.recipients.filter(r => r.role === 'to').map(r => r.name || r.email).join(', ') || 'No recipients' }}
+                </div>
+                <div class="draft-subject">{{ email.subject || '(No subject)' }}</div>
+                <div class="draft-snippet">{{ email.contentText?.slice(0, 100) || '(No content)' }}</div>
+              </div>
+              <button class="edit-draft-btn">Edit</button>
+            </article>
+
+            <!-- Regular sent email -->
             <EmailMessage
+              v-else-if="email.status !== 'draft'"
               :email="email"
               :show-reply-buttons="true"
               @reply="handleReply"
@@ -182,5 +287,70 @@ h1 {
 .inline-composer {
   background: #fafafa;
   border-bottom: 1px solid #eee;
+}
+
+.draft-email {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid #eee;
+  background: #fffbeb;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.draft-email:hover {
+  background: #fef3c7;
+}
+
+.draft-badge {
+  padding: 4px 8px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.draft-preview {
+  flex: 1;
+  min-width: 0;
+}
+
+.draft-to {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 2px;
+}
+
+.draft-subject {
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.draft-snippet {
+  font-size: 13px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.edit-draft-btn {
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.edit-draft-btn:hover {
+  border-color: #999;
 }
 </style>

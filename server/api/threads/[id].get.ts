@@ -36,6 +36,8 @@ export default defineEventHandler(async (event) => {
       headers: emails.headers,
       messageId: emails.messageId,
       references: emails.references,
+      status: emails.status,
+      inReplyTo: emails.inReplyTo,
     })
     .from(emails)
     .where(eq(emails.threadId, id))
@@ -125,9 +127,11 @@ export default defineEventHandler(async (event) => {
       subject: email.subject,
       content,
       contentText: email.contentText,  // Plain text for quoting
+      contentHtml: email.contentHtml,  // HTML for editing drafts
       sentAt: email.sentAt,
       receivedAt: email.receivedAt,
       isRead: email.isRead,
+      status: email.status,
       sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
       recipients,
       attachments: emailAttachments,
@@ -135,6 +139,7 @@ export default defineEventHandler(async (event) => {
       headers,
       messageId: email.messageId,
       references: email.references,
+      inReplyTo: email.inReplyTo,
     }
   })
 

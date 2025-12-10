@@ -1,6 +1,6 @@
 import { db } from '../../db'
 import { emails, emailContacts } from '../../db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 interface Recipient {
   id?: number
@@ -9,7 +9,7 @@ interface Recipient {
   role: 'to' | 'cc' | 'bcc'
 }
 
-interface DraftUpdateBody {
+interface DraftBody {
   senderId?: number
   subject?: string
   contentText?: string
@@ -23,25 +23,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid draft ID' })
   }
 
-  const body = await readBody<DraftUpdateBody>(event)
+  const body = await readBody<DraftBody>(event)
 
-  // Verify the email exists and is a draft
-  const existing = db
+  // Verify it's a draft
+  const draft = db
     .select({ id: emails.id, status: emails.status })
     .from(emails)
     .where(eq(emails.id, id))
     .get()
 
-  if (!existing) {
+  if (!draft) {
     throw createError({ statusCode: 404, message: 'Draft not found' })
   }
 
-  if (existing.status !== 'draft') {
-    throw createError({ statusCode: 400, message: 'Cannot edit a sent email' })
+  if (draft.status !== 'draft') {
+    throw createError({ statusCode: 400, message: 'Can only update drafts' })
   }
 
-  // Update the email fields
-  const updates: Partial<typeof emails.$inferInsert> = {}
+  // Update the draft
+  const updates: Record<string, unknown> = {}
   if (body.senderId !== undefined) updates.senderId = body.senderId
   if (body.subject !== undefined) updates.subject = body.subject
   if (body.contentText !== undefined) updates.contentText = body.contentText
@@ -55,26 +55,23 @@ export default defineEventHandler(async (event) => {
   }
 
   // Update recipients if provided
-  if (body.recipients !== undefined) {
-    // Remove existing recipients (except 'from')
+  if (body.recipients) {
+    // Remove old recipients (except 'from')
     db.delete(emailContacts)
-      .where(and(
-        eq(emailContacts.emailId, id),
-        eq(emailContacts.role, 'to')
-      ))
+      .where(eq(emailContacts.emailId, id))
       .run()
-    db.delete(emailContacts)
-      .where(and(
-        eq(emailContacts.emailId, id),
-        eq(emailContacts.role, 'cc')
-      ))
-      .run()
-    db.delete(emailContacts)
-      .where(and(
-        eq(emailContacts.emailId, id),
-        eq(emailContacts.role, 'bcc')
-      ))
-      .run()
+
+    // Add sender as 'from'
+    if (body.senderId) {
+      db.insert(emailContacts)
+        .values({
+          emailId: id,
+          contactId: body.senderId,
+          role: 'from',
+        })
+        .onConflictDoNothing()
+        .run()
+    }
 
     // Add new recipients
     for (const recipient of body.recipients) {
@@ -89,25 +86,7 @@ export default defineEventHandler(async (event) => {
           .run()
       }
     }
-
-    // Update sender if changed
-    if (body.senderId !== undefined) {
-      db.delete(emailContacts)
-        .where(and(
-          eq(emailContacts.emailId, id),
-          eq(emailContacts.role, 'from')
-        ))
-        .run()
-      db.insert(emailContacts)
-        .values({
-          emailId: id,
-          contactId: body.senderId,
-          role: 'from',
-        })
-        .onConflictDoNothing()
-        .run()
-    }
   }
 
-  return { id, status: 'draft', updated: true }
+  return { id, status: 'draft' }
 })

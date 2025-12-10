@@ -12,30 +12,25 @@ interface Recipient {
 interface DraftBody {
   threadId: number
   senderId: number  // The "me" contact to send from
-  subject: string
-  contentText: string
+  subject?: string
+  contentText?: string
   contentHtml?: string
   inReplyTo?: string
   references?: string[]
-  recipients: Recipient[]
+  recipients?: Recipient[]
 }
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<DraftBody>(event)
 
-  if (!body.threadId || !body.senderId || !body.subject || !body.contentText) {
+  if (!body.threadId || !body.senderId) {
     throw createError({
       statusCode: 400,
-      message: 'Missing required fields: threadId, senderId, subject, contentText',
+      message: 'Missing required fields: threadId, senderId',
     })
   }
 
-  if (!body.recipients || body.recipients.length === 0) {
-    throw createError({
-      statusCode: 400,
-      message: 'At least one recipient is required',
-    })
-  }
+  // Recipients are optional for drafts - they're a work in progress
 
   // Create the draft email
   const result = db
@@ -43,8 +38,8 @@ export default defineEventHandler(async (event) => {
     .values({
       threadId: body.threadId,
       senderId: body.senderId,
-      subject: body.subject,
-      contentText: body.contentText,
+      subject: body.subject || '',
+      contentText: body.contentText || '',
       contentHtml: body.contentHtml || null,
       inReplyTo: body.inReplyTo || null,
       references: body.references || null,
@@ -58,9 +53,9 @@ export default defineEventHandler(async (event) => {
   const emailId = result.id
 
   // Add recipients to email_contacts junction table
-  for (const recipient of body.recipients) {
+  const recipients = body.recipients || []
+  for (const recipient of recipients) {
     if (recipient.id) {
-      // Existing contact
       db.insert(emailContacts)
         .values({
           emailId,
@@ -70,8 +65,6 @@ export default defineEventHandler(async (event) => {
         .onConflictDoNothing()
         .run()
     }
-    // For new/raw emails without contact ID, we'd need to create contacts
-    // For now, we require existing contacts or will handle raw emails differently
   }
 
   // Add sender to email_contacts as 'from'
@@ -86,7 +79,7 @@ export default defineEventHandler(async (event) => {
 
   // Update email_thread_contacts junction
   const allContactIds = new Set<number>([body.senderId])
-  for (const r of body.recipients) {
+  for (const r of recipients) {
     if (r.id) allContactIds.add(r.id)
   }
 
