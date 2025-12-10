@@ -119,16 +119,17 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
  *
  * Threading strategy:
  * 1. Primary: Use In-Reply-To and References headers (reliable)
- * 2. Fallback: Only use subject matching if the email looks like a reply
- *    (has Re:/Fwd: prefix). This avoids grouping unrelated transactional
- *    emails like "Please verify your email" or payment notifications.
+ * 2. Fallback A: Subject matching if email has Re:/Fwd: prefix
+ * 3. Fallback B: Cross-party subject matching - if sender is me and thread
+ *    creator is not me (or vice versa), they're probably conversing
  */
 function findThread(
   messageId: string | undefined,
   inReplyTo: string | undefined,
   references: string[],
   normalizedSubject: string,
-  isReply: boolean
+  isReply: boolean,
+  senderIsMe: boolean
 ): number | null {
   // First, try to find by In-Reply-To or References (most reliable)
   const refIds = [inReplyTo, ...references].filter(Boolean) as string[]
@@ -145,8 +146,7 @@ function findThread(
     }
   }
 
-  // Only fall back to subject matching if this looks like a reply/forward
-  // This prevents grouping unrelated emails with generic subjects
+  // Fallback A: Subject matching if this looks like a reply/forward
   if (isReply) {
     const existingThread = db
       .select({ id: emailThreads.id })
@@ -155,6 +155,23 @@ function findThread(
       .get()
 
     if (existingThread) {
+      return existingThread.id
+    }
+  }
+
+  // Fallback B: Cross-party subject matching
+  // If I'm sending and there's a thread with same subject from non-me, probably same convo
+  // If someone else is sending and there's a thread with same subject from me, probably same convo
+  const existingThread = db
+    .select({ id: emailThreads.id, creatorIsMe: contacts.isMe })
+    .from(emailThreads)
+    .innerJoin(contacts, eq(contacts.id, emailThreads.creatorId))
+    .where(eq(emailThreads.subject, normalizedSubject))
+    .get()
+
+  if (existingThread) {
+    // Cross-party match: sender and creator are different parties (me vs not-me)
+    if (senderIsMe !== existingThread.creatorIsMe) {
       return existingThread.id
     }
   }
@@ -303,21 +320,32 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
 
   // Get or create sender contact (always create, whether it's us or someone else)
   // If from Junk folder and new contact, auto-quarantine them
+  // EXCEPTION: Junk mail "from me" is NOT actually me - it's an impostor
   let senderId: number
+  let senderIsMe = false
   if (fromParsed) {
     // Check if this is one of our addresses
     const existingMe = db.select().from(contacts)
       .where(eq(contacts.email, fromParsed.email))
       .get()
-    const isMe = existingMe?.isMe || isSentFolder
-    senderId = findOrCreateContact(fromParsed.email, fromParsed.name, isMe, fromJunk)
+
+    // Junk mail claiming to be "from me" is an impostor - don't trust the From address
+    if (fromJunk && existingMe?.isMe) {
+      // Create/find an "Impostor" contact for this spoofed email
+      senderId = findOrCreateContact('impostor@impostor', 'Impostor', false, true)
+      senderIsMe = false
+      console.log(`  Junk mail claiming to be from me (${fromParsed.email}) - attributed to Impostor`)
+    } else {
+      senderIsMe = existingMe?.isMe || isSentFolder
+      senderId = findOrCreateContact(fromParsed.email, fromParsed.name, senderIsMe, fromJunk)
+    }
   } else {
     // No from address - create unknown sender
     senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false, fromJunk)
   }
 
   // Find or create thread
-  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject, isReply)
+  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject, isReply, senderIsMe)
   const isNewThread = !threadId
   if (isNewThread) {
     threadId = createThread(normalizedSubject, senderId)
@@ -389,12 +417,25 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       const addrParsed = parseEmailAddress(addr)
       if (addrParsed) {
         // Check if this is one of our addresses
-        const existingMe = db.select().from(contacts)
+        const existingContact = db.select().from(contacts)
           .where(eq(contacts.email, addrParsed.email))
           .get()
-        const isMe = existingMe?.isMe || false
+        const isMe = existingContact?.isMe || false
+
+        // Auto-approve contacts that I send email TO (if not already bucketed)
+        // This means if I've emailed someone, they're implicitly approved
+        const shouldAutoApprove = isSentFolder && !isMe && (!existingContact || existingContact.bucket === null)
 
         const contactId = findOrCreateContact(addrParsed.email, addrParsed.name, isMe)
+
+        if (shouldAutoApprove) {
+          db.update(contacts)
+            .set({ bucket: 'approved' })
+            .where(eq(contacts.id, contactId))
+            .run()
+          console.log(`  Auto-approved contact (I sent them email): ${addrParsed.name || addrParsed.email}`)
+        }
+
         db.insert(emailContacts).values({ emailId, contactId, role }).onConflictDoNothing().run()
 
         // Also link to thread as recipient
