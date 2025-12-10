@@ -1,6 +1,6 @@
 import { eq, desc, sql, and } from 'drizzle-orm'
 import { db } from '../db'
-import { emails, contacts, attachments } from '../db/schema'
+import { emails, contacts, attachments, emailContacts } from '../db/schema'
 import { proxyImagesInHtml } from '../utils/proxy-images'
 import { sanitizeEmailHtml } from '../utils/sanitize-email-html'
 import { replaceCidReferences } from '../utils/replace-cid'
@@ -28,6 +28,7 @@ export default defineEventHandler(async (event) => {
       receivedAt: emails.receivedAt,
       isRead: emails.isRead,
       senderId: emails.senderId,
+      headers: emails.headers,
     })
     .from(emails)
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
@@ -46,6 +47,21 @@ export default defineEventHandler(async (event) => {
     const sender = email.senderId
       ? db.select().from(contacts).where(eq(contacts.id, email.senderId)).get()
       : null
+
+    // Get recipients (to, cc, bcc)
+    const recipients = db
+      .select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        isMe: contacts.isMe,
+        role: emailContacts.role,
+      })
+      .from(emailContacts)
+      .innerJoin(contacts, eq(contacts.id, emailContacts.contactId))
+      .where(eq(emailContacts.emailId, email.id))
+      .all()
+      .filter((r) => r.role !== 'from')
 
     // Process content
     let content: string
@@ -74,6 +90,30 @@ export default defineEventHandler(async (event) => {
       ))
       .all()
 
+    // Extract Reply-To from headers if present
+    const headers = email.headers as Record<string, string> | null
+    const replyToRaw = headers?.['reply-to']
+    let replyTo: string | null = null
+    if (replyToRaw) {
+      try {
+        const parsed = JSON.parse(replyToRaw)
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.text) {
+            replyTo = parsed.text
+          } else if (Array.isArray(parsed.value)) {
+            replyTo = parsed.value
+              .map((v: { name?: string; address?: string }) =>
+                v.name ? `${v.name} <${v.address}>` : v.address
+              )
+              .filter(Boolean)
+              .join(', ')
+          }
+        }
+      } catch {
+        replyTo = replyToRaw
+      }
+    }
+
     return {
       id: email.id,
       threadId: email.threadId,
@@ -83,7 +123,10 @@ export default defineEventHandler(async (event) => {
       receivedAt: email.receivedAt,
       isRead: email.isRead,
       sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
+      recipients,
       attachments: emailAttachments,
+      replyTo,
+      headers,
     }
   })
 
