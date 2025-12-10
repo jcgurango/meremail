@@ -1,4 +1,6 @@
 <script setup lang="ts">
+useHead({ title: 'MereMail' })
+
 interface Thread {
   id: number
   subject: string
@@ -16,19 +18,22 @@ interface ThreadsResponse {
 
 const threads = ref<Thread[]>([])
 const hasMore = ref(false)
-const pending = ref(true)
 const loadingMore = ref(false)
-const error = ref<Error | null>(null)
 
-// Initial load - show all threads, not just unread
-const { data, error: fetchError } = await useFetch<ThreadsResponse>('/api/threads')
-if (fetchError.value) {
-  error.value = fetchError.value
-} else if (data.value) {
-  threads.value = data.value.threads
-  hasMore.value = data.value.hasMore
-}
-pending.value = false
+// Initial load - use unique key to prevent caching stale data on navigation
+const { data, error, status, refresh } = await useFetch<ThreadsResponse>('/api/threads', {
+  key: `threads-${Date.now()}`,
+})
+
+// Sync data to local refs for loadMore to work
+watch(data, (newData) => {
+  if (newData) {
+    threads.value = newData.threads
+    hasMore.value = newData.hasMore
+  }
+}, { immediate: true })
+
+const pending = computed(() => status.value === 'pending')
 
 async function loadMore() {
   if (loadingMore.value || !hasMore.value) return
@@ -77,28 +82,24 @@ function getParticipantDisplay(participants: Thread['participants']): string {
 </script>
 
 <template>
-  <div>
+  <div class="page">
     <header class="header">
       <h1>MereMail</h1>
-      <nav class="nav">
-        <NuxtLink to="/screener" class="nav-link">Screener</NuxtLink>
-        <NuxtLink to="/attachments" class="nav-link">Attachments</NuxtLink>
-      </nav>
     </header>
 
     <main class="main">
       <div v-if="pending" class="loading">Loading...</div>
 
       <div v-else-if="error" class="error">
-        Failed to load threads: {{ error.message }}
+        Failed to load threads: {{ error?.message }}
       </div>
 
       <div v-else-if="threads && threads.length === 0" class="empty">
-        No unread threads
+        No threads yet
       </div>
 
       <ul v-else class="thread-list">
-        <li v-for="thread in threads" :key="thread.id" class="thread-item">
+        <li v-for="thread in threads" :key="thread.id" class="thread-item" :class="{ unread: thread.unreadCount > 0 }">
           <NuxtLink :to="`/thread/${thread.id}`" class="thread-link">
             <div class="thread-header">
               <span class="thread-participants">
@@ -110,7 +111,7 @@ function getParticipantDisplay(participants: Thread['participants']): string {
             </div>
             <div class="thread-subject">
               {{ thread.subject }}
-              <span v-if="thread.unreadCount > 1" class="unread-count">
+              <span v-if="thread.unreadCount > 0" class="unread-count">
                 ({{ thread.unreadCount }})
               </span>
             </div>
@@ -127,14 +128,27 @@ function getParticipantDisplay(participants: Thread['participants']): string {
         </button>
       </div>
     </main>
+
+    <nav class="bottom-nav">
+      <NuxtLink to="/screener" class="nav-pill screener">
+        <span class="nav-icon">👤</span>
+        <span class="nav-label">Screener</span>
+      </NuxtLink>
+      <NuxtLink to="/attachments" class="nav-pill attachments">
+        <span class="nav-icon">📎</span>
+        <span class="nav-label">Attachments</span>
+      </NuxtLink>
+    </nav>
   </div>
 </template>
 
 <style scoped>
+.page {
+  min-height: 100vh;
+  padding-bottom: 80px;
+}
+
 .header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   padding: 24px 20px;
   border-bottom: 1px solid #e5e5e5;
 }
@@ -146,23 +160,56 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   margin: 0;
 }
 
-.nav {
-  display: flex;
-  gap: 16px;
-}
-
-.nav-link {
-  color: #666;
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.nav-link:hover {
-  color: #000;
-}
-
 .main {
   padding: 0;
+}
+
+.bottom-nav {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  padding: 8px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.nav-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 20px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.nav-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.nav-pill.screener {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.nav-pill.attachments {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.nav-icon {
+  font-size: 16px;
+}
+
+.nav-label {
+  font-weight: 500;
 }
 
 .loading,
@@ -185,6 +232,24 @@ function getParticipantDisplay(participants: Thread['participants']): string {
 
 .thread-item {
   border-bottom: 1px solid #f0f0f0;
+}
+
+.thread-item.unread .thread-participants {
+  font-weight: 700;
+}
+
+.thread-item.unread .thread-subject {
+  font-weight: 700;
+}
+
+.thread-item:not(.unread) .thread-participants,
+.thread-item:not(.unread) .thread-subject,
+.thread-item:not(.unread) .thread-snippet {
+  color: #888;
+}
+
+.thread-item:not(.unread) .thread-participants {
+  font-weight: 500;
 }
 
 .thread-link {

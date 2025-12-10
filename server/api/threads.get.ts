@@ -21,11 +21,10 @@ function stripHtml(html: string): string {
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
-  const unreadOnly = query.unreadOnly !== 'false'
   const limit = Math.min(parseInt(query.limit as string) || 25, 100)
   const offset = parseInt(query.offset as string) || 0
 
-  // Get threads with unread emails, ordered by latest email date
+  // Get all threads, ordered by: unread first, then by latest email date
   // Filter out threads created by unscreened (null bucket) or blocked contacts
   // Thread creator = sender of the first (earliest) email in the thread
   const threadsWithUnread = db
@@ -47,11 +46,19 @@ export default defineEventHandler(async (event) => {
         WHERE e.thread_id = ${emailThreads.id}
         ORDER BY e.sent_at ASC
         LIMIT 1
-      ) = 'approved'`
+      ) = 'approved' OR (
+        SELECT c.is_me FROM emails e
+        INNER JOIN contacts c ON c.id = e.sender_id
+        WHERE e.thread_id = ${emailThreads.id}
+        ORDER BY e.sent_at ASC
+        LIMIT 1
+      ) = 1`
     )
     .groupBy(emailThreads.id)
-    .having(unreadOnly ? sql`unread_count > 0` : sql`1=1`)
-    .orderBy(desc(sql`latest_email_at`))
+    .orderBy(
+      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads first
+      desc(sql`latest_email_at`)  // Then by latest email date
+    )
     .limit(limit + 1)  // Fetch one extra to check if there's more
     .offset(offset)
     .all()

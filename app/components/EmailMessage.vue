@@ -33,10 +33,9 @@ const props = defineProps<{
 // Track whether quoted content is expanded
 const showQuoted = ref(false)
 
-// Quote detection patterns
+// Quote detection patterns (for hiding previously-seen quoted replies, NOT forwarded content)
 const QUOTE_PATTERNS = [
   /On\s+.{1,150}\s+wrote:\s*/i,
-  /-{5,}\s*Forwarded message\s*-{5,}/i,
   /From:\s*[^\n]+\n\s*(Sent|Date):\s*[^\n]+\n\s*(To|Subject):/i,
   /Am\s+.{1,100}\s+schrieb\s+.{1,100}:/i,
 ]
@@ -64,12 +63,17 @@ const splitContent = computed<SplitContent>(() => {
   const content = props.email.content
   if (!content) return { visible: '', quoted: null }
 
-  // Check for gmail_quote first (most reliable)
+  // Check for gmail_quote (but skip if it's a forwarded message, not a quote)
   const gmailMatch = content.match(GMAIL_QUOTE_PATTERN)
   if (gmailMatch && gmailMatch.index !== undefined && gmailMatch.index > 50) {
-    return {
-      visible: content.slice(0, gmailMatch.index).trim(),
-      quoted: content.slice(gmailMatch.index).trim(),
+    // Don't hide gmail_quote if it contains a forwarded message
+    const afterMatch = content.slice(gmailMatch.index, gmailMatch.index + 200)
+    const isForward = /forwarded message/i.test(afterMatch)
+    if (!isForward) {
+      return {
+        visible: content.slice(0, gmailMatch.index).trim(),
+        quoted: content.slice(gmailMatch.index).trim(),
+      }
     }
   }
 

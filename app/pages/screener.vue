@@ -1,4 +1,6 @@
 <script setup lang="ts">
+useHead({ title: 'Screener - MereMail' })
+
 interface Contact {
   id: number
   name: string | null

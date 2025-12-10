@@ -5,6 +5,14 @@ import DOMPurify from 'dompurify'
 const window = new JSDOM('').window
 const purify = DOMPurify(window)
 
+// Add hook to make all links open in new tab with no referrer
+purify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noopener noreferrer')
+  }
+})
+
 // Configure DOMPurify for email HTML
 purify.setConfig({
   // Allow safe HTML elements

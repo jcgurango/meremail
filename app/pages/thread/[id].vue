@@ -35,6 +35,9 @@ interface Thread {
 
 const route = useRoute()
 const { data: thread, pending, error } = await useFetch<Thread>(`/api/threads/${route.params.id}`)
+
+const pageTitle = computed(() => thread.value?.subject ? `${thread.value.subject} - MereMail` : 'MereMail')
+useHead({ title: pageTitle })
 </script>
 
 <template>

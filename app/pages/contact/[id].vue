@@ -51,6 +51,12 @@ const route = useRoute()
 const contactId = computed(() => Number(route.params.id))
 
 const contact = ref<Contact | null>(null)
+
+const pageTitle = computed(() => {
+  if (contact.value) return `${contact.value.name || contact.value.email} - MereMail`
+  return 'MereMail'
+})
+useHead({ title: pageTitle })
 const threads = ref<Thread[]>([])
 const totalThreads = ref(0)
 const hasMore = ref(false)

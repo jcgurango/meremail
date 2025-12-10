@@ -1,4 +1,6 @@
 <script setup lang="ts">
+useHead({ title: 'Attachments - MereMail' })
+
 interface Sender {
   id: number
   name: string | null
