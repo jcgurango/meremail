@@ -23,9 +23,10 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const limit = Math.min(parseInt(query.limit as string) || 25, 100)
   const offset = parseInt(query.offset as string) || 0
+  const bucket = (query.bucket as string) || 'approved' // Filter by creator's bucket
 
   // Get all threads, ordered by: unread first, then by latest email date
-  // Filter by thread creator (sender of first email) - must be approved or "me"
+  // Filter by thread creator (sender of first email) - must match specified bucket or "me"
   // Uses denormalized creator_id on email_threads for O(n) instead of O(n²)
   const threadsWithUnread = db
     .select({
@@ -40,8 +41,10 @@ export default defineEventHandler(async (event) => {
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
     .innerJoin(contacts, eq(contacts.id, emailThreads.creatorId))
     .where(
-      // Filter: thread creator must be approved or is "me"
-      sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
+      // Filter: thread creator must match bucket or is "me" (for 'approved' bucket only)
+      bucket === 'approved'
+        ? sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
+        : sql`${contacts.bucket} = ${bucket}`
     )
     .groupBy(emailThreads.id)
     .orderBy(

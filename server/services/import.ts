@@ -71,9 +71,17 @@ function parseEmailAddress(addr: { address?: string; name?: string } | string | 
 }
 
 /**
- * Find or create a contact by email
+ * Check if folder is a Junk/Spam folder
  */
-function findOrCreateContact(email: string, name?: string, isMe: boolean = false): number {
+function isJunkFolder(folder: string): boolean {
+  return /^(junk|spam|\[gmail\]\/spam)$/i.test(folder)
+}
+
+/**
+ * Find or create a contact by email
+ * If fromJunkFolder is true and this is a NEW contact, set bucket to 'quarantine'
+ */
+function findOrCreateContact(email: string, name?: string, isMe: boolean = false, fromJunkFolder: boolean = false): number {
   const existing = db.select().from(contacts).where(eq(contacts.email, email)).get()
 
   if (existing) {
@@ -95,9 +103,13 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
     return existing.id
   }
 
-  const result = db.insert(contacts).values({ email, name, isMe }).returning({ id: contacts.id }).get()
+  // New contact - set bucket to quarantine if their first email is from Junk folder
+  const bucket = (fromJunkFolder && !isMe) ? 'quarantine' : null
+  const result = db.insert(contacts).values({ email, name, isMe, bucket }).returning({ id: contacts.id }).get()
   if (isMe) {
     console.log(`  Auto-created my contact: ${name || email} <${email}>`)
+  } else if (bucket === 'quarantine') {
+    console.log(`  Auto-quarantined contact from Junk folder: ${name || email} <${email}>`)
   }
   return result.id
 }
@@ -267,6 +279,9 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   // Determine if this is a "sent" folder (where we are the sender)
   const isSentFolder = /^(sent|sent items|sent mail|\[gmail\]\/sent mail)$/i.test(folder)
 
+  // Check if this is from a Junk/Spam folder - auto-quarantine new contacts
+  const fromJunk = isJunkFolder(folder)
+
   // For received emails: use "Delivered-To" header to find our address
   // For sent emails: "From" is our address
   if (isSentFolder) {
@@ -287,6 +302,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   }
 
   // Get or create sender contact (always create, whether it's us or someone else)
+  // If from Junk folder and new contact, auto-quarantine them
   let senderId: number
   if (fromParsed) {
     // Check if this is one of our addresses
@@ -294,10 +310,10 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       .where(eq(contacts.email, fromParsed.email))
       .get()
     const isMe = existingMe?.isMe || isSentFolder
-    senderId = findOrCreateContact(fromParsed.email, fromParsed.name, isMe)
+    senderId = findOrCreateContact(fromParsed.email, fromParsed.name, isMe, fromJunk)
   } else {
     // No from address - create unknown sender
-    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false)
+    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false, fromJunk)
   }
 
   // Find or create thread

@@ -68,6 +68,7 @@ const buckets = [
   { value: 'feed', label: 'Feed', color: '#3b82f6' },
   { value: 'paper_trail', label: 'Paper Trail', color: '#a855f7' },
   { value: 'blocked', label: 'Blocked', color: '#ef4444' },
+  { value: 'quarantine', label: 'Quarantine', color: '#f59e0b' },
 ]
 
 async function setBucket(bucket: string) {
@@ -143,6 +144,11 @@ loadThreads(true)
         </div>
       </div>
     </header>
+
+    <div v-if="contact && contact.bucket === 'quarantine'" class="quarantine-warning">
+      This contact is in quarantine. Their emails will be automatically deleted after 30 days.
+      Move them to another bucket to keep their emails.
+    </div>
 
     <div v-if="error" class="error">{{ error }}</div>
 
@@ -256,6 +262,17 @@ loadThreads(true)
 .bucket-btn.active {
   background: var(--btn-color);
   color: #fff;
+}
+
+.quarantine-warning {
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #92400e;
+  line-height: 1.5;
 }
 
 .loading,

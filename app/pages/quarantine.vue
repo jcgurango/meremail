@@ -1,24 +1,26 @@
 <script setup lang="ts">
-useHead({ title: 'Feed - MereMail' })
+useHead({ title: 'Quarantine - MereMail' })
 </script>
 
 <template>
   <div class="page">
     <header class="header">
-      <h1>Feed</h1>
+      <h1>Quarantine</h1>
       <nav class="tab-nav">
         <NuxtLink to="/" class="tab-pill">Inbox</NuxtLink>
-        <NuxtLink to="/feed" class="tab-pill active">Feed</NuxtLink>
+        <NuxtLink to="/feed" class="tab-pill">Feed</NuxtLink>
         <NuxtLink to="/paper-trail" class="tab-pill">Paper Trail</NuxtLink>
-        <NuxtLink to="/quarantine" class="tab-pill">Quarantine</NuxtLink>
+        <NuxtLink to="/quarantine" class="tab-pill active">Quarantine</NuxtLink>
       </nav>
     </header>
 
+    <div class="quarantine-warning">
+      Emails in quarantine will be automatically deleted after 30 days.
+      To keep an email, move the sender to another bucket.
+    </div>
+
     <main class="main">
-      <BucketFeed
-        bucket="feed"
-        empty-message="No feed emails yet. Mark contacts as &quot;Feed&quot; in the Screener."
-      />
+      <ThreadList bucket="quarantine" empty-message="No quarantined threads" />
     </main>
 
     <BottomNav />
@@ -70,6 +72,17 @@ useHead({ title: 'Feed - MereMail' })
   background: #1a1a1a;
   border-color: #1a1a1a;
   color: #fff;
+}
+
+.quarantine-warning {
+  margin: 16px 20px;
+  padding: 12px 16px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #92400e;
+  line-height: 1.5;
 }
 
 .main {

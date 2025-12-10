@@ -10,6 +10,7 @@ useHead({ title: 'Paper Trail - MereMail' })
         <NuxtLink to="/" class="tab-pill">Inbox</NuxtLink>
         <NuxtLink to="/feed" class="tab-pill">Feed</NuxtLink>
         <NuxtLink to="/paper-trail" class="tab-pill active">Paper Trail</NuxtLink>
+        <NuxtLink to="/quarantine" class="tab-pill">Quarantine</NuxtLink>
       </nav>
     </header>
 
@@ -45,6 +46,7 @@ useHead({ title: 'Paper Trail - MereMail' })
 .tab-nav {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .tab-pill {

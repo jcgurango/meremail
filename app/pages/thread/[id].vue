@@ -43,7 +43,7 @@ useHead({ title: pageTitle })
 <template>
   <div class="thread-view">
     <header class="header">
-      <NuxtLink to="/" class="back-link">&larr; Back</NuxtLink>
+      <NuxtLink to="/" class="back-link" @click.prevent="$router.back()">&larr; Back</NuxtLink>
       <h1 v-if="thread">{{ thread.subject }}</h1>
     </header>
 
