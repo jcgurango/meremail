@@ -193,6 +193,7 @@ function onDraftSaved(draftId: number) {
                   contentHtml: email.contentHtml,
                   sender: email.sender,
                   recipients: email.recipients.map(r => ({ id: r.id, email: r.email, name: r.name, role: r.role || 'to' })),
+                  attachments: email.attachments,
                 }"
                 :default-from-id="thread.defaultFromId || undefined"
                 @close="closeComposer"

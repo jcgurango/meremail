@@ -56,6 +56,12 @@ export const config = {
     // Set to empty string to disable proxying
     urlTemplate: envStr('IMAGE_PROXY_URL', 'https://images.weserv.nl/?url={url}'),
   },
+  uploads: {
+    // Maximum file size in bytes (default 20MB)
+    maxSize: envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024),
+    // Directory for uploaded files
+    path: envStr('UPLOADS_PATH', './data/uploads'),
+  },
 } as const
 
 export type Config = typeof config

@@ -109,4 +109,38 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 600;
 }
+
+/* Mobile: icons only */
+@media (max-width: 480px) {
+  .bottom-nav {
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .nav-pill {
+    padding: 12px;
+    border-radius: 50%;
+  }
+
+  .nav-label {
+    display: none;
+  }
+
+  .nav-icon {
+    font-size: 18px;
+  }
+
+  .nav-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  .nav-pill.contacts {
+    position: relative;
+  }
+}
 </style>

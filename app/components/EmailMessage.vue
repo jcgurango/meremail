@@ -48,7 +48,7 @@ const showHeaders = ref(false)
 
 // Quote detection patterns (for hiding previously-seen quoted replies, NOT forwarded content)
 const QUOTE_PATTERNS = [
-  /On\s+.{1,150}\s+wrote:\s*/i,
+  /On\s+.{1,250}\s+wrote:\s*/i,
   /From:\s*[^\n]+\n\s*(Sent|Date):\s*[^\n]+\n\s*(To|Subject):/i,
   /Am\s+.{1,100}\s+schrieb\s+.{1,100}:/i,
 ]
