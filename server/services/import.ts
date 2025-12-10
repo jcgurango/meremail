@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
-import { eq, or, inArray } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { db } from '../db'
 import {
   emails,
@@ -8,7 +8,6 @@ import {
   contacts,
   emailContacts,
   emailThreadContacts,
-  senderAddresses,
   attachments,
 } from '../db/schema'
 import type { FetchedEmail } from './imap'
@@ -51,49 +50,39 @@ function parseEmailAddress(addr: { address?: string; name?: string } | string | 
 /**
  * Find or create a contact by email
  */
-async function findOrCreateContact(email: string, name?: string): Promise<number> {
+function findOrCreateContact(email: string, name?: string, isMe: boolean = false): number {
   const existing = db.select().from(contacts).where(eq(contacts.email, email)).get()
 
   if (existing) {
-    // Update name if we have one and the existing doesn't
-    if (name && !existing.name) {
-      db.update(contacts).set({ name }).where(eq(contacts.id, existing.id)).run()
+    // Update name if we have one and the existing doesn't, or upgrade to isMe
+    if ((name && !existing.name) || (isMe && !existing.isMe)) {
+      db.update(contacts)
+        .set({
+          name: name || existing.name,
+          isMe: isMe || existing.isMe,
+        })
+        .where(eq(contacts.id, existing.id))
+        .run()
     }
     return existing.id
   }
 
-  const result = db.insert(contacts).values({ email, name }).returning({ id: contacts.id }).get()
-  return result.id
-}
-
-/**
- * Check if an email address is one of our sender addresses
- */
-async function isSenderAddress(email: string): Promise<boolean> {
-  const existing = db.select().from(senderAddresses).where(eq(senderAddresses.email, email)).get()
-  return !!existing
-}
-
-/**
- * Auto-create sender address if we received email to an unknown address
- */
-async function ensureSenderAddress(email: string, name?: string): Promise<void> {
-  const existing = db.select().from(senderAddresses).where(eq(senderAddresses.email, email)).get()
-  if (!existing) {
-    db.insert(senderAddresses).values({ email, name: name || email }).run()
-    console.log(`  Auto-created sender address: ${name || email} <${email}>`)
+  const result = db.insert(contacts).values({ email, name, isMe }).returning({ id: contacts.id }).get()
+  if (isMe) {
+    console.log(`  Auto-created my contact: ${name || email} <${email}>`)
   }
+  return result.id
 }
 
 /**
  * Find existing thread by message references or subject
  */
-async function findThread(
+function findThread(
   messageId: string | undefined,
   inReplyTo: string | undefined,
   references: string[],
   normalizedSubject: string
-): Promise<number | null> {
+): number | null {
   // First, try to find by In-Reply-To or References
   const refIds = [inReplyTo, ...references].filter(Boolean) as string[]
 
@@ -122,7 +111,7 @@ async function findThread(
 /**
  * Create a new thread
  */
-async function createThread(subject: string): Promise<number> {
+function createThread(subject: string): number {
   const result = db
     .insert(emailThreads)
     .values({ subject })
@@ -134,7 +123,7 @@ async function createThread(subject: string): Promise<number> {
 /**
  * Save attachment to disk and create database record
  */
-async function saveAttachment(
+function saveAttachment(
   emailId: number,
   attachment: {
     filename?: string
@@ -142,7 +131,7 @@ async function saveAttachment(
     size?: number
     content?: Buffer
   }
-): Promise<void> {
+): void {
   const filename = attachment.filename || `attachment_${Date.now()}`
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
   const filePath = join(ATTACHMENTS_DIR, `${emailId}_${safeFilename}`)
@@ -196,12 +185,12 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       : []
 
   // Find or create thread
-  let threadId = await findThread(messageId, inReplyTo, references, normalizedSubject)
+  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject)
   if (!threadId) {
-    threadId = await createThread(normalizedSubject)
+    threadId = createThread(normalizedSubject)
   }
 
-  // Process From address
+  // Process From address - this is the sender
   const fromAddr = parsed.from?.value?.[0]
   const fromParsed = parseEmailAddress(fromAddr)
 
@@ -211,9 +200,9 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   // For received emails: use "Delivered-To" header to find our address
   // For sent emails: "From" is our address
   if (isSentFolder) {
-    // We sent this email - ensure our "From" address is a sender address
+    // We sent this email - mark "From" as our contact
     if (fromParsed) {
-      await ensureSenderAddress(fromParsed.email, fromParsed.name)
+      findOrCreateContact(fromParsed.email, fromParsed.name, true)
     }
   } else {
     // We received this email - "Delivered-To" header tells us which address received it
@@ -222,9 +211,23 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
     if (deliveredToAddr) {
       const deliveredToParsed = parseEmailAddress(deliveredToAddr)
       if (deliveredToParsed) {
-        await ensureSenderAddress(deliveredToParsed.email, deliveredToParsed.name)
+        findOrCreateContact(deliveredToParsed.email, deliveredToParsed.name, true)
       }
     }
+  }
+
+  // Get or create sender contact (always create, whether it's us or someone else)
+  let senderId: number
+  if (fromParsed) {
+    // Check if this is one of our addresses
+    const existingMe = db.select().from(contacts)
+      .where(eq(contacts.email, fromParsed.email))
+      .get()
+    const isMe = existingMe?.isMe || isSentFolder
+    senderId = findOrCreateContact(fromParsed.email, fromParsed.name, isMe)
+  } else {
+    // No from address - create unknown sender
+    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false)
   }
 
   // Get email content (prefer text, fall back to html)
@@ -235,12 +238,15 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
     .insert(emails)
     .values({
       threadId,
+      senderId,
       messageId,
       inReplyTo,
       references,
       folder,
       subject,
-      headers: parsed.headers ? Object.fromEntries(parsed.headers) : {},
+      headers: parsed.headers ? Object.fromEntries(
+        Array.from(parsed.headers.entries()).map(([k, v]) => [k, String(v)])
+      ) : {},
       content,
       sentAt: parsed.date,
       receivedAt: new Date(),
@@ -250,58 +256,44 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
 
   const emailId = emailResult.id
 
-  // Create contact for sender and link to email
-  if (fromParsed) {
-    const isSender = await isSenderAddress(fromParsed.email)
-    if (!isSender) {
-      const contactId = await findOrCreateContact(fromParsed.email, fromParsed.name)
-      db.insert(emailContacts).values({ emailId, contactId, role: 'from' }).run()
+  // Link sender to email
+  db.insert(emailContacts).values({ emailId, contactId: senderId, role: 'from' }).onConflictDoNothing().run()
 
-      // Also link to thread
-      const existingThreadContact = db
-        .select()
-        .from(emailThreadContacts)
-        .where(eq(emailThreadContacts.threadId, threadId))
-        .where(eq(emailThreadContacts.contactId, contactId))
-        .where(eq(emailThreadContacts.role, 'sender'))
-        .get()
-
-      if (!existingThreadContact) {
-        db.insert(emailThreadContacts).values({ threadId, contactId, role: 'sender' }).run()
-      }
-    }
-  }
+  // Link sender to thread
+  db.insert(emailThreadContacts).values({ threadId, contactId: senderId, role: 'sender' }).onConflictDoNothing().run()
 
   // Create contacts for recipients and link to email
+  // Helper to extract addresses from AddressObject | AddressObject[] | undefined
   type AddressList = { address?: string; name?: string }[]
+  const getAddresses = (field: typeof parsed.to): AddressList => {
+    if (!field) return []
+    if (Array.isArray(field)) {
+      return field.flatMap(f => f.value || [])
+    }
+    return field.value || []
+  }
+
   const recipientTypes: Array<{ addrs: AddressList; role: 'to' | 'cc' | 'bcc' }> = [
-    { addrs: parsed.to?.value || [], role: 'to' },
-    { addrs: parsed.cc?.value || [], role: 'cc' },
-    { addrs: parsed.bcc?.value || [], role: 'bcc' },
+    { addrs: getAddresses(parsed.to), role: 'to' },
+    { addrs: getAddresses(parsed.cc), role: 'cc' },
+    { addrs: getAddresses(parsed.bcc), role: 'bcc' },
   ]
 
   for (const { addrs, role } of recipientTypes) {
     for (const addr of addrs) {
       const addrParsed = parseEmailAddress(addr)
       if (addrParsed) {
-        const isSender = await isSenderAddress(addrParsed.email)
-        if (!isSender) {
-          const contactId = await findOrCreateContact(addrParsed.email, addrParsed.name)
-          db.insert(emailContacts).values({ emailId, contactId, role }).run()
+        // Check if this is one of our addresses
+        const existingMe = db.select().from(contacts)
+          .where(eq(contacts.email, addrParsed.email))
+          .get()
+        const isMe = existingMe?.isMe || false
 
-          // Also link to thread as recipient
-          const existingThreadContact = db
-            .select()
-            .from(emailThreadContacts)
-            .where(eq(emailThreadContacts.threadId, threadId))
-            .where(eq(emailThreadContacts.contactId, contactId))
-            .where(eq(emailThreadContacts.role, 'recipient'))
-            .get()
+        const contactId = findOrCreateContact(addrParsed.email, addrParsed.name, isMe)
+        db.insert(emailContacts).values({ emailId, contactId, role }).onConflictDoNothing().run()
 
-          if (!existingThreadContact) {
-            db.insert(emailThreadContacts).values({ threadId, contactId, role: 'recipient' }).run()
-          }
-        }
+        // Also link to thread as recipient
+        db.insert(emailThreadContacts).values({ threadId, contactId, role: 'recipient' }).onConflictDoNothing().run()
       }
     }
   }
@@ -309,7 +301,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   // Save attachments
   if (parsed.attachments && parsed.attachments.length > 0) {
     for (const attachment of parsed.attachments) {
-      await saveAttachment(emailId, attachment)
+      saveAttachment(emailId, attachment)
     }
   }
 

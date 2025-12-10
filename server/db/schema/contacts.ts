@@ -6,6 +6,7 @@ export const contacts = sqliteTable('contacts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name'),
   email: text('email').notNull().unique(),
+  isMe: integer('is_me', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 

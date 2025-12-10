@@ -4,6 +4,7 @@ import { emailThreads } from './email-threads'
 export const emails = sqliteTable('emails', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   threadId: integer('thread_id').notNull().references(() => emailThreads.id),
+  senderId: integer('sender_id').notNull(),
   messageId: text('message_id').unique(),
   inReplyTo: text('in_reply_to'),
   references: text('references', { mode: 'json' }).$type<string[]>(),
