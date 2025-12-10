@@ -33,6 +33,15 @@ function normalizeSubject(subject: string): string {
 }
 
 /**
+ * Check if a name is just derived from the email's local part
+ * e.g., "mecsagcal" from "mecsagcal@yahoo.com" - not a real name
+ */
+function isNameJustEmailLocalPart(name: string, email: string): boolean {
+  const localPart = email.split('@')[0]?.toLowerCase()
+  return localPart === name.toLowerCase()
+}
+
+/**
  * Parse email address from string like "Name <email@example.com>" or just "email@example.com"
  */
 function parseEmailAddress(addr: { address?: string; name?: string } | string | undefined): {
@@ -44,14 +53,21 @@ function parseEmailAddress(addr: { address?: string; name?: string } | string | 
   if (typeof addr === 'string') {
     const match = addr.match(/<([^>]+)>/)
     if (match) {
-      const name = addr.replace(/<[^>]+>/, '').trim() || undefined
-      return { email: match[1].toLowerCase(), name }
+      const rawName = addr.replace(/<[^>]+>/, '').trim() || undefined
+      const email = match[1].toLowerCase()
+      // Treat name as undefined if it's just the email's local part
+      const name = rawName && isNameJustEmailLocalPart(rawName, email) ? undefined : rawName
+      return { email, name }
     }
     return { email: addr.toLowerCase(), name: undefined }
   }
 
   if (!addr.address) return null
-  return { email: addr.address.toLowerCase(), name: addr.name || undefined }
+  const email = addr.address.toLowerCase()
+  const rawName = addr.name || undefined
+  // Treat name as undefined if it's just the email's local part
+  const name = rawName && isNameJustEmailLocalPart(rawName, email) ? undefined : rawName
+  return { email, name }
 }
 
 /**
@@ -61,11 +77,16 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
   const existing = db.select().from(contacts).where(eq(contacts.email, email)).get()
 
   if (existing) {
-    // Update name if we have one and the existing doesn't, or upgrade to isMe
-    if ((name && !existing.name) || (isMe && !existing.isMe)) {
+    // Update name if:
+    // 1. We have a name and the existing doesn't, OR
+    // 2. The existing name equals the email (placeholder) but we now have a real name
+    const existingNameIsPlaceholder = existing.name === existing.email
+    const shouldUpdateName = name && (!existing.name || existingNameIsPlaceholder)
+
+    if (shouldUpdateName || (isMe && !existing.isMe)) {
       db.update(contacts)
         .set({
-          name: name || existing.name,
+          name: shouldUpdateName ? name : existing.name,
           isMe: isMe || existing.isMe,
         })
         .where(eq(contacts.id, existing.id))
