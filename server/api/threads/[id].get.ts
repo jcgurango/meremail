@@ -33,6 +33,7 @@ export default defineEventHandler(async (event) => {
       receivedAt: emails.receivedAt,
       isRead: emails.isRead,
       senderId: emails.senderId,
+      headers: emails.headers,
     })
     .from(emails)
     .where(eq(emails.threadId, id))
@@ -68,8 +69,10 @@ export default defineEventHandler(async (event) => {
       const sanitized = sanitizeEmailHtml(email.contentHtml)
       const withCidReplaced = replaceCidReferences(sanitized, email.id)
       content = proxyImagesInHtml(withCidReplaced)
-    } else {
+    } else if (email.contentText?.trim()) {
       content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
+    } else {
+      content = ''
     }
 
     // Get non-inline attachments for this email (inline ones are embedded in HTML)
@@ -86,6 +89,15 @@ export default defineEventHandler(async (event) => {
       .all()
       .filter((a) => !a.isInline)
 
+    // Extract Reply-To from headers if present
+    const headers = email.headers as Record<string, string> | null
+    const replyToRaw = headers?.['reply-to']
+    let replyTo: string | null = null
+    if (replyToRaw) {
+      // reply-to header can be in various formats, extract just the email/name
+      replyTo = replyToRaw
+    }
+
     return {
       id: email.id,
       subject: email.subject,
@@ -96,6 +108,8 @@ export default defineEventHandler(async (event) => {
       sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
       recipients,
       attachments: emailAttachments,
+      replyTo,
+      headers,
     }
   })
 

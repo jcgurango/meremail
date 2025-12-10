@@ -24,6 +24,8 @@ interface Email {
   sender: Participant | null
   recipients: Participant[]
   attachments: Attachment[]
+  replyTo?: string | null
+  headers?: Record<string, string> | null
 }
 
 const props = defineProps<{
@@ -32,6 +34,9 @@ const props = defineProps<{
 
 // Track whether quoted content is expanded
 const showQuoted = ref(false)
+
+// Track whether headers panel is visible
+const showHeaders = ref(false)
 
 // Quote detection patterns (for hiding previously-seen quoted replies, NOT forwarded content)
 const QUOTE_PATTERNS = [
@@ -95,14 +100,17 @@ const splitContent = computed<SplitContent>(() => {
   return splitInnerContent(content)
 })
 
-function getSenderDisplay(sender: Participant | null): string {
-  if (!sender) return 'Unknown'
-  if (sender.isMe) return 'Me'
-  return sender.name || sender.email.split('@')[0]
+function getParticipantDisplay(participant: Participant | null, showEmail: boolean = true): string {
+  if (!participant) return 'Unknown'
+  const displayName = participant.isMe ? 'Me' : (participant.name || participant.email.split('@')[0])
+  if (showEmail && participant.email) {
+    return `${displayName} <${participant.email}>`
+  }
+  return displayName
 }
 
-function getToRecipients(recipients: Participant[]): Participant[] {
-  return recipients.filter(r => r.role === 'to')
+function getRecipientsByRole(recipients: Participant[], role: string): Participant[] {
+  return recipients.filter(r => r.role === role)
 }
 
 function formatDateTime(dateStr: string | null): string {
@@ -160,25 +168,68 @@ function formatFileSize(bytes: number | null): string {
   <article class="email">
     <div class="email-header">
       <div class="email-meta">
-        <NuxtLink
-          v-if="email.sender"
-          :to="`/contact/${email.sender.id}`"
-          class="email-sender contact-link"
-        >
-          {{ getSenderDisplay(email.sender) }}
-        </NuxtLink>
-        <span v-else class="email-sender">Unknown</span>
-        <span v-if="getToRecipients(email.recipients).length" class="email-recipients">
-          to
-          <template v-for="(recipient, idx) in getToRecipients(email.recipients)" :key="recipient.id">
+        <div class="email-from-line">
+          <NuxtLink
+            v-if="email.sender"
+            :to="`/contact/${email.sender.id}`"
+            class="email-sender contact-link"
+          >
+            {{ getParticipantDisplay(email.sender) }}
+          </NuxtLink>
+          <span v-else class="email-sender">Unknown</span>
+          <button
+            class="headers-toggle"
+            :class="{ active: showHeaders }"
+            @click="showHeaders = !showHeaders"
+            title="Show email headers"
+          >
+            ⓘ
+          </button>
+        </div>
+        <div v-if="getRecipientsByRole(email.recipients, 'to').length" class="email-recipients">
+          <span class="recipient-label">To:</span>
+          <template v-for="(recipient, idx) in getRecipientsByRole(email.recipients, 'to')" :key="recipient.id">
             <NuxtLink :to="`/contact/${recipient.id}`" class="contact-link">
-              {{ recipient.isMe ? 'me' : (recipient.name || recipient.email.split('@')[0]) }}
+              {{ getParticipantDisplay(recipient) }}
             </NuxtLink>
-            <span v-if="idx < getToRecipients(email.recipients).length - 1">, </span>
+            <span v-if="idx < getRecipientsByRole(email.recipients, 'to').length - 1">, </span>
           </template>
-        </span>
+        </div>
+        <div v-if="getRecipientsByRole(email.recipients, 'cc').length" class="email-recipients">
+          <span class="recipient-label">Cc:</span>
+          <template v-for="(recipient, idx) in getRecipientsByRole(email.recipients, 'cc')" :key="recipient.id">
+            <NuxtLink :to="`/contact/${recipient.id}`" class="contact-link">
+              {{ getParticipantDisplay(recipient) }}
+            </NuxtLink>
+            <span v-if="idx < getRecipientsByRole(email.recipients, 'cc').length - 1">, </span>
+          </template>
+        </div>
+        <div v-if="getRecipientsByRole(email.recipients, 'bcc').length" class="email-recipients">
+          <span class="recipient-label">Bcc:</span>
+          <template v-for="(recipient, idx) in getRecipientsByRole(email.recipients, 'bcc')" :key="recipient.id">
+            <NuxtLink :to="`/contact/${recipient.id}`" class="contact-link">
+              {{ getParticipantDisplay(recipient) }}
+            </NuxtLink>
+            <span v-if="idx < getRecipientsByRole(email.recipients, 'bcc').length - 1">, </span>
+          </template>
+        </div>
+        <div v-if="email.replyTo" class="email-recipients">
+          <span class="recipient-label">Reply-To:</span>
+          <span class="reply-to-value">{{ email.replyTo }}</span>
+        </div>
       </div>
       <time class="email-date">{{ formatDateTime(email.sentAt) }}</time>
+    </div>
+
+    <!-- Headers panel -->
+    <div v-if="showHeaders && email.headers" class="headers-panel">
+      <div class="headers-title">Email Headers</div>
+      <dl class="headers-list">
+        <template v-for="(value, key) in email.headers" :key="key">
+          <dt>{{ key }}</dt>
+          <dd>{{ value }}</dd>
+        </template>
+      </dl>
     </div>
 
     <ClientOnly>
@@ -256,22 +307,46 @@ function formatFileSize(bytes: number | null): string {
 .email-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 12px;
 }
 
 .email-meta {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.email-from-line {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
 }
 
 .email-sender {
   font-weight: 600;
   font-size: 14px;
   color: #1a1a1a;
+}
+
+.headers-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 14px;
+  color: #999;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.headers-toggle:hover,
+.headers-toggle.active {
+  opacity: 1;
+  color: #666;
 }
 
 .contact-link {
@@ -286,12 +361,60 @@ function formatFileSize(bytes: number | null): string {
 .email-recipients {
   font-size: 13px;
   color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recipient-label {
+  color: #999;
+  margin-right: 4px;
+}
+
+.reply-to-value {
+  color: #666;
 }
 
 .email-date {
   font-size: 12px;
   color: #999;
   flex-shrink: 0;
+}
+
+.headers-panel {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.headers-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #666;
+}
+
+.headers-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.headers-list dt {
+  font-weight: 500;
+  color: #666;
+  word-break: break-word;
+}
+
+.headers-list dd {
+  margin: 0;
+  color: #333;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
 }
 
 .email-body {
