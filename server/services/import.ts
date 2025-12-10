@@ -213,7 +213,7 @@ function saveAttachment(
  * Import a single email
  */
 export async function importEmail(fetched: FetchedEmail): Promise<{ imported: boolean; reason?: string }> {
-  const { parsed, folder } = fetched
+  const { parsed, folder, flags } = fetched
   const messageId = parsed.messageId
 
   // Skip if already imported
@@ -285,8 +285,8 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   const contentHtml = parsed.html || null
 
   // Insert email
-  // Sent emails are automatically marked as read
-  const isRead = isSentFolder
+  // Use IMAP \Seen flag for read state, or mark as read if from sent folder
+  const isRead = flags.has('\\Seen') || isSentFolder
 
   const emailResult = db
     .insert(emails)

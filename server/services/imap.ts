@@ -7,6 +7,7 @@ export interface FetchedEmail {
   folder: string
   parsed: ParsedMail
   raw: Buffer
+  flags: Set<string>
 }
 
 export async function createImapClient(): Promise<ImapFlow> {
@@ -42,6 +43,7 @@ export async function* fetchEmails(
       uid: true,
       envelope: true,
       source: true,
+      flags: true,
     })
 
     for await (const message of messages) {
@@ -54,6 +56,7 @@ export async function* fetchEmails(
         folder,
         parsed,
         raw,
+        flags: message.flags,
       }
     }
   } finally {
