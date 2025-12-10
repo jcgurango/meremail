@@ -1,0 +1,1 @@
+ALTER TABLE `contacts` ADD `bucket` text;

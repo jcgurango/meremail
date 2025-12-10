@@ -15,6 +15,13 @@
       "when": 1765364085360,
       "tag": "0001_rapid_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1765378953000,
+      "tag": "0002_windy_korath",
+      "breakpoints": true
     }
   ]
 }

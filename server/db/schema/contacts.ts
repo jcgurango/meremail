@@ -7,6 +7,7 @@ export const contacts = sqliteTable('contacts', {
   name: text('name'),
   email: text('email').notNull().unique(),
   isMe: integer('is_me', { mode: 'boolean' }).notNull().default(false),
+  bucket: text('bucket', { enum: ['approved', 'feed', 'paper_trail', 'blocked'] }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 

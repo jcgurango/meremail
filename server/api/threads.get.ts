@@ -1,4 +1,4 @@
-import { eq, desc, sql, and } from 'drizzle-orm'
+import { eq, desc, sql, and, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, emailThreads, contacts, emailThreadContacts } from '../db/schema'
 
@@ -26,6 +26,8 @@ export default defineEventHandler(async (event) => {
   const offset = parseInt(query.offset as string) || 0
 
   // Get threads with unread emails, ordered by latest email date
+  // Filter out threads created by unscreened (null bucket) or blocked contacts
+  // Thread creator = sender of the first (earliest) email in the thread
   const threadsWithUnread = db
     .select({
       id: emailThreads.id,
@@ -37,6 +39,16 @@ export default defineEventHandler(async (event) => {
     })
     .from(emailThreads)
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
+    .where(
+      // Filter: thread creator must be screened (has bucket) and not blocked
+      sql`(
+        SELECT c.bucket FROM emails e
+        INNER JOIN contacts c ON c.id = e.sender_id
+        WHERE e.thread_id = ${emailThreads.id}
+        ORDER BY e.sent_at ASC
+        LIMIT 1
+      ) = 'approved'`
+    )
     .groupBy(emailThreads.id)
     .having(unreadOnly ? sql`unread_count > 0` : sql`1=1`)
     .orderBy(desc(sql`latest_email_at`))
@@ -62,14 +74,18 @@ export default defineEventHandler(async (event) => {
       .where(eq(emailThreadContacts.threadId, thread.id))
       .all()
 
-    // Get snippet from latest email - prefer text, fall back to stripped HTML
+    // Get snippet from latest email not from us - prefer text, fall back to stripped HTML
     const latestEmail = db
       .select({
         contentText: emails.contentText,
         contentHtml: emails.contentHtml,
       })
       .from(emails)
-      .where(eq(emails.threadId, thread.id))
+      .innerJoin(contacts, eq(contacts.id, emails.senderId))
+      .where(and(
+        eq(emails.threadId, thread.id),
+        eq(contacts.isMe, false)
+      ))
       .orderBy(desc(emails.sentAt))
       .limit(1)
       .get()

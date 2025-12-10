@@ -81,6 +81,7 @@ function getParticipantDisplay(participants: Thread['participants']): string {
     <header class="header">
       <h1>MereMail</h1>
       <nav class="nav">
+        <NuxtLink to="/screener" class="nav-link">Screener</NuxtLink>
         <NuxtLink to="/attachments" class="nav-link">Attachments</NuxtLink>
       </nav>
     </header>
@@ -143,6 +144,11 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   font-weight: 600;
   letter-spacing: -0.02em;
   margin: 0;
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
 }
 
 .nav-link {
