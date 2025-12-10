@@ -90,7 +90,7 @@ export default defineEventHandler(async (event) => {
       sql`${emails.threadId} IN (${sql.join(threadIds.map(id => sql`${id}`), sql`, `)})
       AND (${emails.senderId} = ${id} OR ${emailContacts.contactId} = ${id})`
     )
-    .orderBy(asc(emails.sentAt))
+    .orderBy(desc(emails.sentAt))
 
   // Get all senders
   const senderIds = [...new Set(emailResults.map(e => e.senderId).filter(Boolean))] as number[]

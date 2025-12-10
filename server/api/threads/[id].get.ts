@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     })
     .from(emails)
     .where(eq(emails.threadId, id))
-    .orderBy(emails.sentAt)
+    .orderBy(desc(emails.sentAt))
     .all()
 
   // Get sender info and recipients for each email

@@ -18,6 +18,7 @@ interface Email {
   id: number
   subject: string
   content: string
+  contentText?: string
   sentAt: string | null
   receivedAt: string | null
   isRead: boolean
@@ -26,10 +27,17 @@ interface Email {
   attachments: Attachment[]
   replyTo?: string | null
   headers?: Record<string, string> | null
+  messageId?: string | null
+  references?: string[] | null
 }
 
 const props = defineProps<{
   email: Email
+  showReplyButtons?: boolean
+}>()
+
+const emit = defineEmits<{
+  reply: [emailId: number, replyAll: boolean]
 }>()
 
 // Track whether quoted content is expanded
@@ -218,7 +226,32 @@ function formatFileSize(bytes: number | null): string {
           <span class="reply-to-value">{{ email.replyTo }}</span>
         </div>
       </div>
-      <time class="email-date">{{ formatDateTime(email.sentAt) }}</time>
+      <div class="email-date-actions">
+        <time class="email-date">{{ formatDateTime(email.sentAt) }}</time>
+        <div v-if="showReplyButtons" class="reply-icons">
+          <button
+            class="reply-icon-btn"
+            title="Reply"
+            @click="emit('reply', email.id, false)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 17 4 12 9 7"></polyline>
+              <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
+            </svg>
+          </button>
+          <button
+            class="reply-icon-btn"
+            title="Reply All"
+            @click="emit('reply', email.id, true)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="7 17 2 12 7 7"></polyline>
+              <polyline points="12 17 7 12 12 7"></polyline>
+              <path d="M22 18v-2a4 4 0 0 0-4-4H7"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Headers panel -->
@@ -376,10 +409,40 @@ function formatFileSize(bytes: number | null): string {
   color: #666;
 }
 
+.email-date-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .email-date {
   font-size: 12px;
   color: #999;
-  flex-shrink: 0;
+}
+
+.reply-icons {
+  display: flex;
+  gap: 4px;
+}
+
+.reply-icon-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #999;
+  border-radius: 4px;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reply-icon-btn:hover {
+  color: #000;
+  background: #f0f0f0;
 }
 
 .headers-panel {

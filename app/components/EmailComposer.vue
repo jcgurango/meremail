@@ -20,6 +20,7 @@ interface OriginalEmail {
   contentText: string
   messageId?: string
   references?: string[]
+  replyTo?: string | null
 }
 
 const props = defineProps<{
@@ -77,6 +78,25 @@ async function loadMeContacts() {
   }
 }
 
+// Parse Reply-To header string into recipients
+// Format: "Name <email>" or "email@domain.com" or "Name <email>, Other <other@email.com>"
+function parseReplyTo(replyTo: string): Recipient[] {
+  const recipients: Recipient[] = []
+  // Match patterns like "Name <email>" or just "email@domain.com"
+  const regex = /(?:([^<,]+?)\s*<([^>]+)>|([^\s,<>]+@[^\s,<>]+))/g
+  let match
+  while ((match = regex.exec(replyTo)) !== null) {
+    if (match[2]) {
+      // "Name <email>" format
+      recipients.push({ email: match[2].trim(), name: match[1]?.trim() || null })
+    } else if (match[3]) {
+      // Plain email format
+      recipients.push({ email: match[3].trim(), name: null })
+    }
+  }
+  return recipients
+}
+
 // Initialize reply data
 function initializeReply() {
   if (!props.originalEmail) return
@@ -87,11 +107,24 @@ function initializeReply() {
   const subjectPrefix = orig.subject.toLowerCase().startsWith('re:') ? '' : 'Re: '
   subject.value = subjectPrefix + orig.subject
 
+  // Check if I sent the original email
+  const iSentOriginal = orig.sender && meContacts.value.some(m => m.id === orig.sender!.id)
+
   // Set recipients based on Reply vs Reply All
-  if (props.replyAll) {
-    // Reply All: To = original sender + original To (except me)
+  if (props.replyAll || iSentOriginal) {
+    // Reply All (or replying to my own email):
+    // To = Reply-To (or sender if not me) + original To (except me)
     // CC = original CC (except me)
-    if (orig.sender && !meContacts.value.some(m => m.id === orig.sender!.id)) {
+
+    // Use Reply-To if available, otherwise use sender (if not me)
+    if (orig.replyTo) {
+      const replyToRecipients = parseReplyTo(orig.replyTo)
+      for (const r of replyToRecipients) {
+        if (!meContacts.value.some(m => m.email === r.email)) {
+          toRecipients.value.push(r)
+        }
+      }
+    } else if (orig.sender && !iSentOriginal) {
       toRecipients.value.push({
         id: orig.sender.id,
         email: orig.sender.email,
@@ -103,7 +136,8 @@ function initializeReply() {
       if (meContacts.value.some(m => m.id === r.id)) continue
 
       if (r.role === 'to') {
-        if (!toRecipients.value.some(t => t.id === r.id)) {
+        // Don't add if already in To from Reply-To
+        if (!toRecipients.value.some(t => t.email === r.email)) {
           toRecipients.value.push({ id: r.id, email: r.email, name: r.name })
         }
       } else if (r.role === 'cc') {
@@ -112,8 +146,15 @@ function initializeReply() {
       }
     }
   } else {
-    // Reply: To = original sender only
-    if (orig.sender) {
+    // Reply: To = Reply-To (or sender)
+    if (orig.replyTo) {
+      const replyToRecipients = parseReplyTo(orig.replyTo)
+      for (const r of replyToRecipients) {
+        if (!meContacts.value.some(m => m.email === r.email)) {
+          toRecipients.value.push(r)
+        }
+      }
+    } else if (orig.sender) {
       toRecipients.value.push({
         id: orig.sender.id,
         email: orig.sender.email,
