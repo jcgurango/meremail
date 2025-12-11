@@ -1,4 +1,4 @@
-import { eq, desc, sql, and, inArray } from 'drizzle-orm'
+import { eq, desc, asc, sql, and, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, emailThreads, contacts, emailThreadContacts } from '../db/schema'
 
@@ -26,16 +26,30 @@ export default defineEventHandler(async (event) => {
   const bucket = (query.bucket as string) || 'approved' // Filter by creator's bucket
   const replyLater = query.replyLater === 'true' // Filter for reply later queue
 
-  // Build where clause based on filter type
+  // Build where clause and order based on filter type
   let whereClause
+  let orderByClause
+
   if (replyLater) {
-    // Reply Later queue: show all threads marked for reply later, regardless of bucket
-    whereClause = sql`${emailThreads.replyLater} = 1`
+    // Reply Later queue: show all threads with replyLaterAt set, sorted by oldest addition first
+    whereClause = isNotNull(emailThreads.replyLaterAt)
+    orderByClause = [
+      asc(emailThreads.replyLaterAt),  // Oldest addition first
+      desc(sql`latest_email_at`)  // Then by latest email date
+    ]
   } else if (bucket === 'approved') {
     // Filter: thread creator must match bucket or is "me"
     whereClause = sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
+    orderByClause = [
+      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads first
+      desc(sql`latest_email_at`)  // Then by latest email date
+    ]
   } else {
     whereClause = sql`${contacts.bucket} = ${bucket}`
+    orderByClause = [
+      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),
+      desc(sql`latest_email_at`)
+    ]
   }
 
   // Get all threads, ordered by: unread first, then by latest email date
@@ -46,7 +60,8 @@ export default defineEventHandler(async (event) => {
       id: emailThreads.id,
       subject: emailThreads.subject,
       createdAt: emailThreads.createdAt,
-      replyLater: emailThreads.replyLater,
+      replyLaterAt: emailThreads.replyLaterAt,
+      setAsideAt: emailThreads.setAsideAt,
       latestEmailAt: sql<number>`MAX(${emails.sentAt})`.as('latest_email_at'),
       unreadCount: sql<number>`SUM(CASE WHEN ${emails.isRead} = 0 THEN 1 ELSE 0 END)`.as('unread_count'),
       totalCount: sql<number>`COUNT(${emails.id})`.as('total_count'),
@@ -56,10 +71,7 @@ export default defineEventHandler(async (event) => {
     .innerJoin(contacts, eq(contacts.id, emailThreads.creatorId))
     .where(whereClause)
     .groupBy(emailThreads.id)
-    .orderBy(
-      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads first
-      desc(sql`latest_email_at`)  // Then by latest email date
-    )
+    .orderBy(...orderByClause)
     .limit(limit + 1)  // Fetch one extra to check if there's more
     .offset(offset)
     .all()

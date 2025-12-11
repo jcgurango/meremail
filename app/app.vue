@@ -2,7 +2,7 @@
 const route = useRoute()
 
 const showBottomNav = computed(() => {
-  return ['/', '/reply-later', '/feed', '/paper-trail', '/quarantine'].includes(route.path)
+  return ['/', '/reply-later', '/set-aside', '/feed', '/paper-trail', '/quarantine'].includes(route.path)
 })
 </script>
 

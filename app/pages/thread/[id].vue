@@ -37,7 +37,8 @@ interface Thread {
   id: number
   subject: string
   createdAt: string
-  replyLater: boolean
+  replyLaterAt: string | null
+  setAsideAt: string | null
   emails: Email[]
   defaultFromId: number | null
 }
@@ -147,17 +148,35 @@ const showSendToMenu = ref(false)
 
 async function toggleReplyLater() {
   if (!thread.value) return
-  const newValue = !thread.value.replyLater
+  const newValue = !thread.value.replyLaterAt
 
   try {
     await $fetch(`/api/threads/${thread.value.id}/reply-later`, {
       method: 'PATCH',
       body: { replyLater: newValue }
     })
-    thread.value.replyLater = newValue
+    // Update local state - set to current time or null
+    thread.value.replyLaterAt = newValue ? new Date().toISOString() : null
     showSendToMenu.value = false
   } catch (e) {
     console.error('Failed to update reply later status:', e)
+  }
+}
+
+async function toggleSetAside() {
+  if (!thread.value) return
+  const newValue = !thread.value.setAsideAt
+
+  try {
+    await $fetch(`/api/threads/${thread.value.id}/set-aside`, {
+      method: 'PATCH',
+      body: { setAside: newValue }
+    })
+    // Update local state - set to current time or null
+    thread.value.setAsideAt = newValue ? new Date().toISOString() : null
+    showSendToMenu.value = false
+  } catch (e) {
+    console.error('Failed to update set aside status:', e)
   }
 }
 
@@ -174,7 +193,7 @@ async function toggleReplyLater() {
           <div class="send-to-wrapper">
             <button
               class="send-to-btn"
-              :class="{ active: thread.replyLater }"
+              :class="{ active: thread.replyLaterAt || thread.setAsideAt }"
               @click="showSendToMenu = !showSendToMenu"
             >
               Send to
@@ -182,8 +201,12 @@ async function toggleReplyLater() {
             </button>
             <div v-if="showSendToMenu" class="send-to-menu">
               <button class="menu-item" @click="toggleReplyLater">
-                <span class="menu-check">{{ thread.replyLater ? '✓' : '' }}</span>
+                <span class="menu-check">{{ thread.replyLaterAt ? '✓' : '' }}</span>
                 Reply Later
+              </button>
+              <button class="menu-item" @click="toggleSetAside">
+                <span class="menu-check">{{ thread.setAsideAt ? '✓' : '' }}</span>
+                Set Aside
               </button>
             </div>
           </div>

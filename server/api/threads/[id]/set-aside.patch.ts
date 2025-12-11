@@ -9,19 +9,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  const replyLater = body?.replyLater
+  const setAside = body?.setAside
 
-  if (typeof replyLater !== 'boolean') {
-    throw createError({ statusCode: 400, message: 'replyLater must be a boolean' })
+  if (typeof setAside !== 'boolean') {
+    throw createError({ statusCode: 400, message: 'setAside must be a boolean' })
   }
 
   // Update the thread - set timestamp when adding, null when removing
-  const replyLaterAt = replyLater ? new Date() : null
+  const setAsideAt = setAside ? new Date() : null
 
   db.update(emailThreads)
-    .set({ replyLaterAt })
+    .set({ setAsideAt })
     .where(eq(emailThreads.id, id))
     .run()
 
-  return { success: true, replyLater, replyLaterAt }
+  return { success: true, setAside, setAsideAt }
 })

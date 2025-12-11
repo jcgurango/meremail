@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, isNotNull } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, contacts, emailThreads } from '../db/schema'
 
@@ -6,7 +6,7 @@ export default defineEventHandler(async () => {
   // Get unread counts per bucket
   // For 'approved' (inbox) and 'quarantine': count unread threads
   // For 'feed' and 'paper_trail': count unread emails from contacts in that bucket
-  // For 'reply_later': count total threads (not unread)
+  // For 'reply_later' and 'set_aside': count total threads (not unread-based)
 
   // Inbox (approved): unread thread count
   const inboxUnread = db
@@ -58,7 +58,14 @@ export default defineEventHandler(async () => {
   const replyLaterCount = db
     .select({ count: sql<number>`COUNT(*)` })
     .from(emailThreads)
-    .where(eq(emailThreads.replyLater, true))
+    .where(isNotNull(emailThreads.replyLaterAt))
+    .get()
+
+  // Set Aside: total thread count (not unread-based)
+  const setAsideCount = db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(emailThreads)
+    .where(isNotNull(emailThreads.setAsideAt))
     .get()
 
   return {
@@ -67,5 +74,6 @@ export default defineEventHandler(async () => {
     paper_trail: paperTrailUnread?.count || 0,
     quarantine: quarantineUnread?.count || 0,
     reply_later: replyLaterCount?.count || 0,
+    set_aside: setAsideCount?.count || 0,
   }
 })

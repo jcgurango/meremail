@@ -200,7 +200,8 @@ export default defineEventHandler(async (event) => {
     id: thread.id,
     subject: thread.subject,
     createdAt: thread.createdAt,
-    replyLater: thread.replyLater,
+    replyLaterAt: thread.replyLaterAt,
+    setAsideAt: thread.setAsideAt,
     emails: emailsWithParticipants,
     defaultFromId,
   }
