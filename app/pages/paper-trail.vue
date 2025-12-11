@@ -6,12 +6,7 @@ useHead({ title: 'Paper Trail - MereMail' })
   <div class="page">
     <header class="header">
       <h1>Paper Trail</h1>
-      <nav class="tab-nav">
-        <NuxtLink to="/" class="tab-pill">Inbox</NuxtLink>
-        <NuxtLink to="/feed" class="tab-pill">Feed</NuxtLink>
-        <NuxtLink to="/paper-trail" class="tab-pill active">Paper Trail</NuxtLink>
-        <NuxtLink to="/quarantine" class="tab-pill">Quarantine</NuxtLink>
-      </nav>
+      <BucketNav />
     </header>
 
     <main class="main">
@@ -39,35 +34,6 @@ useHead({ title: 'Paper Trail - MereMail' })
   font-weight: 600;
   letter-spacing: -0.02em;
   margin: 0 0 16px 0;
-}
-
-.tab-nav {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tab-pill {
-  padding: 8px 16px;
-  border: 1px solid #e5e5e5;
-  border-radius: 20px;
-  background: #fff;
-  font-size: 14px;
-  font-weight: 500;
-  color: #666;
-  text-decoration: none;
-  transition: all 0.15s;
-}
-
-.tab-pill:hover {
-  border-color: #ccc;
-  color: #333;
-}
-
-.tab-pill.active {
-  background: #1a1a1a;
-  border-color: #1a1a1a;
-  color: #fff;
 }
 
 .main {
