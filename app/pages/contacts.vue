@@ -20,9 +20,15 @@ interface ApiResponse {
   counts: Record<string, number>
 }
 
-// View state from URL
-const activeView = computed(() => (route.query.view as string) || 'all')
+// View state from URL - default to 'contacts' (approved contacts)
+// 'contacts' = approved contacts only (default)
+// 'screener' = unsorted contacts
+// bucket names (approved, feed, paper_trail, blocked, quarantine) = filter within screener mode
+const activeView = computed(() => (route.query.view as string) || 'contacts')
 const searchQuery = ref((route.query.q as string) || '')
+
+// Screener mode: any view that's not 'contacts'
+const isScreenerMode = computed(() => activeView.value !== 'contacts')
 
 const contacts = ref<Contact[]>([])
 const hasMore = ref(false)
@@ -55,13 +61,13 @@ function getBucketColor(bucket: string | null): string {
 
 function updateUrl() {
   const query: Record<string, string> = {}
-  if (activeView.value !== 'all') query.view = activeView.value
+  if (activeView.value !== 'contacts') query.view = activeView.value
   if (searchQuery.value) query.q = searchQuery.value
   router.replace({ query })
 }
 
 function setView(view: string) {
-  router.replace({ query: { ...route.query, view: view === 'all' ? undefined : view } })
+  router.replace({ query: { ...route.query, view: view === 'contacts' ? undefined : view } })
 }
 
 async function loadContacts(reset = false) {
@@ -184,14 +190,14 @@ loadContacts(true)
       <nav class="view-nav">
         <button
           class="view-pill"
-          :class="{ active: activeView === 'all' }"
-          @click="setView('all')"
+          :class="{ active: activeView === 'contacts' }"
+          @click="setView('contacts')"
         >
           Contacts
         </button>
         <button
           class="view-pill"
-          :class="{ active: activeView === 'screener' }"
+          :class="{ active: isScreenerMode }"
           @click="setView('screener')"
         >
           Screener
@@ -209,15 +215,25 @@ loadContacts(true)
       </div>
     </header>
 
-    <div v-if="activeView === 'screener'" class="bucket-counts">
-      <div class="count-item unsorted">
+    <div v-if="isScreenerMode" class="bucket-counts">
+      <button
+        class="count-item"
+        :class="{ active: activeView === 'screener' }"
+        @click="setView('screener')"
+      >
         <span class="count-number">{{ counts.unsorted || 0 }}</span>
         <span class="count-label">Unsorted</span>
-      </div>
-      <div v-for="bucket in buckets.filter(b => b.value !== 'quarantine')" :key="bucket.value" class="count-item">
+      </button>
+      <button
+        v-for="bucket in buckets"
+        :key="bucket.value"
+        class="count-item"
+        :class="{ active: activeView === bucket.value }"
+        @click="setView(bucket.value)"
+      >
         <span class="count-number">{{ counts[bucket.value] || 0 }}</span>
         <span class="count-label">{{ bucket.label }}</span>
-      </div>
+      </button>
     </div>
 
     <div v-if="contacts.length === 0 && !loading" class="empty-state">
@@ -369,9 +385,9 @@ h1 {
 
 .bucket-counts {
   display: flex;
-  gap: 16px;
+  gap: 8px;
   margin-bottom: 24px;
-  padding: 16px;
+  padding: 12px;
   background: #f5f5f5;
   border-radius: 8px;
   flex-wrap: wrap;
@@ -380,24 +396,39 @@ h1 {
 .count-item {
   text-align: center;
   flex: 1;
-  min-width: 60px;
+  min-width: 70px;
+  padding: 8px 4px;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.count-item:hover {
+  background: #fff;
+}
+
+.count-item.active {
+  background: #fff;
+  border-color: #1a1a1a;
 }
 
 .count-number {
   display: block;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
 }
 
 .count-label {
-  font-size: 12px;
+  font-size: 11px;
   color: #666;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
 }
 
-.count-item.unsorted .count-number {
-  color: #000;
+.count-item.active .count-label {
+  color: #1a1a1a;
 }
 
 .empty-state,

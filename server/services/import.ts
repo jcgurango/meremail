@@ -44,6 +44,17 @@ function isNameJustEmailLocalPart(name: string, email: string): boolean {
 /**
  * Parse email address from string like "Name <email@example.com>" or just "email@example.com"
  */
+/**
+ * Strip surrounding quotes from a name (single or double)
+ */
+function cleanName(name: string | undefined): string | undefined {
+  if (!name) return undefined
+  // Trim first, then strip surrounding single or double quotes, then trim again
+  let cleaned = name.trim()
+  cleaned = cleaned.replace(/^["'](.*)["']$/, '$1').trim()
+  return cleaned || undefined
+}
+
 function parseEmailAddress(addr: { address?: string; name?: string } | string | undefined): {
   email: string
   name: string | undefined
@@ -53,7 +64,7 @@ function parseEmailAddress(addr: { address?: string; name?: string } | string | 
   if (typeof addr === 'string') {
     const match = addr.match(/<([^>]+)>/)
     if (match) {
-      const rawName = addr.replace(/<[^>]+>/, '').trim() || undefined
+      const rawName = cleanName(addr.replace(/<[^>]+>/, '').trim()) || undefined
       const email = match[1].toLowerCase()
       // Treat name as undefined if it's just the email's local part
       const name = rawName && isNameJustEmailLocalPart(rawName, email) ? undefined : rawName
@@ -64,7 +75,7 @@ function parseEmailAddress(addr: { address?: string; name?: string } | string | 
 
   if (!addr.address) return null
   const email = addr.address.toLowerCase()
-  const rawName = addr.name || undefined
+  const rawName = cleanName(addr.name) || undefined
   // Treat name as undefined if it's just the email's local part
   const name = rawName && isNameJustEmailLocalPart(rawName, email) ? undefined : rawName
   return { email, name }

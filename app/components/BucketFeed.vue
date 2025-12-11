@@ -32,6 +32,7 @@ interface FeedEmail {
 interface FeedResponse {
   emails: FeedEmail[]
   hasMore: boolean
+  unreadCount: number
 }
 
 const props = defineProps<{
@@ -45,13 +46,38 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<Error | null>(null)
 
+// Track loaded email IDs to exclude from future fetches
+const loadedIds = ref<Set<number>>(new Set())
+
+// Track the boundary index between unread and read emails
+const seenBoundaryIndex = ref<number | null>(null)
+
+// Track emails that have been marked as read this session
+const markedReadIds = ref<Set<number>>(new Set())
+
+// Pending IDs to mark as read (batched)
+const pendingMarkRead = ref<Set<number>>(new Set())
+let markReadTimeout: ReturnType<typeof setTimeout> | null = null
+
 async function loadEmails() {
   loading.value = true
   error.value = null
+  loadedIds.value.clear()
+  markedReadIds.value.clear()
+  seenBoundaryIndex.value = null
+
   try {
     const data = await $fetch<FeedResponse>('/api/feed', { query: { bucket: props.bucket } })
     emails.value = data.emails
     hasMore.value = data.hasMore
+
+    // Track loaded IDs
+    for (const email of data.emails) {
+      loadedIds.value.add(email.id)
+    }
+
+    // Find boundary between unread and read
+    updateSeenBoundary()
   } catch (e) {
     error.value = e as Error
   } finally {
@@ -63,17 +89,80 @@ async function loadMore() {
   if (loadingMore.value || !hasMore.value) return
   loadingMore.value = true
   try {
+    // Pass already-loaded IDs to exclude
+    const excludeList = Array.from(loadedIds.value).join(',')
     const response = await $fetch<FeedResponse>('/api/feed', {
-      query: { bucket: props.bucket, offset: emails.value.length }
+      query: { bucket: props.bucket, exclude: excludeList }
     })
+
+    // Track new IDs
+    for (const email of response.emails) {
+      loadedIds.value.add(email.id)
+    }
+
     emails.value = [...emails.value, ...response.emails]
     hasMore.value = response.hasMore
+
+    // Update boundary
+    updateSeenBoundary()
   } catch (e) {
     console.error('Failed to load more:', e)
   } finally {
     loadingMore.value = false
   }
 }
+
+function updateSeenBoundary() {
+  // Find the first read email that hasn't been marked read this session
+  const idx = emails.value.findIndex(e => e.isRead && !markedReadIds.value.has(e.id))
+  // Show boundary at index 0 if first email is already read, or at idx if there are unread before it
+  seenBoundaryIndex.value = idx >= 0 ? idx : null
+}
+
+// Mark email as read when it becomes visible
+function onEmailVisible(emailId: number) {
+  const email = emails.value.find(e => e.id === emailId)
+  if (!email || email.isRead || markedReadIds.value.has(emailId)) return
+
+  // Mark as read locally
+  email.isRead = true
+  markedReadIds.value.add(emailId)
+
+  // Batch the API call
+  pendingMarkRead.value.add(emailId)
+
+  if (markReadTimeout) {
+    clearTimeout(markReadTimeout)
+  }
+
+  markReadTimeout = setTimeout(() => {
+    flushMarkRead()
+  }, 1000) // Batch for 1 second
+}
+
+async function flushMarkRead() {
+  if (pendingMarkRead.value.size === 0) return
+
+  const ids = Array.from(pendingMarkRead.value)
+  pendingMarkRead.value.clear()
+
+  try {
+    await $fetch('/api/emails/mark-read', {
+      method: 'POST',
+      body: { ids }
+    })
+  } catch (e) {
+    console.error('Failed to mark emails as read:', e)
+  }
+}
+
+// Flush on unmount
+onBeforeUnmount(() => {
+  if (markReadTimeout) {
+    clearTimeout(markReadTimeout)
+  }
+  flushMarkRead()
+})
 
 await loadEmails()
 </script>
@@ -91,15 +180,19 @@ await loadEmails()
     </div>
 
     <div v-else class="email-feed">
-      <div v-for="email in emails" :key="email.id" class="feed-email-wrapper">
-        <div class="feed-email-header">
-          <div class="feed-subject">{{ email.subject }}</div>
-          <NuxtLink :to="`/thread/${email.threadId}`" class="thread-link-btn" title="View full thread">
-            →
-          </NuxtLink>
+      <template v-for="(email, index) in emails" :key="email.id">
+        <!-- Show boundary before first already-read email -->
+        <div v-if="index === seenBoundaryIndex" class="seen-boundary">
+          <span class="seen-boundary-line"></span>
+          <span class="seen-boundary-text">Already Seen</span>
+          <span class="seen-boundary-line"></span>
         </div>
-        <EmailMessage :email="email" />
-      </div>
+
+        <FeedEmailItem
+          :email="email"
+          @visible="onEmailVisible(email.id)"
+        />
+      </template>
     </div>
 
     <div v-if="hasMore && !loading" class="load-more">
@@ -129,47 +222,26 @@ await loadEmails()
   padding: 0;
 }
 
-.feed-email-wrapper {
-  border-bottom: 1px solid #e5e5e5;
-}
-
-.feed-email-header {
+.seen-boundary {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 16px 16px 0;
-  gap: 12px;
+  gap: 16px;
+  padding: 16px 20px;
+  color: #999;
 }
 
-.feed-subject {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a1a1a;
+.seen-boundary-line {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  height: 1px;
+  background: #ddd;
+}
+
+.seen-boundary-text {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   white-space: nowrap;
-}
-
-.thread-link-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #f5f5f5;
-  color: #666;
-  text-decoration: none;
-  font-size: 16px;
-  flex-shrink: 0;
-  transition: all 0.15s;
-}
-
-.thread-link-btn:hover {
-  background: #e5e5e5;
-  color: #333;
 }
 
 .load-more {

@@ -1,4 +1,4 @@
-import { eq, desc, sql, and } from 'drizzle-orm'
+import { eq, desc, asc, sql, and, notInArray } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, contacts, attachments, emailContacts } from '../db/schema'
 import { proxyImagesInHtml } from '../utils/proxy-images'
@@ -7,15 +7,24 @@ import { replaceCidReferences } from '../utils/replace-cid'
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const limit = Math.min(parseInt(query.limit as string) || 10, 100)
-  const offset = parseInt(query.offset as string) || 0
   const bucket = query.bucket as string || 'feed'
+
+  // Parse exclude list (IDs already loaded this session)
+  const excludeParam = query.exclude as string || ''
+  const excludeIds = excludeParam ? excludeParam.split(',').map(id => parseInt(id, 10)).filter(id => !isNaN(id)) : []
 
   // Validate bucket
   if (bucket !== 'feed' && bucket !== 'paper_trail') {
     throw createError({ statusCode: 400, message: 'Invalid bucket. Must be "feed" or "paper_trail"' })
   }
 
-  // Get emails from contacts with the specified bucket, ordered by date
+  // Build where clause
+  const whereClause = excludeIds.length > 0
+    ? and(eq(contacts.bucket, bucket), notInArray(emails.id, excludeIds))
+    : eq(contacts.bucket, bucket)
+
+  // Get emails from contacts with the specified bucket
+  // Order: unread first, then by date (newest first)
   const feedEmails = db
     .select({
       id: emails.id,
@@ -31,10 +40,9 @@ export default defineEventHandler(async (event) => {
     })
     .from(emails)
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(eq(contacts.bucket, bucket))
-    .orderBy(desc(emails.sentAt))
+    .where(whereClause)
+    .orderBy(asc(emails.isRead), desc(emails.sentAt))
     .limit(limit + 1)
-    .offset(offset)
     .all()
 
   const hasMore = feedEmails.length > limit
@@ -128,17 +136,12 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  // Mark these emails as read
-  if (emailList.length > 0) {
-    const emailIds = emailList.map(e => e.id)
-    db.update(emails)
-      .set({ isRead: true })
-      .where(sql`${emails.id} IN (${sql.join(emailIds.map(id => sql`${id}`), sql`, `)})`)
-      .run()
-  }
+  // Count how many unread emails are in this batch (for UI to show boundary)
+  const unreadCount = emailsWithDetails.filter(e => !e.isRead).length
 
   return {
     emails: emailsWithDetails,
     hasMore,
+    unreadCount,
   }
 })

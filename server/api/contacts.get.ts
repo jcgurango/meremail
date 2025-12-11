@@ -34,9 +34,12 @@ export default defineEventHandler(async (event) => {
     // Filter by view
     if (view === 'screener') {
       contactSql += ` AND c.bucket IS NULL AND c.is_me = 0`
+    } else if (view === 'contacts') {
+      // 'contacts' view shows approved contacts
+      contactSql += ` AND c.bucket = 'approved' AND c.is_me = 0`
     } else {
-      // 'all' view excludes "me" contacts
-      contactSql += ` AND c.is_me = 0`
+      // Specific bucket filter (approved, feed, paper_trail, etc.)
+      contactSql += ` AND c.bucket = '${view}' AND c.is_me = 0`
     }
 
     contactSql += ` ORDER BY rank, c.name COLLATE NOCASE ASC, c.email COLLATE NOCASE ASC
@@ -77,7 +80,11 @@ export default defineEventHandler(async (event) => {
       lastEmailAt: r.lastEmailAt,
     }))
   } else {
-    // All contacts, alphabetically
+    // 'contacts' view shows approved contacts (default)
+    // Other views filter to specific bucket
+    const bucketToFilter = view === 'contacts' ? 'approved' : view
+    const bucketFilter = and(eq(contacts.isMe, false), eq(contacts.bucket, bucketToFilter))
+
     const results = await db
       .select({
         id: contacts.id,
@@ -91,7 +98,7 @@ export default defineEventHandler(async (event) => {
       .from(contacts)
       .leftJoin(emailContacts, eq(contacts.id, emailContacts.contactId))
       .leftJoin(emails, eq(emailContacts.emailId, emails.id))
-      .where(eq(contacts.isMe, false))
+      .where(bucketFilter)
       .groupBy(contacts.id)
       .orderBy(sql`COALESCE(${contacts.name}, ${contacts.email}) COLLATE NOCASE ASC`)
       .limit(limit + 1)
