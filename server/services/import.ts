@@ -318,14 +318,32 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       findOrCreateContact(fromParsed.email, fromParsed.name, true)
     }
   } else {
-    // We received this email - "Delivered-To" header tells us which address received it
-    const deliveredTo = parsed.headers?.get('delivered-to') as { value?: { address?: string; name?: string }[] } | undefined
-    const deliveredToAddr = deliveredTo?.value?.[0]
-    if (deliveredToAddr) {
-      const deliveredToParsed = parseEmailAddress(deliveredToAddr)
-      if (deliveredToParsed) {
-        findOrCreateContact(deliveredToParsed.email, deliveredToParsed.name, true)
+    // We received this email - try multiple headers to find our address
+    // Priority: X-PM-Original-To (Purelymail alias), X-PM-Known-Alias, Delivered-To
+    let myAddress: string | undefined
+
+    // Check Purelymail-specific headers for alias detection
+    const xPmOriginalTo = parsed.headers?.get('x-pm-original-to') as string | undefined
+    const xPmKnownAlias = parsed.headers?.get('x-pm-known-alias') as string | undefined
+
+    if (xPmOriginalTo && typeof xPmOriginalTo === 'string') {
+      myAddress = xPmOriginalTo.toLowerCase().trim()
+    } else if (xPmKnownAlias && typeof xPmKnownAlias === 'string') {
+      myAddress = xPmKnownAlias.toLowerCase().trim()
+    } else {
+      // Fall back to Delivered-To header
+      const deliveredTo = parsed.headers?.get('delivered-to') as { value?: { address?: string; name?: string }[] } | undefined
+      const deliveredToAddr = deliveredTo?.value?.[0]
+      if (deliveredToAddr) {
+        const deliveredToParsed = parseEmailAddress(deliveredToAddr)
+        if (deliveredToParsed) {
+          myAddress = deliveredToParsed.email
+        }
       }
+    }
+
+    if (myAddress) {
+      findOrCreateContact(myAddress, undefined, true)
     }
   }
 
