@@ -1,0 +1,1 @@
+ALTER TABLE `emails` ADD `content_html_sanitized` text;

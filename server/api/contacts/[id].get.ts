@@ -1,6 +1,6 @@
 import { db } from '../../db'
 import { contacts, emails, emailContacts, emailThreads, attachments } from '../../db/schema'
-import { eq, desc, or, sql, asc, inArray } from 'drizzle-orm'
+import { eq, desc, sql, inArray } from 'drizzle-orm'
 import { sanitizeEmailHtml } from '../../utils/sanitize-email-html'
 import { replaceCidReferences } from '../../utils/replace-cid'
 import { proxyImagesInHtml } from '../../utils/proxy-images'
@@ -26,25 +26,53 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Contact not found' })
   }
 
-  // Get thread IDs that have emails involving this contact, ordered by most recent email
-  const threadResults = await db
-    .selectDistinct({
-      threadId: emails.threadId,
-      latestEmailAt: sql<number>`MAX(${emails.sentAt})`.as('latest_email_at'),
-    })
-    .from(emails)
-    .leftJoin(emailContacts, eq(emails.id, emailContacts.emailId))
-    .where(
-      or(
-        eq(emails.senderId, id),
-        eq(emailContacts.contactId, id)
-      )
-    )
-    .groupBy(emails.threadId)
-    .orderBy(sql`latest_email_at DESC`)
-    .limit(limit + 1)
-    .offset(offset)
+  // "Me" contacts would include every thread - not useful and very slow
+  if (contact.isMe) {
+    return {
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        bucket: contact.bucket,
+        isMe: contact.isMe,
+      },
+      threads: [],
+      totalThreads: 0,
+      hasMore: false,
+      isMe: true,
+    }
+  }
 
+  // Get thread IDs that have emails involving this contact, ordered by most recent email
+  // Use UNION instead of OR to allow index usage on both conditions
+  // Use a CTE with subquery to get total count without a separate query
+  const threadResults = db.all<{ threadId: number; latestEmailAt: number; totalCount: number }>(sql`
+    WITH contact_emails AS (
+      SELECT ${emails.id}, ${emails.threadId}, ${emails.sentAt}
+      FROM ${emails}
+      WHERE ${emails.senderId} = ${id}
+      UNION
+      SELECT ${emails.id}, ${emails.threadId}, ${emails.sentAt}
+      FROM ${emails}
+      INNER JOIN ${emailContacts} ON ${emails.id} = ${emailContacts.emailId}
+      WHERE ${emailContacts.contactId} = ${id}
+    ),
+    thread_summary AS (
+      SELECT thread_id as threadId, MAX(sent_at) as latestEmailAt
+      FROM contact_emails
+      GROUP BY thread_id
+    )
+    SELECT
+      threadId,
+      latestEmailAt,
+      (SELECT COUNT(*) FROM thread_summary) as totalCount
+    FROM thread_summary
+    ORDER BY latestEmailAt DESC
+    LIMIT ${limit + 1}
+    OFFSET ${offset}
+  `)
+
+  const totalThreads = threadResults[0]?.totalCount || 0
   const hasMore = threadResults.length > limit
   const threadIds = threadResults.slice(0, limit).map(t => t.threadId)
 
@@ -79,6 +107,7 @@ export default defineEventHandler(async (event) => {
       subject: emails.subject,
       contentText: emails.contentText,
       contentHtml: emails.contentHtml,
+      contentHtmlSanitized: emails.contentHtmlSanitized,
       sentAt: emails.sentAt,
       receivedAt: emails.receivedAt,
       senderId: emails.senderId,
@@ -166,11 +195,19 @@ export default defineEventHandler(async (event) => {
         const recipients = recipientsByEmail.get(email.id) || []
         const emailAttachments = attachmentsByEmail.get(email.id) || []
 
-        // Process content
+        // Process content - use cached sanitized HTML if available
         let content = ''
         if (email.contentHtml) {
-          content = sanitizeEmailHtml(email.contentHtml)
-          content = replaceCidReferences(content, email.id)
+          let sanitized = email.contentHtmlSanitized
+          if (!sanitized) {
+            sanitized = sanitizeEmailHtml(email.contentHtml)
+            // Cache for next time (fire and forget)
+            db.update(emails)
+              .set({ contentHtmlSanitized: sanitized })
+              .where(eq(emails.id, email.id))
+              .run()
+          }
+          content = replaceCidReferences(sanitized, email.id)
           content = proxyImagesInHtml(content)
         } else if (email.contentText) {
           content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
@@ -207,21 +244,6 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  // Get total thread count
-  const countResult = await db
-    .select({
-      count: sql<number>`COUNT(DISTINCT ${emails.threadId})`.as('count'),
-    })
-    .from(emails)
-    .leftJoin(emailContacts, eq(emails.id, emailContacts.emailId))
-    .where(
-      or(
-        eq(emails.senderId, id),
-        eq(emailContacts.contactId, id)
-      )
-    )
-    .get()
-
   return {
     contact: {
       id: contact.id,
@@ -231,7 +253,7 @@ export default defineEventHandler(async (event) => {
       isMe: contact.isMe,
     },
     threads: threadData,
-    totalThreads: countResult?.count || 0,
+    totalThreads,
     hasMore,
   }
 })

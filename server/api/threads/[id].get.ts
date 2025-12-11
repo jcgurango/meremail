@@ -1,4 +1,4 @@
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { emails, emailThreads, contacts, emailContacts, attachments } from '../../db/schema'
 import { proxyImagesInHtml } from '../../utils/proxy-images'
@@ -22,13 +22,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Thread not found' })
   }
 
-  // Get all emails in the thread with their participants
+  // Get all emails in the thread
   const threadEmails = db
     .select({
       id: emails.id,
       subject: emails.subject,
       contentText: emails.contentText,
       contentHtml: emails.contentHtml,
+      contentHtmlSanitized: emails.contentHtmlSanitized,
       sentAt: emails.sentAt,
       receivedAt: emails.receivedAt,
       isRead: emails.isRead,
@@ -44,16 +45,29 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(emails.sentAt))
     .all()
 
-  // Get sender info and recipients for each email
-  const emailsWithParticipants = threadEmails.map((email) => {
-    // Get sender
-    const sender = email.senderId
-      ? db.select().from(contacts).where(eq(contacts.id, email.senderId)).get()
-      : null
+  // Collect IDs for batch loading
+  const emailIds = threadEmails.map(e => e.id)
+  const senderIds = [...new Set(threadEmails.map(e => e.senderId).filter(Boolean))] as number[]
 
-    // Get recipients (to, cc, bcc)
-    const recipients = db
+  // Batch load all senders
+  const sendersMap = new Map<number, { id: number; name: string | null; email: string; isMe: boolean }>()
+  if (senderIds.length > 0) {
+    const senders = db
+      .select({ id: contacts.id, name: contacts.name, email: contacts.email, isMe: contacts.isMe })
+      .from(contacts)
+      .where(inArray(contacts.id, senderIds))
+      .all()
+    for (const s of senders) {
+      sendersMap.set(s.id, s)
+    }
+  }
+
+  // Batch load all recipients
+  const recipientsMap = new Map<number, Array<{ id: number; name: string | null; email: string; isMe: boolean; role: string }>>()
+  if (emailIds.length > 0) {
+    const allRecipients = db
       .select({
+        emailId: emailContacts.emailId,
         id: contacts.id,
         name: contacts.name,
         email: contacts.email,
@@ -62,26 +76,22 @@ export default defineEventHandler(async (event) => {
       })
       .from(emailContacts)
       .innerJoin(contacts, eq(contacts.id, emailContacts.contactId))
-      .where(eq(emailContacts.emailId, email.id))
+      .where(inArray(emailContacts.emailId, emailIds))
       .all()
-      .filter((r) => r.role !== 'from')
-
-    // Prefer HTML for rendering, fall back to text (wrapped in pre for formatting)
-    // Pipeline: sanitize -> replace CID references -> proxy external images
-    let content: string
-    if (email.contentHtml) {
-      const sanitized = sanitizeEmailHtml(email.contentHtml)
-      const withCidReplaced = replaceCidReferences(sanitized, email.id)
-      content = proxyImagesInHtml(withCidReplaced)
-    } else if (email.contentText?.trim()) {
-      content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
-    } else {
-      content = ''
+    for (const r of allRecipients) {
+      if (r.role === 'from') continue // Skip 'from' role
+      const list = recipientsMap.get(r.emailId) || []
+      list.push({ id: r.id, name: r.name, email: r.email, isMe: r.isMe, role: r.role })
+      recipientsMap.set(r.emailId, list)
     }
+  }
 
-    // Get non-inline attachments for this email (inline ones are embedded in HTML)
-    const emailAttachments = db
+  // Batch load all non-inline attachments
+  const attachmentsMap = new Map<number, Array<{ id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean }>>()
+  if (emailIds.length > 0) {
+    const allAttachments = db
       .select({
+        emailId: attachments.emailId,
         id: attachments.id,
         filename: attachments.filename,
         mimeType: attachments.mimeType,
@@ -89,9 +99,43 @@ export default defineEventHandler(async (event) => {
         isInline: attachments.isInline,
       })
       .from(attachments)
-      .where(eq(attachments.emailId, email.id))
+      .where(inArray(attachments.emailId, emailIds))
       .all()
-      .filter((a) => !a.isInline)
+    for (const a of allAttachments) {
+      if (a.isInline) continue // Skip inline attachments
+      const list = attachmentsMap.get(a.emailId) || []
+      list.push({ id: a.id, filename: a.filename, mimeType: a.mimeType, size: a.size, isInline: a.isInline })
+      attachmentsMap.set(a.emailId, list)
+    }
+  }
+
+  // Build response using maps (no queries in loop)
+  const emailsWithParticipants = threadEmails.map((email) => {
+    const sender = email.senderId ? sendersMap.get(email.senderId) || null : null
+    const recipients = recipientsMap.get(email.id) || []
+    const emailAttachments = attachmentsMap.get(email.id) || []
+
+    // Prefer HTML for rendering, fall back to text (wrapped in pre for formatting)
+    // Pipeline: sanitize (cached) -> replace CID references -> proxy external images
+    let content: string
+    if (email.contentHtml) {
+      // Use cached sanitized HTML if available, otherwise sanitize and cache
+      let sanitized = email.contentHtmlSanitized
+      if (!sanitized) {
+        sanitized = sanitizeEmailHtml(email.contentHtml)
+        // Cache for next time (fire and forget)
+        db.update(emails)
+          .set({ contentHtmlSanitized: sanitized })
+          .where(eq(emails.id, email.id))
+          .run()
+      }
+      const withCidReplaced = replaceCidReferences(sanitized, email.id)
+      content = proxyImagesInHtml(withCidReplaced)
+    } else if (email.contentText?.trim()) {
+      content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
+    } else {
+      content = ''
+    }
 
     // Extract Reply-To from headers if present
     const headers = email.headers as Record<string, string> | null

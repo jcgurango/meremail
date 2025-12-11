@@ -15,6 +15,7 @@
     "db:backup": "tsx server/cli/backup.ts",
     "db:backfill-creators": "tsx server/cli/backfill-thread-creators.ts",
     "db:cleanup-quarantine": "tsx server/cli/cleanup-quarantine.ts",
+    "db:rebuild-sanitization": "tsx server/cli/rebuild-sanitization-cache.ts",
     "reset": "rm -rf data/* && yarn db:migrate"
   },
   "dependencies": {

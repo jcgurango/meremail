@@ -11,6 +11,7 @@ import {
   attachments,
 } from '../db/schema'
 import type { FetchedEmail } from './imap'
+import { sanitizeEmailHtml } from '../utils/sanitize-email-html'
 
 const ATTACHMENTS_DIR = process.env.ATTACHMENTS_PATH || './data/attachments'
 
@@ -357,6 +358,8 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   // Get email content - store both text and HTML
   const contentText = parsed.text || ''
   const contentHtml = parsed.html || null
+  // Pre-sanitize HTML for faster rendering (cache)
+  const contentHtmlSanitized = contentHtml ? sanitizeEmailHtml(contentHtml) : null
 
   // Insert email
   // Use IMAP \Seen flag for read state, or mark as read if from sent folder
@@ -381,6 +384,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       ) : {},
       contentText,
       contentHtml,
+      contentHtmlSanitized,
       sentAt: parsed.date,
       receivedAt: new Date(),
     })
