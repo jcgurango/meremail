@@ -5,6 +5,16 @@ export default defineNuxtConfig({
 
   modules: ['@vite-pwa/nuxt'],
 
+  nitro: {
+    experimental: {
+      tasks: true,
+    },
+    scheduledTasks: {
+      // Run cleanup-quarantine daily at 3am
+      '0 3 * * *': ['db:cleanup-quarantine'],
+    },
+  },
+
   pwa: {
     registerType: 'autoUpdate',
     manifest: {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DOMPurify from 'dompurify'
+
 interface Participant {
   id: number
   name: string | null
@@ -46,6 +48,26 @@ const showQuoted = ref(false)
 // Track whether headers panel is visible
 const showHeaders = ref(false)
 
+// Sanitize HTML for safe rendering
+function sanitizeHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'a', 'abbr', 'address', 'b', 'blockquote', 'br', 'caption', 'cite', 'code',
+      'col', 'colgroup', 'dd', 'del', 'dfn', 'div', 'dl', 'dt', 'em', 'figcaption',
+      'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'kbd',
+      'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'samp', 'small', 'span', 'strong',
+      'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
+      'var', 'wbr', 'font', 'center',
+    ],
+    ALLOWED_ATTR: [
+      'href', 'src', 'alt', 'title', 'class', 'id', 'style', 'width', 'height',
+      'colspan', 'rowspan', 'target', 'rel', 'color', 'size', 'face', 'align',
+      'valign', 'bgcolor', 'border', 'cellpadding', 'cellspacing',
+    ],
+    ALLOW_DATA_ATTR: false,
+  })
+}
+
 // Quote detection patterns (for hiding previously-seen quoted replies, NOT forwarded content)
 const QUOTE_PATTERNS = [
   /On\s+.{1,250}\s+wrote:\s*/i,
@@ -84,8 +106,8 @@ const splitContent = computed<SplitContent>(() => {
     const isForward = /forwarded message/i.test(afterMatch)
     if (!isForward) {
       return {
-        visible: content.slice(0, gmailMatch.index).trim(),
-        quoted: content.slice(gmailMatch.index).trim(),
+        visible: sanitizeHtml(content.slice(0, gmailMatch.index).trim()),
+        quoted: sanitizeHtml(content.slice(gmailMatch.index).trim()),
       }
     }
   }
@@ -98,14 +120,18 @@ const splitContent = computed<SplitContent>(() => {
     const { visible, quoted } = splitInnerContent(innerContent)
     if (quoted) {
       return {
-        visible: `<pre${preAttrs}>${visible}</pre>`,
-        quoted: `<pre${preAttrs}>${quoted}</pre>`,
+        visible: sanitizeHtml(`<pre${preAttrs}>${visible}</pre>`),
+        quoted: sanitizeHtml(`<pre${preAttrs}>${quoted}</pre>`),
       }
     }
-    return { visible: content, quoted: null }
+    return { visible: sanitizeHtml(content), quoted: null }
   }
 
-  return splitInnerContent(content)
+  const split = splitInnerContent(content)
+  return {
+    visible: sanitizeHtml(split.visible),
+    quoted: split.quoted ? sanitizeHtml(split.quoted) : null,
+  }
 })
 
 function getParticipantDisplay(participant: Participant | null, showEmail: boolean = true): string {
@@ -308,7 +334,7 @@ function formatFileSize(bytes: number | null): string {
       </div>
       <template #fallback>
         <div class="email-body">
-          <div class="email-content" v-html="email.content"></div>
+          <div class="email-content loading-content">Loading...</div>
           <div v-if="email.attachments.length > 0" class="attachments">
             <div class="attachments-header">
               {{ email.attachments.length }} attachment{{ email.attachments.length > 1 ? 's' : '' }}
@@ -520,6 +546,11 @@ function formatFileSize(bytes: number | null): string {
   border-radius: 4px;
   white-space: pre-wrap;
   font-family: inherit;
+}
+
+.loading-content {
+  color: #999;
+  font-style: italic;
 }
 
 .show-quoted-btn {

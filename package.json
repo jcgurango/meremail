@@ -15,7 +15,6 @@
     "db:backup": "tsx server/cli/backup.ts",
     "db:backfill-creators": "tsx server/cli/backfill-thread-creators.ts",
     "db:cleanup-quarantine": "tsx server/cli/cleanup-quarantine.ts",
-    "db:rebuild-sanitization": "tsx server/cli/rebuild-sanitization-cache.ts",
     "reset": "rm -rf data/* && yarn db:migrate"
   },
   "dependencies": {
@@ -29,7 +28,6 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.0",
     "imapflow": "^1.1.1",
-    "jsdom": "^27.3.0",
     "mailparser": "^3.9.0",
     "nuxt": "^4.2.1",
     "vue": "^3.5.25",
@@ -38,7 +36,6 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/dompurify": "^3.2.0",
-    "@types/jsdom": "^27.0.0",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^24.10.2",
     "@vite-pwa/nuxt": "^1.1.0",

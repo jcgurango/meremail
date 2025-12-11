@@ -18,7 +18,6 @@ export const emails = sqliteTable('emails', {
   headers: text('headers', { mode: 'json' }).$type<Record<string, string>>(),
   contentText: text('content_text').notNull(),
   contentHtml: text('content_html'),
-  contentHtmlSanitized: text('content_html_sanitized'), // Cached sanitized HTML (null = needs processing)
   sentAt: integer('sent_at', { mode: 'timestamp' }),
   receivedAt: integer('received_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),

@@ -1,7 +1,6 @@
 import { db } from '../../db'
 import { contacts, emails, emailContacts, emailThreads, attachments } from '../../db/schema'
 import { eq, desc, sql, inArray } from 'drizzle-orm'
-import { sanitizeEmailHtml } from '../../utils/sanitize-email-html'
 import { replaceCidReferences } from '../../utils/replace-cid'
 import { proxyImagesInHtml } from '../../utils/proxy-images'
 
@@ -107,7 +106,6 @@ export default defineEventHandler(async (event) => {
       subject: emails.subject,
       contentText: emails.contentText,
       contentHtml: emails.contentHtml,
-      contentHtmlSanitized: emails.contentHtmlSanitized,
       sentAt: emails.sentAt,
       receivedAt: emails.receivedAt,
       senderId: emails.senderId,
@@ -195,20 +193,11 @@ export default defineEventHandler(async (event) => {
         const recipients = recipientsByEmail.get(email.id) || []
         const emailAttachments = attachmentsByEmail.get(email.id) || []
 
-        // Process content - use cached sanitized HTML if available
+        // Process content - replace CID references and proxy images (sanitization done client-side)
         let content = ''
         if (email.contentHtml) {
-          let sanitized = email.contentHtmlSanitized
-          if (!sanitized) {
-            sanitized = sanitizeEmailHtml(email.contentHtml)
-            // Cache for next time (fire and forget)
-            db.update(emails)
-              .set({ contentHtmlSanitized: sanitized })
-              .where(eq(emails.id, email.id))
-              .run()
-          }
-          content = replaceCidReferences(sanitized, email.id)
-          content = proxyImagesInHtml(content)
+          const withCidReplaced = replaceCidReferences(email.contentHtml, email.id)
+          content = proxyImagesInHtml(withCidReplaced)
         } else if (email.contentText) {
           content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
         }

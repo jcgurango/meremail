@@ -26,17 +26,8 @@ WORKDIR /app
 # Install runtime dependencies for better-sqlite3
 RUN apk add --no-cache libstdc++
 
-# Copy built application
-COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/package.json ./
-
-# Copy CLI tools and their dependencies
-COPY --from=builder /app/server/cli ./server/cli
-COPY --from=builder /app/server/services ./server/services
-COPY --from=builder /app/server/db ./server/db
-COPY --from=builder /app/server/config.ts ./server/config.ts
-COPY --from=builder /app/drizzle.config.ts ./
-COPY --from=builder /app/node_modules ./node_modules
+# Copy everything from builder
+COPY --from=builder /app ./
 
 # Create data directories
 RUN mkdir -p /app/data/attachments /app/data/uploads /app/data/backups

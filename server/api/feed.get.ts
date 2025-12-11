@@ -2,7 +2,6 @@ import { eq, desc, sql, and } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, contacts, attachments, emailContacts } from '../db/schema'
 import { proxyImagesInHtml } from '../utils/proxy-images'
-import { sanitizeEmailHtml } from '../utils/sanitize-email-html'
 import { replaceCidReferences } from '../utils/replace-cid'
 
 export default defineEventHandler(async (event) => {
@@ -63,11 +62,10 @@ export default defineEventHandler(async (event) => {
       .all()
       .filter((r) => r.role !== 'from')
 
-    // Process content
+    // Process content - replace CID references and proxy images (sanitization done client-side)
     let content: string
     if (email.contentHtml) {
-      const sanitized = sanitizeEmailHtml(email.contentHtml)
-      const withCidReplaced = replaceCidReferences(sanitized, email.id)
+      const withCidReplaced = replaceCidReferences(email.contentHtml, email.id)
       content = proxyImagesInHtml(withCidReplaced)
     } else if (email.contentText?.trim()) {
       content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
