@@ -20,8 +20,6 @@ useHead({ title: 'Paper Trail - MereMail' })
         empty-message="No paper trail emails yet. Mark contacts as &quot;Paper Trail&quot; in the Screener."
       />
     </main>
-
-    <BottomNav />
   </div>
 </template>
 

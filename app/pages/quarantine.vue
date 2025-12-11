@@ -22,8 +22,6 @@ useHead({ title: 'Quarantine - MereMail' })
     <main class="main">
       <ThreadList bucket="quarantine" empty-message="No quarantined threads" />
     </main>
-
-    <BottomNav />
   </div>
 </template>
 

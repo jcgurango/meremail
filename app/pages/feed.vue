@@ -20,8 +20,6 @@ useHead({ title: 'Feed - MereMail' })
         empty-message="No feed emails yet. Mark contacts as &quot;Feed&quot; in the Screener."
       />
     </main>
-
-    <BottomNav />
   </div>
 </template>
 

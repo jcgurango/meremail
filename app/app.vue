@@ -1,5 +1,14 @@
+<script setup lang="ts">
+const route = useRoute()
+
+const showBottomNav = computed(() => {
+  return ['/', '/feed', '/paper-trail', '/quarantine'].includes(route.path)
+})
+</script>
+
 <template>
   <NuxtPage />
+  <BottomNav v-if="showBottomNav" />
 </template>
 
 <style>

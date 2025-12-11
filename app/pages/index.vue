@@ -17,8 +17,6 @@ useHead({ title: 'MereMail' })
     <main class="main">
       <ThreadList bucket="approved" empty-message="No threads yet" />
     </main>
-
-    <BottomNav />
   </div>
 </template>
 
