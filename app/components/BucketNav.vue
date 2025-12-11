@@ -6,6 +6,7 @@ interface UnreadCounts {
   feed: number
   paper_trail: number
   quarantine: number
+  reply_later: number
 }
 
 const counts = ref<UnreadCounts>({
@@ -13,10 +14,12 @@ const counts = ref<UnreadCounts>({
   feed: 0,
   paper_trail: 0,
   quarantine: 0,
+  reply_later: 0,
 })
 
 const tabs = [
   { path: '/', label: 'Inbox', key: 'inbox' as const },
+  { path: '/reply-later', label: 'Reply Later', key: 'reply_later' as const },
   { path: '/feed', label: 'Feed', key: 'feed' as const },
   { path: '/paper-trail', label: 'Paper Trail', key: 'paper_trail' as const },
   { path: '/quarantine', label: 'Quarantine', key: 'quarantine' as const },
@@ -38,7 +41,7 @@ onMounted(() => {
 
 // Refresh when navigating between bucket pages
 watch(() => route.path, () => {
-  if (['/', '/feed', '/paper-trail', '/quarantine'].includes(route.path)) {
+  if (['/', '/reply-later', '/feed', '/paper-trail', '/quarantine'].includes(route.path)) {
     loadCounts()
   }
 })

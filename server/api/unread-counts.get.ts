@@ -6,6 +6,7 @@ export default defineEventHandler(async () => {
   // Get unread counts per bucket
   // For 'approved' (inbox) and 'quarantine': count unread threads
   // For 'feed' and 'paper_trail': count unread emails from contacts in that bucket
+  // For 'reply_later': count total threads (not unread)
 
   // Inbox (approved): unread thread count
   const inboxUnread = db
@@ -53,10 +54,18 @@ export default defineEventHandler(async () => {
     ))
     .get()
 
+  // Reply Later: total thread count (not unread-based)
+  const replyLaterCount = db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(emailThreads)
+    .where(eq(emailThreads.replyLater, true))
+    .get()
+
   return {
     inbox: inboxUnread?.count || 0,
     feed: feedUnread?.count || 0,
     paper_trail: paperTrailUnread?.count || 0,
     quarantine: quarantineUnread?.count || 0,
+    reply_later: replyLaterCount?.count || 0,
   }
 })

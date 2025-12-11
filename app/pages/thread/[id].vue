@@ -37,6 +37,7 @@ interface Thread {
   id: number
   subject: string
   createdAt: string
+  replyLater: boolean
   emails: Email[]
   defaultFromId: number | null
 }
@@ -140,12 +141,54 @@ async function onDraftDiscarded() {
 function onDraftSaved(draftId: number) {
   closeComposer()
 }
+
+// Send to menu state
+const showSendToMenu = ref(false)
+
+async function toggleReplyLater() {
+  if (!thread.value) return
+  const newValue = !thread.value.replyLater
+
+  try {
+    await $fetch(`/api/threads/${thread.value.id}/reply-later`, {
+      method: 'PATCH',
+      body: { replyLater: newValue }
+    })
+    thread.value.replyLater = newValue
+    showSendToMenu.value = false
+  } catch (e) {
+    console.error('Failed to update reply later status:', e)
+  }
+}
+
+// TODO: Auto-remove from reply later queue when a reply is sent
+// This should be linked up in the email sending flow
 </script>
 
 <template>
   <div class="thread-view">
     <header class="header">
-      <button class="back-link" @click="$router.back()">&larr; Back</button>
+      <div class="header-top">
+        <button class="back-link" @click="$router.back()">&larr; Back</button>
+        <div v-if="thread" class="header-actions">
+          <div class="send-to-wrapper">
+            <button
+              class="send-to-btn"
+              :class="{ active: thread.replyLater }"
+              @click="showSendToMenu = !showSendToMenu"
+            >
+              Send to
+              <span class="dropdown-arrow">▼</span>
+            </button>
+            <div v-if="showSendToMenu" class="send-to-menu">
+              <button class="menu-item" @click="toggleReplyLater">
+                <span class="menu-check">{{ thread.replyLater ? '✓' : '' }}</span>
+                Reply Later
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <h1 v-if="thread">{{ thread.subject }}</h1>
     </header>
 
@@ -239,12 +282,18 @@ function onDraftSaved(draftId: number) {
   border-bottom: 1px solid #e5e5e5;
 }
 
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
 .back-link {
   display: inline-block;
   color: #666;
   text-decoration: none;
   font-size: 14px;
-  margin-bottom: 8px;
   background: none;
   border: none;
   padding: 0;
@@ -253,6 +302,82 @@ function onDraftSaved(draftId: number) {
 
 .back-link:hover {
   color: #000;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.send-to-wrapper {
+  position: relative;
+}
+
+.send-to-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.send-to-btn:hover {
+  border-color: #ccc;
+}
+
+.send-to-btn.active {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+}
+
+.dropdown-arrow {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.send-to-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.menu-item:hover {
+  background: #f5f5f5;
+}
+
+.menu-check {
+  width: 16px;
+  text-align: center;
+  color: #22c55e;
 }
 
 h1 {

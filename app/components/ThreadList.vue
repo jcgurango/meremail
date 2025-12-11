@@ -15,7 +15,8 @@ interface ThreadsResponse {
 }
 
 const props = defineProps<{
-  bucket: string
+  bucket?: string
+  replyLater?: boolean
   emptyMessage?: string
 }>()
 
@@ -25,12 +26,22 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<Error | null>(null)
 
+function buildQuery(offset = 0) {
+  const query: Record<string, string | number> = { offset }
+  if (props.replyLater) {
+    query.replyLater = 'true'
+  } else if (props.bucket) {
+    query.bucket = props.bucket
+  }
+  return query
+}
+
 async function loadThreads() {
   loading.value = true
   error.value = null
   try {
     const data = await $fetch<ThreadsResponse>('/api/threads', {
-      query: { bucket: props.bucket }
+      query: buildQuery()
     })
     threads.value = data.threads
     hasMore.value = data.hasMore
@@ -46,7 +57,7 @@ async function loadMore() {
   loadingMore.value = true
   try {
     const response = await $fetch<ThreadsResponse>('/api/threads', {
-      query: { bucket: props.bucket, offset: threads.value.length }
+      query: buildQuery(threads.value.length)
     })
     threads.value = [...threads.value, ...response.threads]
     hasMore.value = response.hasMore

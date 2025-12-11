@@ -24,6 +24,19 @@ export default defineEventHandler(async (event) => {
   const limit = Math.min(parseInt(query.limit as string) || 25, 100)
   const offset = parseInt(query.offset as string) || 0
   const bucket = (query.bucket as string) || 'approved' // Filter by creator's bucket
+  const replyLater = query.replyLater === 'true' // Filter for reply later queue
+
+  // Build where clause based on filter type
+  let whereClause
+  if (replyLater) {
+    // Reply Later queue: show all threads marked for reply later, regardless of bucket
+    whereClause = sql`${emailThreads.replyLater} = 1`
+  } else if (bucket === 'approved') {
+    // Filter: thread creator must match bucket or is "me"
+    whereClause = sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
+  } else {
+    whereClause = sql`${contacts.bucket} = ${bucket}`
+  }
 
   // Get all threads, ordered by: unread first, then by latest email date
   // Filter by thread creator (sender of first email) - must match specified bucket or "me"
@@ -33,6 +46,7 @@ export default defineEventHandler(async (event) => {
       id: emailThreads.id,
       subject: emailThreads.subject,
       createdAt: emailThreads.createdAt,
+      replyLater: emailThreads.replyLater,
       latestEmailAt: sql<number>`MAX(${emails.sentAt})`.as('latest_email_at'),
       unreadCount: sql<number>`SUM(CASE WHEN ${emails.isRead} = 0 THEN 1 ELSE 0 END)`.as('unread_count'),
       totalCount: sql<number>`COUNT(${emails.id})`.as('total_count'),
@@ -40,12 +54,7 @@ export default defineEventHandler(async (event) => {
     .from(emailThreads)
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
     .innerJoin(contacts, eq(contacts.id, emailThreads.creatorId))
-    .where(
-      // Filter: thread creator must match bucket or is "me" (for 'approved' bucket only)
-      bucket === 'approved'
-        ? sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
-        : sql`${contacts.bucket} = ${bucket}`
-    )
+    .where(whereClause)
     .groupBy(emailThreads.id)
     .orderBy(
       desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads first
