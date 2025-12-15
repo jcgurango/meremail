@@ -1,12 +1,15 @@
 import 'dotenv/config'
-import { createImapClient, fetchEmails, listFolders } from '../services/imap'
+import { createImapClient, fetchEmails, listFolders, toImportableEmail, backupEml } from '../services/imap'
 import { importEmail } from '../services/import'
 import { db } from '../db'
 import { emails } from '../db/schema'
-import { desc } from 'drizzle-orm'
+import { config } from '../config'
 
 async function main() {
-  console.log('Starting email import...')
+  console.log('Starting IMAP email import...')
+  if (config.emlBackup.enabled) {
+    console.log(`EML backup enabled: ${config.emlBackup.path}`)
+  }
 
   // Parse command line arguments
   const args = process.argv.slice(2)
@@ -43,9 +46,14 @@ async function main() {
         let folderImported = 0
         let folderSkipped = 0
 
-        for await (const email of fetchEmails(client, folder)) {
+        for await (const fetched of fetchEmails(client, folder)) {
           try {
-            const result = await importEmail(email)
+            // Backup raw EML with IMAP metadata headers
+            backupEml(fetched)
+
+            // Convert IMAP-specific format to common ImportableEmail
+            const importable = toImportableEmail(fetched)
+            const result = await importEmail(importable)
 
             if (result.imported) {
               folderImported++
@@ -59,7 +67,7 @@ async function main() {
             }
           } catch (err) {
             totalErrors++
-            console.error(`  Error importing email UID ${email.uid}:`, err)
+            console.error(`  Error importing email UID ${fetched.uid}:`, err)
           }
         }
 

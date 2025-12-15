@@ -10,7 +10,7 @@ import {
   emailThreadContacts,
   attachments,
 } from '../db/schema'
-import type { FetchedEmail } from './imap'
+import type { ImportableEmail, EmailAddress, EmailAttachment } from '../types/email'
 
 const ATTACHMENTS_DIR = process.env.ATTACHMENTS_PATH || './data/attachments'
 
@@ -42,50 +42,17 @@ function isNameJustEmailLocalPart(name: string, email: string): boolean {
 }
 
 /**
- * Parse email address from string like "Name <email@example.com>" or just "email@example.com"
+ * Clean and validate a contact name
+ * Returns undefined if the name is not meaningful
  */
-/**
- * Strip surrounding quotes from a name (single or double)
- */
-function cleanName(name: string | undefined): string | undefined {
+function cleanContactName(name: string | undefined, email: string): string | undefined {
   if (!name) return undefined
-  // Trim first, then strip surrounding single or double quotes, then trim again
-  let cleaned = name.trim()
-  cleaned = cleaned.replace(/^["'](.*)["']$/, '$1').trim()
-  return cleaned || undefined
-}
-
-function parseEmailAddress(addr: { address?: string; name?: string } | string | undefined): {
-  email: string
-  name: string | undefined
-} | null {
-  if (!addr) return null
-
-  if (typeof addr === 'string') {
-    const match = addr.match(/<([^>]+)>/)
-    if (match) {
-      const rawName = cleanName(addr.replace(/<[^>]+>/, '').trim()) || undefined
-      const email = match[1].toLowerCase()
-      // Treat name as undefined if it's just the email's local part
-      const name = rawName && isNameJustEmailLocalPart(rawName, email) ? undefined : rawName
-      return { email, name }
-    }
-    return { email: addr.toLowerCase(), name: undefined }
-  }
-
-  if (!addr.address) return null
-  const email = addr.address.toLowerCase()
-  const rawName = cleanName(addr.name) || undefined
+  // Strip surrounding quotes and trim
+  let cleaned = name.trim().replace(/^["'](.*)["']$/, '$1').trim()
+  if (!cleaned) return undefined
   // Treat name as undefined if it's just the email's local part
-  const name = rawName && isNameJustEmailLocalPart(rawName, email) ? undefined : rawName
-  return { email, name }
-}
-
-/**
- * Check if folder is a Junk/Spam folder
- */
-function isJunkFolder(folder: string): boolean {
-  return /^(junk|spam|\[gmail\]\/spam)$/i.test(folder)
+  if (isNameJustEmailLocalPart(cleaned, email)) return undefined
+  return cleaned
 }
 
 /**
@@ -93,6 +60,9 @@ function isJunkFolder(folder: string): boolean {
  * If fromJunkFolder is true and this is a NEW contact, set bucket to 'quarantine'
  */
 function findOrCreateContact(email: string, name?: string, isMe: boolean = false, fromJunkFolder: boolean = false): number {
+  // Clean the name before use
+  const cleanedName = cleanContactName(name, email)
+
   const existing = db.select().from(contacts).where(eq(contacts.email, email)).get()
 
   if (existing) {
@@ -100,12 +70,12 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
     // 1. We have a name and the existing doesn't, OR
     // 2. The existing name equals the email (placeholder) but we now have a real name
     const existingNameIsPlaceholder = existing.name === existing.email
-    const shouldUpdateName = name && (!existing.name || existingNameIsPlaceholder)
+    const shouldUpdateName = cleanedName && (!existing.name || existingNameIsPlaceholder)
 
     if (shouldUpdateName || (isMe && !existing.isMe)) {
       db.update(contacts)
         .set({
-          name: shouldUpdateName ? name : existing.name,
+          name: shouldUpdateName ? cleanedName : existing.name,
           isMe: isMe || existing.isMe,
         })
         .where(eq(contacts.id, existing.id))
@@ -116,11 +86,11 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
 
   // New contact - set bucket to quarantine if their first email is from Junk folder
   const bucket = (fromJunkFolder && !isMe) ? 'quarantine' : null
-  const result = db.insert(contacts).values({ email, name, isMe, bucket }).returning({ id: contacts.id }).get()
+  const result = db.insert(contacts).values({ email, name: cleanedName, isMe, bucket }).returning({ id: contacts.id }).get()
   if (isMe) {
-    console.log(`  Auto-created my contact: ${name || email} <${email}>`)
+    console.log(`  Auto-created my contact: ${cleanedName || email} <${email}>`)
   } else if (bucket === 'quarantine') {
-    console.log(`  Auto-quarantined contact from Junk folder: ${name || email} <${email}>`)
+    console.log(`  Auto-quarantined contact from Junk folder: ${cleanedName || email} <${email}>`)
   }
   return result.id
 }
@@ -231,17 +201,7 @@ function maybeUpdateThreadCreator(
 /**
  * Save attachment to disk and create database record
  */
-function saveAttachment(
-  emailId: number,
-  attachment: {
-    filename?: string
-    contentType?: string
-    size?: number
-    content?: Buffer
-    cid?: string  // Content-ID for inline images
-    contentDisposition?: string
-  }
-): void {
+function saveAttachment(emailId: number, attachment: EmailAttachment): void {
   const filename = attachment.filename || `attachment_${Date.now()}`
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
   const filePath = join(ATTACHMENTS_DIR, `${emailId}_${safeFilename}`)
@@ -256,9 +216,6 @@ function saveAttachment(
     writeFileSync(filePath, attachment.content)
   }
 
-  // Determine if this is an inline attachment (embedded in HTML)
-  const isInline = !!attachment.cid || attachment.contentDisposition === 'inline'
-
   // TODO: Extract text from attachment for search
   // This would involve using libraries like pdf-parse, mammoth (docx), etc.
   const extractedText: string | null = null
@@ -269,18 +226,20 @@ function saveAttachment(
     mimeType: attachment.contentType,
     size: attachment.size,
     filePath,
-    contentId: attachment.cid || null,
-    isInline,
+    contentId: attachment.contentId || null,
+    isInline: attachment.isInline || false,
     extractedText,
   }).run()
 }
 
 /**
- * Import a single email
+ * Import a single email from the common ImportableEmail format
+ *
+ * This function is source-agnostic - it doesn't know if the email
+ * came from IMAP, mbox, EML files, or any other source.
  */
-export async function importEmail(fetched: FetchedEmail): Promise<{ imported: boolean; reason?: string }> {
-  const { parsed, folder, flags } = fetched
-  const messageId = parsed.messageId
+export async function importEmail(email: ImportableEmail): Promise<{ imported: boolean; reason?: string }> {
+  const { messageId, subject, inReplyTo, references } = email
 
   // Skip if already imported
   if (messageId) {
@@ -290,87 +249,42 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
     }
   }
 
-  const subject = parsed.subject || '(no subject)'
   const isReply = isReplyOrForward(subject)
   const normalizedSubject = normalizeSubject(subject)
-  const inReplyTo = parsed.inReplyTo
-  const references = Array.isArray(parsed.references)
-    ? parsed.references
-    : parsed.references
-      ? [parsed.references]
-      : []
 
-  // Process From address - this is the sender
-  const fromAddr = parsed.from?.value?.[0]
-  const fromParsed = parseEmailAddress(fromAddr)
-
-  // Determine if this is a "sent" folder (where we are the sender)
-  const isSentFolder = /^(sent|sent items|sent mail|\[gmail\]\/sent mail)$/i.test(folder)
-
-  // Check if this is from a Junk/Spam folder - auto-quarantine new contacts
-  const fromJunk = isJunkFolder(folder)
-
-  // For received emails: use "Delivered-To" header to find our address
-  // For sent emails: "From" is our address
-  if (isSentFolder) {
-    // We sent this email - mark "From" as our contact
-    if (fromParsed) {
-      findOrCreateContact(fromParsed.email, fromParsed.name, true)
+  // For sent emails, mark "From" as our contact
+  // For received emails, mark the deliveredTo address as our contact
+  if (email.isSent) {
+    if (email.from) {
+      findOrCreateContact(email.from.email, email.from.name, true)
     }
-  } else {
-    // We received this email - try multiple headers to find our address
-    // Priority: X-PM-Original-To (Purelymail alias), X-PM-Known-Alias, Delivered-To
-    let myAddress: string | undefined
-
-    // Check Purelymail-specific headers for alias detection
-    const xPmOriginalTo = parsed.headers?.get('x-pm-original-to') as string | undefined
-    const xPmKnownAlias = parsed.headers?.get('x-pm-known-alias') as string | undefined
-
-    if (xPmOriginalTo && typeof xPmOriginalTo === 'string') {
-      myAddress = xPmOriginalTo.toLowerCase().trim()
-    } else if (xPmKnownAlias && typeof xPmKnownAlias === 'string') {
-      myAddress = xPmKnownAlias.toLowerCase().trim()
-    } else {
-      // Fall back to Delivered-To header
-      const deliveredTo = parsed.headers?.get('delivered-to') as { value?: { address?: string; name?: string }[] } | undefined
-      const deliveredToAddr = deliveredTo?.value?.[0]
-      if (deliveredToAddr) {
-        const deliveredToParsed = parseEmailAddress(deliveredToAddr)
-        if (deliveredToParsed) {
-          myAddress = deliveredToParsed.email
-        }
-      }
-    }
-
-    if (myAddress) {
-      findOrCreateContact(myAddress, undefined, true)
-    }
+  } else if (email.deliveredTo) {
+    findOrCreateContact(email.deliveredTo, undefined, true)
   }
 
-  // Get or create sender contact (always create, whether it's us or someone else)
-  // If from Junk folder and new contact, auto-quarantine them
-  // EXCEPTION: Junk mail "from me" is NOT actually me - it's an impostor
+  // Get or create sender contact
+  // Special case: Junk mail claiming to be "from me" is an impostor
   let senderId: number
   let senderIsMe = false
-  if (fromParsed) {
+
+  if (email.from) {
     // Check if this is one of our addresses
     const existingMe = db.select().from(contacts)
-      .where(eq(contacts.email, fromParsed.email))
+      .where(eq(contacts.email, email.from.email))
       .get()
 
     // Junk mail claiming to be "from me" is an impostor - don't trust the From address
-    if (fromJunk && existingMe?.isMe) {
-      // Create/find an "Impostor" contact for this spoofed email
+    if (email.isJunk && existingMe?.isMe) {
       senderId = findOrCreateContact('impostor@impostor', 'Impostor', false, true)
       senderIsMe = false
-      console.log(`  Junk mail claiming to be from me (${fromParsed.email}) - attributed to Impostor`)
+      console.log(`  Junk mail claiming to be from me (${email.from.email}) - attributed to Impostor`)
     } else {
-      senderIsMe = existingMe?.isMe || isSentFolder
-      senderId = findOrCreateContact(fromParsed.email, fromParsed.name, senderIsMe, fromJunk)
+      senderIsMe = existingMe?.isMe || email.isSent
+      senderId = findOrCreateContact(email.from.email, email.from.name, senderIsMe, email.isJunk)
     }
   } else {
     // No from address - create unknown sender
-    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false, fromJunk)
+    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false, email.isJunk)
   }
 
   // Find or create thread
@@ -380,20 +294,14 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
     threadId = createThread(normalizedSubject, senderId)
   } else {
     // Check if this email is older than the current first email - update creator if so
-    maybeUpdateThreadCreator(threadId!, parsed.date, senderId)
+    maybeUpdateThreadCreator(threadId!, email.sentAt, senderId)
   }
-  // At this point threadId is guaranteed to be a number
   const finalThreadId = threadId!
 
-  // Get email content - store both text and HTML
-  const contentText = parsed.text || ''
-  const contentHtml = parsed.html || null
-
   // Insert email
-  // Use IMAP \Seen flag for read state, or mark as read if from sent folder
   // If already read, set readAt to receivedAt; otherwise leave null
   const receivedAt = new Date()
-  const readAt = (flags.has('\\Seen') || isSentFolder) ? receivedAt : null
+  const readAt = email.isRead ? receivedAt : null
 
   const emailResult = db
     .insert(emails)
@@ -403,18 +311,13 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       messageId,
       inReplyTo,
       references,
-      folder,
+      folder: email.isSent ? 'sent' : email.isJunk ? 'junk' : 'inbox', // Normalized folder name
       readAt,
       subject,
-      headers: parsed.headers ? Object.fromEntries(
-        Array.from(parsed.headers.entries()).map(([k, v]) => [
-          k,
-          typeof v === 'object' ? JSON.stringify(v) : String(v)
-        ])
-      ) : {},
-      contentText,
-      contentHtml,
-      sentAt: parsed.date,
+      headers: email.headers,
+      contentText: email.textContent,
+      contentHtml: email.htmlContent || null,
+      sentAt: email.sentAt,
       receivedAt,
     })
     .returning({ id: emails.id })
@@ -428,60 +331,40 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   // Link sender to thread
   db.insert(emailThreadContacts).values({ threadId: finalThreadId, contactId: senderId, role: 'sender' }).onConflictDoNothing().run()
 
-  // Create contacts for recipients and link to email
-  // Helper to extract addresses from AddressObject | AddressObject[] | undefined
-  type AddressList = { address?: string; name?: string }[]
-  const getAddresses = (field: typeof parsed.to): AddressList => {
-    if (!field) return []
-    if (Array.isArray(field)) {
-      return field.flatMap(f => f.value || [])
-    }
-    return field.value || []
-  }
+  // Process recipients
+  const processRecipients = (addresses: EmailAddress[], role: 'to' | 'cc' | 'bcc') => {
+    for (const addr of addresses) {
+      // Check if this is one of our addresses
+      const existingContact = db.select().from(contacts)
+        .where(eq(contacts.email, addr.email))
+        .get()
+      const isMe = existingContact?.isMe || false
 
-  const recipientTypes: Array<{ addrs: AddressList; role: 'to' | 'cc' | 'bcc' }> = [
-    { addrs: getAddresses(parsed.to), role: 'to' },
-    { addrs: getAddresses(parsed.cc), role: 'cc' },
-    { addrs: getAddresses(parsed.bcc), role: 'bcc' },
-  ]
+      // Auto-approve contacts that I send email TO (if not already bucketed)
+      const shouldAutoApprove = email.isSent && !isMe && (!existingContact || existingContact.bucket === null)
 
-  for (const { addrs, role } of recipientTypes) {
-    for (const addr of addrs) {
-      const addrParsed = parseEmailAddress(addr)
-      if (addrParsed) {
-        // Check if this is one of our addresses
-        const existingContact = db.select().from(contacts)
-          .where(eq(contacts.email, addrParsed.email))
-          .get()
-        const isMe = existingContact?.isMe || false
+      const contactId = findOrCreateContact(addr.email, addr.name, isMe)
 
-        // Auto-approve contacts that I send email TO (if not already bucketed)
-        // This means if I've emailed someone, they're implicitly approved
-        const shouldAutoApprove = isSentFolder && !isMe && (!existingContact || existingContact.bucket === null)
-
-        const contactId = findOrCreateContact(addrParsed.email, addrParsed.name, isMe)
-
-        if (shouldAutoApprove) {
-          db.update(contacts)
-            .set({ bucket: 'approved' })
-            .where(eq(contacts.id, contactId))
-            .run()
-          console.log(`  Auto-approved contact (I sent them email): ${addrParsed.name || addrParsed.email}`)
-        }
-
-        db.insert(emailContacts).values({ emailId, contactId, role }).onConflictDoNothing().run()
-
-        // Also link to thread as recipient
-        db.insert(emailThreadContacts).values({ threadId: finalThreadId, contactId, role: 'recipient' }).onConflictDoNothing().run()
+      if (shouldAutoApprove) {
+        db.update(contacts)
+          .set({ bucket: 'approved' })
+          .where(eq(contacts.id, contactId))
+          .run()
+        console.log(`  Auto-approved contact (I sent them email): ${addr.name || addr.email}`)
       }
+
+      db.insert(emailContacts).values({ emailId, contactId, role }).onConflictDoNothing().run()
+      db.insert(emailThreadContacts).values({ threadId: finalThreadId, contactId, role: 'recipient' }).onConflictDoNothing().run()
     }
   }
+
+  processRecipients(email.to, 'to')
+  processRecipients(email.cc, 'cc')
+  processRecipients(email.bcc, 'bcc')
 
   // Save attachments
-  if (parsed.attachments && parsed.attachments.length > 0) {
-    for (const attachment of parsed.attachments) {
-      saveAttachment(emailId, attachment)
-    }
+  for (const attachment of email.attachments) {
+    saveAttachment(emailId, attachment)
   }
 
   return { imported: true }

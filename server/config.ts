@@ -62,6 +62,12 @@ export const config = {
     // Directory for uploaded files
     path: envStr('UPLOADS_PATH', './data/uploads'),
   },
+  emlBackup: {
+    // Whether to backup raw EML files during IMAP import (default true)
+    enabled: envBool('EML_BACKUP_ENABLED', true),
+    // Directory for EML backups
+    path: envStr('EML_BACKUP_PATH', './data/eml-backup'),
+  },
 } as const
 
 export type Config = typeof config
