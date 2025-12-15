@@ -1,22 +1,67 @@
 import { db } from '../db'
 import { contacts, emails, emailContacts } from '../db/schema'
-import { eq, sql, asc, isNull, and, ne, or } from 'drizzle-orm'
+import { eq, sql, asc, isNull, and, ne, or, gt } from 'drizzle-orm'
 import { sqlite } from '../db'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
-  const limit = Math.min(Number(query.limit) || 50, 100)
+  const limit = Math.min(Number(query.limit) || 50, 5000)  // Allow up to 5000 for bulk export
   const offset = Number(query.offset) || 0
   const view = (query.view as string) || 'approved' // Default to approved, not 'all'
   const q = (query.q as string || '').trim()
   const isMe = query.isMe === 'true'
   const includeCounts = query.counts === 'true'
+  const exportAll = query.all === 'true'  // Bulk export for offline caching
+  const createdSince = query.createdSince ? Number(query.createdSince) : null  // Incremental sync
 
   // For search, use FTS
   const hasSearchTerm = q.length >= 2
   const searchTerm = hasSearchTerm ? q.replace(/['"*()]/g, ' ').trim() + '*' : ''
 
   let contactsResult: any[]
+
+  // Bulk export all contacts (for offline caching)
+  // Supports incremental sync via createdSince parameter
+  if (exportAll) {
+    const baseQuery = db
+      .select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        bucket: contacts.bucket,
+        isMe: contacts.isMe,
+        createdAt: contacts.createdAt,
+      })
+      .from(contacts)
+
+    // Filter by createdSince for incremental sync
+    const results = createdSince
+      ? await baseQuery
+          .where(gt(contacts.createdAt, new Date(createdSince)))
+          .orderBy(asc(contacts.createdAt))
+          .limit(limit)
+      : await baseQuery
+          .orderBy(asc(contacts.email))
+          .limit(limit)
+
+    // Find the max createdAt for the client to use in next sync
+    const maxCreatedAt = results.length > 0
+      ? Math.max(...results.map(r => r.createdAt.getTime()))
+      : createdSince || Date.now()
+
+    return {
+      contacts: results.map(r => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        bucket: r.bucket,
+        isMe: !!r.isMe,
+        createdAt: r.createdAt.getTime(),
+      })),
+      syncedAt: maxCreatedAt,
+      hasMore: results.length === limit,
+    }
+  }
 
   // Special case: looking for "me" contacts (for sender selection)
   if (isMe) {

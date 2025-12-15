@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useOffline } from '~/composables/useOffline'
+
 useHead({ title: 'Contacts - MereMail' })
+
+const { isOnline } = useOffline()
 
 const route = useRoute()
 const router = useRouter()
@@ -189,7 +193,11 @@ loadContacts(true)
     <header class="page-header">
       <NuxtLink to="/" class="back-link">&larr; Inbox</NuxtLink>
       <h1>Contacts</h1>
+    </header>
 
+    <MustBeOnline v-if="!isOnline" message="Contact management requires an internet connection" />
+
+    <template v-else>
       <nav class="view-nav">
         <button
           class="view-pill"
@@ -216,7 +224,6 @@ loadContacts(true)
           @input="handleSearchInput"
         />
       </div>
-    </header>
 
     <div v-if="isScreenerMode" class="bucket-counts">
       <button
@@ -289,6 +296,7 @@ loadContacts(true)
         {{ loadingMore ? 'Loading...' : 'Load More' }}
       </button>
     </div>
+    </template>
   </div>
 </template>
 

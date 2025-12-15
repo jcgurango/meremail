@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useOffline } from '~/composables/useOffline'
+
+const { isOnline } = useOffline()
+
 interface EmailResult {
   type: 'email'
   id: number
@@ -202,6 +206,9 @@ function clearDateFilters() {
       <h1>Search Emails</h1>
     </header>
 
+    <MustBeOnline v-if="!isOnline" message="Search requires an internet connection" />
+
+    <template v-else>
     <div class="search-controls">
       <div class="search-input-wrapper">
         <span class="search-icon">🔍</span>
@@ -309,6 +316,7 @@ function clearDateFilters() {
         Type at least 2 characters or select a filter
       </div>
     </div>
+    </template>
   </div>
 </template>
 

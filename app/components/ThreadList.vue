@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import { useOffline } from '~/composables/useOffline'
+import {
+  getCachedInboxThreads,
+  getCachedReplyLaterThreads,
+} from '~/composables/useOfflineThreadCache'
+import type { CachedThread, OfflineThread } from '~/utils/offline-db'
+
 interface Thread {
   type: 'thread' | 'draft'
   id: number
@@ -22,11 +29,14 @@ const props = defineProps<{
   emptyMessage?: string
 }>()
 
+const { isOnline } = useOffline()
+
 const threads = ref<Thread[]>([])
 const hasMore = ref(false)
 const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<Error | null>(null)
+const usingCache = ref(false)
 
 function buildQuery(offset = 0) {
   const query: Record<string, string | number> = { offset }
@@ -38,9 +48,75 @@ function buildQuery(offset = 0) {
   return query
 }
 
+// Convert cached thread data to display format
+function cachedToThread(cached: OfflineThread): Thread {
+  return {
+    type: cached.type,
+    id: cached.id,
+    subject: cached.subject,
+    latestEmailAt: cached.latestEmailAt ? new Date(cached.latestEmailAt).toISOString() : null,
+    unreadCount: cached.unreadCount,
+    totalCount: cached.totalCount,
+    draftCount: cached.draftCount,
+    participants: cached.participants,
+    snippet: cached.snippet,
+  }
+}
+
+// Convert cached reply-later thread to display format
+function cachedReplyLaterToThread(cached: CachedThread): Thread {
+  const latestEmail = cached.emails[0]
+  return {
+    type: 'thread',
+    id: cached.id,
+    subject: cached.subject,
+    latestEmailAt: latestEmail?.sentAt ? new Date(latestEmail.sentAt).toISOString() : null,
+    unreadCount: 0,
+    totalCount: cached.emails.length,
+    draftCount: cached.emails.filter((e: { status: string }) => e.status === 'draft').length,
+    participants: latestEmail?.sender ? [latestEmail.sender] : [],
+    snippet: latestEmail?.contentText?.substring(0, 150) || '',
+  }
+}
+
+async function loadFromCache(): Promise<boolean> {
+  try {
+    if (props.replyLater) {
+      const cachedThreads = await getCachedReplyLaterThreads()
+      if (cachedThreads.length > 0) {
+        threads.value = cachedThreads.map(cachedReplyLaterToThread)
+        hasMore.value = false
+        usingCache.value = true
+        return true
+      }
+    } else if (props.bucket === 'approved' || !props.bucket) {
+      const cachedThreads = await getCachedInboxThreads()
+      if (cachedThreads.length > 0) {
+        threads.value = cachedThreads.map(cachedToThread)
+        hasMore.value = false // Disable "Load More" when using cache
+        usingCache.value = true
+        return true
+      }
+    }
+    return false
+  } catch (e) {
+    console.error('[Offline] Failed to load from cache:', e)
+    return false
+  }
+}
+
 async function loadThreads() {
   loading.value = true
   error.value = null
+  usingCache.value = false
+
+  // If offline, load from cache (may be empty, that's okay)
+  if (!isOnline.value) {
+    await loadFromCache()
+    loading.value = false
+    return
+  }
+
   try {
     const data = await $fetch<ThreadsResponse>('/api/threads', {
       query: buildQuery()
@@ -48,14 +124,18 @@ async function loadThreads() {
     threads.value = data.threads
     hasMore.value = data.hasMore
   } catch (e) {
-    error.value = e as Error
+    // On network error, try to load from cache
+    const loaded = await loadFromCache()
+    if (!loaded) {
+      error.value = e as Error
+    }
   } finally {
     loading.value = false
   }
 }
 
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value) return
+  if (loadingMore.value || !hasMore.value || usingCache.value) return
   loadingMore.value = true
   try {
     const response = await $fetch<ThreadsResponse>('/api/threads', {
@@ -116,7 +196,11 @@ await loadThreads()
       {{ emptyMessage || 'No threads' }}
     </div>
 
-    <ul v-else class="thread-list">
+    <div v-if="usingCache && !loading" class="cache-notice">
+      Showing cached data (offline)
+    </div>
+
+    <ul v-if="threads.length > 0 && !loading" class="thread-list">
       <li
         v-for="thread in threads"
         :key="`${thread.type}-${thread.id}`"
@@ -302,5 +386,14 @@ await loadThreads()
   text-transform: uppercase;
   border-radius: 3px;
   vertical-align: middle;
+}
+
+.cache-notice {
+  padding: 8px 20px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid #fde68a;
 }
 </style>

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useOffline } from '~/composables/useOffline'
+import { getCachedSetAsideThreads } from '~/composables/useOfflineThreadCache'
+
 interface Participant {
   id: number
   name: string | null
@@ -38,11 +41,14 @@ defineProps<{
   emptyMessage: string
 }>()
 
+const { isOnline } = useOffline()
+
 const emails = ref<FeedEmail[]>([])
 const hasMore = ref(false)
 const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<Error | null>(null)
+const usingCache = ref(false)
 
 // Track loaded email IDs to exclude from future fetches
 const loadedIds = ref<Set<number>>(new Set())
@@ -58,11 +64,71 @@ const itemRefs = ref<HTMLElement[]>([])
 const currentMiddleIndex = ref<number | null>(null)
 let readDebounceTimeout: ReturnType<typeof setTimeout> | null = null
 
+// Load from offline cache
+async function loadFromCache(): Promise<boolean> {
+  try {
+    const cachedThreads = await getCachedSetAsideThreads()
+    if (cachedThreads.length === 0) return false
+
+    // Flatten cached thread emails into feed format
+    const cachedEmails: FeedEmail[] = []
+    for (const thread of cachedThreads) {
+      for (const email of thread.emails) {
+        cachedEmails.push({
+          id: email.id,
+          threadId: email.threadId,
+          subject: email.subject,
+          content: email.contentHtml || email.contentText,
+          sentAt: email.sentAt ? new Date(email.sentAt).toISOString() : null,
+          receivedAt: null,
+          isRead: true, // Cached emails were already read
+          sender: email.sender,
+          recipients: email.recipients,
+          attachments: email.attachmentIds.map(id => ({
+            id,
+            filename: '',
+            mimeType: null,
+            size: null,
+          })),
+        })
+      }
+    }
+
+    // Sort by sentAt descending
+    cachedEmails.sort((a, b) => {
+      const aTime = a.sentAt ? new Date(a.sentAt).getTime() : 0
+      const bTime = b.sentAt ? new Date(b.sentAt).getTime() : 0
+      return bTime - aTime
+    })
+
+    emails.value = cachedEmails
+    hasMore.value = false
+    usingCache.value = true
+
+    for (const email of cachedEmails) {
+      loadedIds.value.add(email.id)
+    }
+
+    return true
+  } catch (e) {
+    console.error('[Offline] Failed to load from cache:', e)
+    return false
+  }
+}
+
 async function loadEmails() {
   loading.value = true
   error.value = null
   loadedIds.value.clear()
   markedReadIds.value.clear()
+  usingCache.value = false
+
+  // If offline, load from cache
+  if (!isOnline.value) {
+    await loadFromCache()
+    loading.value = false
+    return
+  }
 
   try {
     const data = await $fetch<FeedResponse>('/api/set-aside')
@@ -74,14 +140,18 @@ async function loadEmails() {
       loadedIds.value.add(email.id)
     }
   } catch (e) {
-    error.value = e as Error
+    // On network error, try to load from cache
+    const loaded = await loadFromCache()
+    if (!loaded) {
+      error.value = e as Error
+    }
   } finally {
     loading.value = false
   }
 }
 
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value) return
+  if (loadingMore.value || !hasMore.value || usingCache.value) return
   loadingMore.value = true
   try {
     // Pass already-loaded IDs to exclude
@@ -224,7 +294,11 @@ await loadEmails()
       {{ emptyMessage }}
     </div>
 
-    <div v-else class="email-feed">
+    <div v-if="usingCache && !loading" class="cache-notice">
+      Showing cached data (offline)
+    </div>
+
+    <div v-if="emails.length > 0 && !loading" class="email-feed">
       <div
         v-for="(email, index) in emails"
         :key="email.id"
@@ -287,5 +361,14 @@ await loadEmails()
 .load-more-btn:disabled {
   color: #999;
   cursor: not-allowed;
+}
+
+.cache-notice {
+  padding: 8px 20px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid #fde68a;
 }
 </style>

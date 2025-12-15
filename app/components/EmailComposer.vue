@@ -4,6 +4,8 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
+import { useOffline } from '~/composables/useOffline'
+import { searchCachedContacts } from '~/composables/useOfflineContacts'
 
 interface Contact {
   id: number
@@ -529,6 +531,8 @@ function toggleEditorMode() {
 }
 
 // Contact search
+const { isOnline } = useOffline()
+
 async function searchContacts() {
   if (searchQuery.value.length < 2) {
     searchResults.value = []
@@ -537,16 +541,26 @@ async function searchContacts() {
 
   searchLoading.value = true
   try {
-    const data = await $fetch<{ contacts: Contact[] }>('/api/contacts', {
-      query: { q: searchQuery.value, limit: 10 }
-    })
     const addedIds = new Set([
       ...toRecipients.value.map(r => r.id),
       ...ccRecipients.value.map(r => r.id),
       ...bccRecipients.value.map(r => r.id),
     ].filter(Boolean))
 
-    searchResults.value = data.contacts.filter(c =>
+    let contacts: Contact[]
+
+    // Use cached contacts when offline
+    if (!isOnline.value) {
+      const cached = await searchCachedContacts(searchQuery.value)
+      contacts = cached.map(c => ({ id: c.id, name: c.name, email: c.email }))
+    } else {
+      const data = await $fetch<{ contacts: Contact[] }>('/api/contacts', {
+        query: { q: searchQuery.value, limit: 10 }
+      })
+      contacts = data.contacts
+    }
+
+    searchResults.value = contacts.filter(c =>
       !addedIds.has(c.id) && !meContacts.value.some(m => m.id === c.id)
     )
   } catch (e) {

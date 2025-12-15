@@ -25,6 +25,7 @@
     "@tiptap/starter-kit": "^3.13.0",
     "@tiptap/vue-3": "^3.13.0",
     "better-sqlite3": "^12.5.0",
+    "dexie": "^4.2.1",
     "dompurify": "^3.3.1",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.0",
