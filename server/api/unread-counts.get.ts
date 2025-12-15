@@ -54,11 +54,12 @@ export default defineEventHandler(async () => {
     ))
     .get()
 
-  // Reply Later: total thread count (not unread-based)
+  // Reply Later: threads with replyLaterAt set OR threads with open drafts
   const replyLaterCount = db
-    .select({ count: sql<number>`COUNT(*)` })
+    .select({ count: sql<number>`COUNT(DISTINCT ${emailThreads.id})` })
     .from(emailThreads)
-    .where(isNotNull(emailThreads.replyLaterAt))
+    .leftJoin(emails, eq(emails.threadId, emailThreads.id))
+    .where(sql`${emailThreads.replyLaterAt} IS NOT NULL OR ${emails.status} = 'draft'`)
     .get()
 
   // Set Aside: total thread count (not unread-based)

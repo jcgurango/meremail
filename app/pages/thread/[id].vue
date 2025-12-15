@@ -147,17 +147,56 @@ function onDraftSaved(draftId: number) {
 // Send to menu state
 const showSendToMenu = ref(false)
 
-async function toggleReplyLater() {
+// Count drafts in thread
+const draftCount = computed(() => {
+  if (!thread.value?.emails) return 0
+  return thread.value.emails.filter(e => e.status === 'draft').length
+})
+
+// Reply Later is "on" if explicitly set OR if there are drafts
+const isInReplyLater = computed(() => {
+  return !!thread.value?.replyLaterAt || draftCount.value > 0
+})
+
+async function toggleReplyLater(deleteDrafts = false) {
   if (!thread.value) return
-  const newValue = !thread.value.replyLaterAt
+
+  // Determine new value based on current "combined" state
+  const newValue = !isInReplyLater.value
 
   try {
-    await $fetch(`/api/threads/${thread.value.id}/reply-later`, {
+    const response = await $fetch<{
+      success: boolean
+      requiresConfirmation?: boolean
+      draftCount?: number
+      message?: string
+      replyLater?: boolean
+      replyLaterAt?: string | null
+    }>(`/api/threads/${thread.value.id}/reply-later`, {
       method: 'PATCH',
-      body: { replyLater: newValue }
+      body: { replyLater: newValue, deleteDrafts }
     })
-    // Update local state - set to current time or null
-    thread.value.replyLaterAt = newValue ? new Date().toISOString() : null
+
+    // If confirmation is required (has drafts), show confirm dialog
+    if (response.requiresConfirmation) {
+      const confirmed = window.confirm(
+        `${response.message}\n\nAre you sure you want to remove this thread from Reply Later and delete the draft${response.draftCount! > 1 ? 's' : ''}?`
+      )
+      if (confirmed) {
+        // Retry with deleteDrafts: true
+        await toggleReplyLater(true)
+      }
+      return
+    }
+
+    // Update local state
+    thread.value.replyLaterAt = response.replyLaterAt || null
+
+    // If drafts were deleted, refresh to update the email list
+    if (deleteDrafts) {
+      await refresh()
+    }
+
     showSendToMenu.value = false
   } catch (e) {
     console.error('Failed to update reply later status:', e)
@@ -194,16 +233,17 @@ async function toggleSetAside() {
           <div class="send-to-wrapper">
             <button
               class="send-to-btn"
-              :class="{ active: thread.replyLaterAt || thread.setAsideAt }"
+              :class="{ active: isInReplyLater || thread.setAsideAt }"
               @click="showSendToMenu = !showSendToMenu"
             >
               Send to
               <span class="dropdown-arrow">▼</span>
             </button>
             <div v-if="showSendToMenu" class="send-to-menu">
-              <button class="menu-item" @click="toggleReplyLater">
-                <span class="menu-check">{{ thread.replyLaterAt ? '✓' : '' }}</span>
+              <button class="menu-item" @click="toggleReplyLater()">
+                <span class="menu-check">{{ isInReplyLater ? '✓' : '' }}</span>
                 Reply Later
+                <span v-if="draftCount > 0" class="draft-indicator">({{ draftCount }} draft{{ draftCount > 1 ? 's' : '' }})</span>
               </button>
               <button class="menu-item" @click="toggleSetAside">
                 <span class="menu-check">{{ thread.setAsideAt ? '✓' : '' }}</span>
@@ -402,6 +442,13 @@ async function toggleSetAside() {
   width: 16px;
   text-align: center;
   color: #22c55e;
+}
+
+.draft-indicator {
+  margin-left: auto;
+  font-size: 12px;
+  color: #f59e0b;
+  font-weight: 500;
 }
 
 h1 {

@@ -31,10 +31,13 @@ export default defineEventHandler(async (event) => {
   let orderByClause
 
   if (replyLater) {
-    // Reply Later queue: show all threads with replyLaterAt set, sorted by oldest addition first
-    whereClause = isNotNull(emailThreads.replyLaterAt)
+    // Reply Later queue: show threads with replyLaterAt set OR threads with open drafts
+    // Sorted by oldest addition first (drafts without replyLaterAt sort by their creation)
+    whereClause = sql`${emailThreads.replyLaterAt} IS NOT NULL OR EXISTS (
+      SELECT 1 FROM ${emails} WHERE ${emails.threadId} = ${emailThreads.id} AND ${emails.status} = 'draft'
+    )`
     orderByClause = [
-      asc(emailThreads.replyLaterAt),  // Oldest addition first
+      asc(sql`COALESCE(${emailThreads.replyLaterAt}, sort_date)`),  // Oldest addition first
       desc(sql`sort_date`)  // Then by sort date
     ]
   } else if (bucket === 'approved') {
@@ -68,6 +71,7 @@ export default defineEventHandler(async (event) => {
       sortDate: sql<number>`MAX(COALESCE(${emails.readAt}, 0), ${emails.sentAt})`.as('sort_date'),
       unreadCount: sql<number>`SUM(CASE WHEN ${emails.readAt} IS NULL THEN 1 ELSE 0 END)`.as('unread_count'),
       totalCount: sql<number>`COUNT(${emails.id})`.as('total_count'),
+      draftCount: sql<number>`SUM(CASE WHEN ${emails.status} = 'draft' THEN 1 ELSE 0 END)`.as('draft_count'),
     })
     .from(emailThreads)
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
@@ -84,7 +88,7 @@ export default defineEventHandler(async (event) => {
 
   // Get participants for each thread
   const threadsWithParticipants = threads.map((thread) => {
-    const participants = db
+    const participantsRaw = db
       .select({
         id: contacts.id,
         name: contacts.name,
@@ -96,6 +100,17 @@ export default defineEventHandler(async (event) => {
       .innerJoin(contacts, eq(contacts.id, emailThreadContacts.contactId))
       .where(eq(emailThreadContacts.threadId, thread.id))
       .all()
+
+    // Deduplicate by contact ID (same person can be sender AND recipient)
+    // Prefer 'sender' role over 'recipient' for display purposes
+    const participantsMap = new Map<number, typeof participantsRaw[0]>()
+    for (const p of participantsRaw) {
+      const existing = participantsMap.get(p.id)
+      if (!existing || (p.role === 'sender' && existing.role !== 'sender')) {
+        participantsMap.set(p.id, p)
+      }
+    }
+    const participants = Array.from(participantsMap.values())
 
     // Get snippet from latest email not from us - prefer text, fall back to stripped HTML
     const latestEmail = db
