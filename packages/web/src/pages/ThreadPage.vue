@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
 import EmailComposer from '@/components/EmailComposer.vue'
+import { getCachedThread, cacheReplyLaterThreads, cacheSetAsideThreads } from '@/composables/useOfflineThreadCache'
 
 interface Participant {
   id: number
@@ -67,19 +68,74 @@ watch(pageTitle, (newTitle) => {
   document.title = newTitle
 })
 
+const isFromCache = ref(false)
+
 async function loadThread() {
   pending.value = true
   error.value = null
+  isFromCache.value = false
+
+  const threadId = Number(route.params.id)
 
   try {
-    const response = await fetch(`/api/threads/${route.params.id}`)
+    const response = await fetch(`/api/threads/${threadId}`)
     if (response.ok) {
       thread.value = await response.json() as Thread
     } else {
       throw new Error(`Failed to load thread: ${response.status}`)
     }
   } catch (e) {
-    error.value = e as Error
+    // Try to load from offline cache
+    const cached = await getCachedThread(threadId, 'replyLater') || await getCachedThread(threadId, 'setAside')
+    if (cached) {
+      thread.value = {
+        id: cached.id,
+        subject: cached.subject,
+        createdAt: new Date(cached.cachedAt).toISOString(),
+        replyLaterAt: cached.replyLaterAt ? new Date(cached.replyLaterAt).toISOString() : null,
+        setAsideAt: cached.setAsideAt ? new Date(cached.setAsideAt).toISOString() : null,
+        defaultFromId: null,
+        emails: cached.emails.map(email => ({
+          id: email.id,
+          subject: email.subject,
+          content: email.contentHtml || email.contentText,
+          contentText: email.contentText,
+          contentHtml: email.contentHtml,
+          sentAt: email.sentAt ? new Date(email.sentAt).toISOString() : null,
+          receivedAt: null,
+          isRead: true,
+          status: email.status,
+          sender: email.sender ? {
+            id: email.sender.id,
+            name: email.sender.name,
+            email: email.sender.email,
+            isMe: email.sender.isMe,
+            role: email.sender.role,
+          } : null,
+          recipients: email.recipients.map(r => ({
+            id: r.id,
+            name: r.name,
+            email: r.email,
+            isMe: r.isMe,
+            role: r.role,
+          })),
+          attachments: email.attachmentIds.map(id => ({
+            id,
+            filename: 'Attachment',
+            mimeType: null,
+            size: null,
+            isInline: null,
+          })),
+          messageId: null,
+          references: null,
+          inReplyTo: null,
+          replyTo: null,
+        })),
+      }
+      isFromCache.value = true
+    } else {
+      error.value = e as Error
+    }
   } finally {
     pending.value = false
   }
@@ -181,6 +237,10 @@ async function onDraftDiscarded() {
 
 function onDraftSaved(draftId: number) {
   closeComposer()
+  // If this thread is in Reply Later, refresh the cache so the draft shows up offline
+  if (thread.value?.replyLaterAt || draftCount.value > 0) {
+    cacheReplyLaterThreads().catch(e => console.warn('Failed to refresh Reply Later cache:', e))
+  }
 }
 
 // Send to menu state
@@ -241,6 +301,9 @@ async function toggleReplyLater(deleteDrafts = false) {
       }
 
       showSendToMenu.value = false
+
+      // Refresh Reply Later cache in background
+      cacheReplyLaterThreads().catch(e => console.warn('Failed to refresh Reply Later cache:', e))
     }
   } catch (e) {
     console.error('Failed to update reply later status:', e)
@@ -260,6 +323,9 @@ async function toggleSetAside() {
     // Update local state - set to current time or null
     thread.value.setAsideAt = newValue ? new Date().toISOString() : null
     showSendToMenu.value = false
+
+    // Refresh Set Aside cache in background
+    cacheSetAsideThreads().catch(e => console.warn('Failed to refresh Set Aside cache:', e))
   } catch (e) {
     console.error('Failed to update set aside status:', e)
   }
@@ -310,6 +376,9 @@ function goBack() {
       </div>
 
       <template v-else-if="thread">
+        <div v-if="isFromCache" class="offline-notice">
+          Viewing cached version (offline)
+        </div>
         <div class="emails">
           <template v-for="email in sortedEmails" :key="email.id">
             <!-- Inline composer for replying -->
@@ -518,6 +587,17 @@ h1 {
 
 .error {
   color: #dc2626;
+}
+
+.offline-notice {
+  margin: 20px;
+  padding: 12px 16px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 14px;
+  text-align: center;
 }
 
 .emails {

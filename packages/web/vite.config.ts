@@ -54,6 +54,32 @@ export default defineConfig({
             },
           },
           {
+            // /api/contacts/me - identities for EmailComposer "From" dropdown
+            urlPattern: /\/api\/contacts\/me$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'identities-cache',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 5,
+                maxAgeSeconds: 60 * 60 * 24,
+              },
+            },
+          },
+          {
+            // /api/contacts/:id - individual contact details
+            urlPattern: /\/api\/contacts\/\d+(\?.*)?$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'contact-detail-cache',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24,
+              },
+            },
+          },
+          {
             urlPattern: /\/api\/threads(\?.*)?$/,
             handler: 'NetworkFirst',
             options: {
@@ -73,6 +99,18 @@ export default defineConfig({
               networkTimeoutSeconds: 3,
               expiration: {
                 maxEntries: 100,
+                maxAgeSeconds: 60 * 60,
+              },
+            },
+          },
+          {
+            urlPattern: /\/api\/drafts\/\d+$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'drafts-cache',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 50,
                 maxAgeSeconds: 60 * 60,
               },
             },

@@ -6,7 +6,7 @@ import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useOffline } from '@/composables/useOffline'
-import { searchCachedContacts } from '@/composables/useOfflineContacts'
+import { searchCachedContacts, getCachedMeContacts } from '@/composables/useOfflineContacts'
 
 interface Contact {
   id: number
@@ -326,20 +326,29 @@ function formatFileSize(bytes: number): string {
 
 // Load "me" contacts for From dropdown
 async function loadMeContacts() {
+  let contacts: Contact[] = []
+
   try {
     const response = await fetch('/api/contacts/me')
     if (!response.ok) throw new Error('Failed to load identities')
     const data = await response.json() as { contacts: Contact[] }
-    meContacts.value = data.contacts
-
-    // Set default From
-    if (props.defaultFromId) {
-      selectedFromId.value = props.defaultFromId
-    } else if (data.contacts.length > 0 && data.contacts[0]) {
-      selectedFromId.value = data.contacts[0].id
-    }
+    contacts = data.contacts
   } catch (e) {
-    console.error('Failed to load identities:', e)
+    // Fall back to cached identities
+    const cached = await getCachedMeContacts()
+    contacts = cached.map(c => ({ id: c.id, name: c.name, email: c.email }))
+    if (contacts.length === 0) {
+      console.error('Failed to load identities:', e)
+    }
+  }
+
+  meContacts.value = contacts
+
+  // Set default From
+  if (props.defaultFromId) {
+    selectedFromId.value = props.defaultFromId
+  } else if (contacts.length > 0 && contacts[0]) {
+    selectedFromId.value = contacts[0].id
   }
 }
 

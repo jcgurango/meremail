@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailComposer from '@/components/EmailComposer.vue'
+import { getOfflineDraftByServerId } from '@/composables/useOfflineDrafts'
 
 interface Recipient {
   id: number
@@ -56,9 +57,12 @@ watch(pageTitle, (newTitle) => {
   document.title = newTitle
 })
 
+const isFromCache = ref(false)
+
 async function loadDraft() {
   pending.value = true
   error.value = null
+  isFromCache.value = false
 
   try {
     const response = await fetch(`/api/drafts/${draftId}`)
@@ -68,7 +72,33 @@ async function loadDraft() {
       throw new Error(`Failed to load draft: ${response.status}`)
     }
   } catch (e) {
-    error.value = e as Error
+    // Try to load from offline drafts cache
+    const offlineDraft = await getOfflineDraftByServerId(draftId)
+    if (offlineDraft) {
+      draft.value = {
+        id: offlineDraft.serverId || draftId,
+        subject: offlineDraft.subject.value,
+        contentText: offlineDraft.contentText.value,
+        contentHtml: offlineDraft.contentHtml.value,
+        sender: null, // We don't store full sender info in offline drafts
+        recipients: offlineDraft.recipients.value.map(r => ({
+          id: r.id || 0,
+          name: r.name ?? null,
+          email: r.email,
+          role: r.role,
+        })),
+        attachments: offlineDraft.attachments.map(a => ({
+          id: a.serverId || 0,
+          filename: a.filename,
+          mimeType: a.mimeType,
+          size: a.size,
+          isInline: null,
+        })),
+      }
+      isFromCache.value = true
+    } else {
+      error.value = e as Error
+    }
   } finally {
     pending.value = false
   }
@@ -109,7 +139,11 @@ function goBack() {
         Failed to load draft: {{ error.message }}
       </div>
 
-      <div v-else-if="draft" class="composer-wrapper">
+      <div v-if="isFromCache" class="offline-notice">
+          Viewing cached version (offline)
+        </div>
+
+        <div v-if="draft" class="composer-wrapper">
         <EmailComposer
           :existing-draft="{
             id: draft.id,
@@ -184,6 +218,17 @@ h1 {
 
 .error {
   color: #dc2626;
+}
+
+.offline-notice {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 14px;
+  text-align: center;
 }
 
 .composer-wrapper {

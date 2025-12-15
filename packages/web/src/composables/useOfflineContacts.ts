@@ -78,6 +78,7 @@ export async function refreshContactCache(): Promise<void> {
 
 /**
  * Search cached contacts locally (client-side FTS-like search).
+ * Only returns approved contacts (same as online search behavior).
  */
 export function searchCachedContacts(query: string): Promise<OfflineContact[]> {
   const db = getOfflineDb()
@@ -87,9 +88,10 @@ export function searchCachedContacts(query: string): Promise<OfflineContact[]> {
     return Promise.resolve([])
   }
 
-  // Search by name or email containing the query
+  // Search by name or email containing the query, only approved contacts
   return db.contacts
     .filter(contact => {
+      if (contact.bucket !== 'approved') return false
       const nameMatch = contact.name?.toLowerCase().includes(searchTerm) ?? false
       const emailMatch = contact.email.toLowerCase().includes(searchTerm)
       return nameMatch || emailMatch
