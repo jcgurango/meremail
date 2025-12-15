@@ -295,6 +295,34 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
   } else {
     // Check if this email is older than the current first email - update creator if so
     maybeUpdateThreadCreator(threadId!, email.sentAt, senderId)
+
+    // Auto-approve sender if they're replying to a thread from an approved contact
+    // and they don't have a bucket yet
+    if (!senderIsMe && !email.isJunk) {
+      const sender = db.select({ bucket: contacts.bucket }).from(contacts).where(eq(contacts.id, senderId)).get()
+      if (sender && sender.bucket === null) {
+        // Check if thread creator is approved
+        const thread = db
+          .select({ creatorId: emailThreads.creatorId })
+          .from(emailThreads)
+          .where(eq(emailThreads.id, threadId!))
+          .get()
+        if (thread?.creatorId) {
+          const creator = db
+            .select({ bucket: contacts.bucket, isMe: contacts.isMe })
+            .from(contacts)
+            .where(eq(contacts.id, thread.creatorId))
+            .get()
+          if (creator && (creator.bucket === 'approved' || creator.isMe)) {
+            db.update(contacts)
+              .set({ bucket: 'approved' })
+              .where(eq(contacts.id, senderId))
+              .run()
+            console.log(`  Auto-approved contact (replying to approved thread): ${email.from?.name || email.from?.email}`)
+          }
+        }
+      }
+    }
   }
   const finalThreadId = threadId!
 
