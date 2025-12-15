@@ -1,15 +1,54 @@
 <script setup lang="ts">
+const router = useRouter()
 const searchOpen = ref(false)
+const composing = ref(false)
 
 // Fetch unscreened count
 const unscreenedCount = ref(0)
 
 async function loadUnscreenedCount() {
   try {
-    const data = await $fetch<{ counts: Record<string, number> }>('/api/contacts?limit=1')
-    unscreenedCount.value = data.counts.unsorted || 0
+    const data = await $fetch<{ counts?: Record<string, number> }>('/api/contacts?view=screener&limit=1&counts=true')
+    unscreenedCount.value = data.counts?.unsorted || 0
   } catch (e) {
     console.error('Failed to load unscreened count:', e)
+  }
+}
+
+// Get default sender for composing
+async function getDefaultSender(): Promise<number | null> {
+  try {
+    const data = await $fetch<{ contacts: { id: number }[] }>('/api/contacts?isMe=true&limit=1')
+    return data.contacts[0]?.id || null
+  } catch {
+    return null
+  }
+}
+
+async function compose() {
+  if (composing.value) return
+  composing.value = true
+
+  try {
+    const senderId = await getDefaultSender()
+    if (!senderId) {
+      alert('No sender identity found. Please import emails first.')
+      return
+    }
+
+    // Create a standalone draft (no thread)
+    const result = await $fetch<{ id: number }>('/api/drafts', {
+      method: 'POST',
+      body: { senderId }
+    })
+
+    // Navigate to the draft page
+    router.push(`/draft/${result.id}`)
+  } catch (e) {
+    console.error('Failed to create draft:', e)
+    alert('Failed to create new message')
+  } finally {
+    composing.value = false
   }
 }
 
@@ -21,6 +60,10 @@ onMounted(() => {
 
 <template>
   <nav class="bottom-nav">
+    <button class="nav-pill compose" @click="compose" :disabled="composing">
+      <span class="nav-icon">✏️</span>
+      <span class="nav-label">{{ composing ? 'Creating...' : 'Compose' }}</span>
+    </button>
     <button class="nav-pill search" @click="searchOpen = true">
       <span class="nav-icon">🔍</span>
       <span class="nav-label">Search</span>
@@ -69,6 +112,18 @@ onMounted(() => {
 .nav-pill:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.nav-pill.compose {
+  background: #dcfce7;
+  color: #15803d;
+  border: none;
+  cursor: pointer;
+}
+
+.nav-pill.compose:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .nav-pill.search {

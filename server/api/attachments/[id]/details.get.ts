@@ -45,14 +45,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Email not found' })
   }
 
-  const thread = db
-    .select({
-      id: emailThreads.id,
-      subject: emailThreads.subject,
-    })
-    .from(emailThreads)
-    .where(eq(emailThreads.id, email.threadId))
-    .get()
+  const thread = email.threadId
+    ? db
+        .select({
+          id: emailThreads.id,
+          subject: emailThreads.subject,
+        })
+        .from(emailThreads)
+        .where(eq(emailThreads.id, email.threadId))
+        .get()
+    : null
 
   const sender = email.senderId
     ? db.select().from(contacts).where(eq(contacts.id, email.senderId)).get()

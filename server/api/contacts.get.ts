@@ -1,14 +1,16 @@
 import { db } from '../db'
 import { contacts, emails, emailContacts } from '../db/schema'
-import { eq, sql, asc, isNull, and, ne } from 'drizzle-orm'
+import { eq, sql, asc, isNull, and, ne, or } from 'drizzle-orm'
 import { sqlite } from '../db'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const limit = Math.min(Number(query.limit) || 50, 100)
   const offset = Number(query.offset) || 0
-  const view = (query.view as string) || 'all' // 'all' or 'screener'
+  const view = (query.view as string) || 'approved' // Default to approved, not 'all'
   const q = (query.q as string || '').trim()
+  const isMe = query.isMe === 'true'
+  const includeCounts = query.counts === 'true'
 
   // For search, use FTS
   const hasSearchTerm = q.length >= 2
@@ -16,8 +18,37 @@ export default defineEventHandler(async (event) => {
 
   let contactsResult: any[]
 
+  // Special case: looking for "me" contacts (for sender selection)
+  if (isMe) {
+    const results = await db
+      .select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        bucket: contacts.bucket,
+        isMe: contacts.isMe,
+      })
+      .from(contacts)
+      .where(eq(contacts.isMe, true))
+      .orderBy(asc(contacts.name))
+      .limit(limit)
+      .offset(offset)
+
+    return {
+      contacts: results.map(r => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        bucket: r.bucket,
+        isMe: !!r.isMe,
+      })),
+      hasMore: false,
+    }
+  }
+
   if (hasSearchTerm) {
-    // FTS search for contacts - respect view filter
+    // FTS search for contacts - search across approved contacts and "me" contacts
+    // This is used for recipient autocomplete, so we want people you can email
     let contactSql = `
       SELECT
         c.id,
@@ -34,9 +65,9 @@ export default defineEventHandler(async (event) => {
     // Filter by view
     if (view === 'screener') {
       contactSql += ` AND c.bucket IS NULL AND c.is_me = 0`
-    } else if (view === 'contacts') {
-      // 'contacts' view shows approved contacts
-      contactSql += ` AND c.bucket = 'approved' AND c.is_me = 0`
+    } else if (view === 'all') {
+      // 'all' means no bucket filter - search everyone (for recipient autocomplete)
+      contactSql += ` AND c.is_me = 0`
     } else {
       // Specific bucket filter (approved, feed, paper_trail, etc.)
       contactSql += ` AND c.bucket = '${view}' AND c.is_me = 0`
@@ -118,34 +149,11 @@ export default defineEventHandler(async (event) => {
   const hasMore = contactsResult.length > limit
   const items = contactsResult.slice(0, limit)
 
-  // Get counts for each bucket
-  const bucketCounts = await db
-    .select({
-      bucket: contacts.bucket,
-      count: sql<number>`COUNT(*)`.as('count'),
-    })
-    .from(contacts)
-    .where(eq(contacts.isMe, false))
-    .groupBy(contacts.bucket)
-
-  const counts: Record<string, number> = {
-    unsorted: 0,
-    approved: 0,
-    feed: 0,
-    paper_trail: 0,
-    blocked: 0,
-    quarantine: 0,
-  }
-
-  for (const { bucket, count } of bucketCounts) {
-    if (bucket === null) {
-      counts.unsorted = count
-    } else {
-      counts[bucket] = count
-    }
-  }
-
-  return {
+  const response: {
+    contacts: any[]
+    hasMore: boolean
+    counts?: Record<string, number>
+  } = {
     contacts: items.map(item => ({
       id: item.id,
       name: item.name,
@@ -156,6 +164,38 @@ export default defineEventHandler(async (event) => {
       emailCount: item.emailCount || 0,
     })),
     hasMore,
-    counts,
   }
+
+  // Only include counts when explicitly requested
+  if (includeCounts) {
+    const bucketCounts = await db
+      .select({
+        bucket: contacts.bucket,
+        count: sql<number>`COUNT(*)`.as('count'),
+      })
+      .from(contacts)
+      .where(eq(contacts.isMe, false))
+      .groupBy(contacts.bucket)
+
+    const counts: Record<string, number> = {
+      unsorted: 0,
+      approved: 0,
+      feed: 0,
+      paper_trail: 0,
+      blocked: 0,
+      quarantine: 0,
+    }
+
+    for (const { bucket, count } of bucketCounts) {
+      if (bucket === null) {
+        counts.unsorted = count
+      } else {
+        counts[bucket] = count
+      }
+    }
+
+    response.counts = counts
+  }
+
+  return response
 })

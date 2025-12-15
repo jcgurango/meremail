@@ -1,19 +1,24 @@
 CREATE TABLE `email_threads` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`subject` text NOT NULL,
+	`creator_id` integer,
+	`reply_later_at` integer,
+	`set_aside_at` integer,
 	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`creator_id`) REFERENCES `contacts`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `emails` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`thread_id` integer NOT NULL,
+	`thread_id` integer,
 	`sender_id` integer NOT NULL,
 	`message_id` text,
 	`in_reply_to` text,
 	`references` text,
 	`folder` text DEFAULT 'INBOX' NOT NULL,
-	`is_read` integer DEFAULT false NOT NULL,
+	`read_at` integer,
+	`status` text DEFAULT 'sent' NOT NULL,
 	`subject` text NOT NULL,
 	`headers` text,
 	`content_text` text NOT NULL,
@@ -32,6 +37,8 @@ CREATE TABLE `attachments` (
 	`mime_type` text,
 	`size` integer,
 	`file_path` text NOT NULL,
+	`content_id` text,
+	`is_inline` integer DEFAULT false NOT NULL,
 	`extracted_text` text,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`email_id`) REFERENCES `emails`(`id`) ON UPDATE no action ON DELETE no action
@@ -42,6 +49,7 @@ CREATE TABLE `contacts` (
 	`name` text,
 	`email` text NOT NULL,
 	`is_me` integer DEFAULT false NOT NULL,
+	`bucket` text,
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint

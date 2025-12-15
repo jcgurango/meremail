@@ -6,7 +6,7 @@ export type EmailStatus = 'draft' | 'sent'
 
 export const emails = sqliteTable('emails', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  threadId: integer('thread_id').notNull().references(() => emailThreads.id),
+  threadId: integer('thread_id').references(() => emailThreads.id),  // Nullable for standalone drafts
   senderId: integer('sender_id').notNull(),
   messageId: text('message_id').unique(),
   inReplyTo: text('in_reply_to'),

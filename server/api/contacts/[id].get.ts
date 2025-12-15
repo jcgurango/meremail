@@ -171,9 +171,10 @@ export default defineEventHandler(async (event) => {
     attachmentsByEmail.get(a.emailId)!.push(a)
   }
 
-  // Group emails by thread
+  // Group emails by thread (skip standalone drafts with null threadId)
   const emailsByThread = new Map<number, typeof emailResults>()
   for (const email of emailResults) {
+    if (email.threadId === null) continue  // Skip standalone drafts
     if (!emailsByThread.has(email.threadId)) {
       emailsByThread.set(email.threadId, [])
     }

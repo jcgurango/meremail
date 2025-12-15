@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a2c1219d-c2dd-4c1e-a1db-14548ae96206",
+  "id": "ca744b09-adfa-4485-8c54-07ef367a010d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "email_threads": {
@@ -21,6 +21,27 @@
           "notNull": true,
           "autoincrement": false
         },
+        "creator_id": {
+          "name": "creator_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reply_later_at": {
+          "name": "reply_later_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "set_aside_at": {
+          "name": "set_aside_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -37,7 +58,21 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "email_threads_creator_id_contacts_id_fk": {
+          "name": "email_threads_creator_id_contacts_id_fk",
+          "tableFrom": "email_threads",
+          "tableTo": "contacts",
+          "columnsFrom": [
+            "creator_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -56,7 +91,7 @@
           "name": "thread_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "sender_id": {
@@ -95,13 +130,20 @@
           "autoincrement": false,
           "default": "'INBOX'"
         },
-        "is_read": {
-          "name": "is_read",
+        "read_at": {
+          "name": "read_at",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": false
+          "default": "'sent'"
         },
         "subject": {
           "name": "subject",
@@ -226,6 +268,21 @@
           "notNull": true,
           "autoincrement": false
         },
+        "content_id": {
+          "name": "content_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "is_inline": {
+          "name": "is_inline",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "extracted_text": {
           "name": "extracted_text",
           "type": "text",
@@ -292,6 +349,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "bucket": {
+          "name": "bucket",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

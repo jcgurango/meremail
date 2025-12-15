@@ -1,6 +1,5 @@
 import { db } from '../db'
 import { emails, emailContacts, emailThreadContacts } from '../db/schema'
-import { eq } from 'drizzle-orm'
 
 interface Recipient {
   id?: number  // Contact ID if from existing contact
@@ -10,7 +9,7 @@ interface Recipient {
 }
 
 interface DraftBody {
-  threadId: number
+  threadId?: number  // Optional - standalone drafts have no thread until sent
   senderId: number  // The "me" contact to send from
   subject?: string
   contentText?: string
@@ -23,20 +22,20 @@ interface DraftBody {
 export default defineEventHandler(async (event) => {
   const body = await readBody<DraftBody>(event)
 
-  if (!body.threadId || !body.senderId) {
+  if (!body.senderId) {
     throw createError({
       statusCode: 400,
-      message: 'Missing required fields: threadId, senderId',
+      message: 'Missing required field: senderId',
     })
   }
 
-  // Recipients are optional for drafts - they're a work in progress
+  const threadId = body.threadId || null  // Standalone drafts have no thread
 
   // Create the draft email
   const result = db
     .insert(emails)
     .values({
-      threadId: body.threadId,
+      threadId,
       senderId: body.senderId,
       subject: body.subject || '',
       contentText: body.contentText || '',
@@ -77,22 +76,24 @@ export default defineEventHandler(async (event) => {
     .onConflictDoNothing()
     .run()
 
-  // Update email_thread_contacts junction
-  const allContactIds = new Set<number>([body.senderId])
-  for (const r of recipients) {
-    if (r.id) allContactIds.add(r.id)
+  // Update email_thread_contacts junction only if we have a thread
+  if (threadId) {
+    const allContactIds = new Set<number>([body.senderId])
+    for (const r of recipients) {
+      if (r.id) allContactIds.add(r.id)
+    }
+
+    for (const contactId of allContactIds) {
+      db.insert(emailThreadContacts)
+        .values({
+          threadId,
+          contactId,
+          role: contactId === body.senderId ? 'sender' : 'recipient',
+        })
+        .onConflictDoNothing()
+        .run()
+    }
   }
 
-  for (const contactId of allContactIds) {
-    db.insert(emailThreadContacts)
-      .values({
-        threadId: body.threadId,
-        contactId,
-        role: contactId === body.senderId ? 'sender' : 'recipient',
-      })
-      .onConflictDoNothing()
-      .run()
-  }
-
-  return { id: emailId, status: 'draft' }
+  return { id: emailId, threadId, status: 'draft' }
 })

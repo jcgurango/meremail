@@ -80,6 +80,7 @@ async function loadContacts(reset = false) {
       limit: '50',
       offset: String(offset),
       view: activeView.value,
+      counts: 'true',
     })
     if (searchQuery.value) {
       params.set('q', searchQuery.value)

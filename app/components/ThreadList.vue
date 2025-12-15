@@ -1,10 +1,12 @@
 <script setup lang="ts">
 interface Thread {
+  type: 'thread' | 'draft'
   id: number
   subject: string
   latestEmailAt: string | null
   unreadCount: number
   totalCount: number
+  draftCount?: number
   participants: { id: number; name: string | null; email: string; role: string }[]
   snippet: string
 }
@@ -115,11 +117,25 @@ await loadThreads()
     </div>
 
     <ul v-else class="thread-list">
-      <li v-for="thread in threads" :key="thread.id" class="thread-item" :class="{ unread: thread.unreadCount > 0 }">
-        <NuxtLink :to="`/thread/${thread.id}`" class="thread-link">
+      <li
+        v-for="thread in threads"
+        :key="`${thread.type}-${thread.id}`"
+        class="thread-item"
+        :class="{
+          unread: thread.unreadCount > 0,
+          'is-draft': thread.type === 'draft'
+        }"
+      >
+        <NuxtLink
+          :to="thread.type === 'draft' ? `/draft/${thread.id}` : `/thread/${thread.id}`"
+          class="thread-link"
+        >
           <div class="thread-header">
             <span class="thread-participants">
-              {{ getParticipantDisplay(thread.participants) }}
+              <span v-if="thread.type === 'draft'" class="draft-badge">Draft</span>
+              {{ thread.type === 'draft' && thread.participants.length === 0
+                ? 'New Message'
+                : getParticipantDisplay(thread.participants) }}
             </span>
             <span class="thread-date">
               {{ formatDate(thread.latestEmailAt) }}
@@ -132,7 +148,7 @@ await loadThreads()
             </span>
           </div>
           <div class="thread-snippet">
-            {{ thread.snippet }}
+            {{ thread.snippet || '(No content)' }}
           </div>
         </NuxtLink>
       </li>
@@ -265,5 +281,26 @@ await loadThreads()
 .load-more-btn:disabled {
   color: #999;
   cursor: not-allowed;
+}
+
+.thread-item.is-draft {
+  background: #fffbeb;
+}
+
+.thread-item.is-draft:hover {
+  background: #fef3c7;
+}
+
+.draft-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-right: 6px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  vertical-align: middle;
 }
 </style>

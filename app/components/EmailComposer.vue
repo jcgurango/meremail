@@ -49,7 +49,7 @@ interface UploadedFile {
 }
 
 const props = defineProps<{
-  threadId: number
+  threadId?: number  // Optional for standalone drafts
   originalEmail?: OriginalEmail
   replyAll?: boolean
   defaultFromId?: number

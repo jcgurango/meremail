@@ -1,6 +1,6 @@
-import { eq, desc, asc, sql, and, inArray, isNotNull } from 'drizzle-orm'
+import { eq, desc, asc, sql, and, isNull } from 'drizzle-orm'
 import { db } from '../db'
-import { emails, emailThreads, contacts, emailThreadContacts } from '../db/schema'
+import { emails, emailThreads, contacts, emailThreadContacts, emailContacts } from '../db/schema'
 
 // Strip HTML tags and decode entities for plain text snippets
 function stripHtml(html: string): string {
@@ -44,7 +44,9 @@ export default defineEventHandler(async (event) => {
     // Filter: thread creator must match bucket or is "me"
     whereClause = sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
     orderByClause = [
-      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads first
+      // Draft-only threads (new compositions) at top
+      desc(sql`CASE WHEN draft_count > 0 AND draft_count = total_count THEN 1 ELSE 0 END`),
+      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads second
       desc(sql`sort_date`)  // Then by MAX(highest readAt, latest sentAt)
     ]
   } else {
@@ -149,8 +151,67 @@ export default defineEventHandler(async (event) => {
     }
   })
 
+  // For approved bucket (inbox), also include standalone drafts at the top
+  let standaloneDrafts: any[] = []
+  if (bucket === 'approved' && !replyLater && offset === 0) {
+    // Get standalone drafts (no threadId)
+    const draftsRaw = db
+      .select({
+        id: emails.id,
+        subject: emails.subject,
+        contentText: emails.contentText,
+        createdAt: emails.createdAt,
+        senderId: emails.senderId,
+      })
+      .from(emails)
+      .where(and(
+        isNull(emails.threadId),
+        eq(emails.status, 'draft')
+      ))
+      .orderBy(desc(emails.createdAt))
+      .all()
+
+    standaloneDrafts = draftsRaw.map(draft => {
+      // Get recipients for this draft
+      const recipientsRaw = db
+        .select({
+          id: contacts.id,
+          name: contacts.name,
+          email: contacts.email,
+          isMe: contacts.isMe,
+          role: emailContacts.role,
+        })
+        .from(emailContacts)
+        .innerJoin(contacts, eq(contacts.id, emailContacts.contactId))
+        .where(eq(emailContacts.emailId, draft.id))
+        .all()
+        .filter(r => r.role !== 'from')
+
+      return {
+        type: 'draft' as const,
+        id: draft.id,
+        subject: draft.subject || '(No subject)',
+        createdAt: draft.createdAt,
+        replyLaterAt: null,
+        setAsideAt: null,
+        latestEmailAt: draft.createdAt,
+        unreadCount: 0,
+        totalCount: 1,
+        draftCount: 1,
+        participants: recipientsRaw.filter(p => !p.isMe),
+        snippet: draft.contentText?.substring(0, 150) || '',
+      }
+    })
+  }
+
+  // Add type field to threads
+  const threadsWithType = threadsWithParticipants.map(t => ({
+    ...t,
+    type: 'thread' as const,
+  }))
+
   return {
-    threads: threadsWithParticipants,
+    threads: [...standaloneDrafts, ...threadsWithType],
     hasMore,
   }
 })

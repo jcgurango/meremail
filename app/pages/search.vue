@@ -129,7 +129,7 @@ async function onSenderSearchInput() {
     senderSearchLoading.value = true
     try {
       const data = await $fetch<{ contacts: Contact[] }>('/api/contacts', {
-        query: { q: senderSearch.value, limit: '10' }
+        query: { q: senderSearch.value, limit: '10', view: 'all' }
       })
       senderResults.value = data.contacts.map(r => ({ id: r.id, name: r.name, email: r.email }))
     } catch (e) {
