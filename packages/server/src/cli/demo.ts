@@ -1,11 +1,11 @@
 import 'dotenv/config'
-import { db, emails, contacts, importEmail } from '@meremail/shared'
+import { db, emails, contacts, importEmail, config } from '@meremail/shared'
 import type { ImportableEmail } from '@meremail/shared'
 
 // Demo user identity
 const ME = {
-  email: 'demo@meremail.local',
-  name: 'Demo User',
+  email: config.defaultSender.email || 'demo@meremail.local',
+  name: config.defaultSender.name || 'Demo User',
 }
 
 // Generate a fake message ID

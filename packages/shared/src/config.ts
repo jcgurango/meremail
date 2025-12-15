@@ -1,4 +1,11 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
+import { dirname, resolve } from 'path'
+import { fileURLToPath } from 'url'
+
+// Load .env from monorepo root (3 levels up from this directory)
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const rootDir = resolve(__dirname, '../../..')
+dotenv.config({ path: resolve(rootDir, '.env') })
 
 function envStr(key: string, fallback?: string): string {
   const value = process.env[key]
@@ -31,6 +38,12 @@ function envStrOptional(key: string): string | undefined {
   return process.env[key] || undefined
 }
 
+// Helper to resolve paths - if absolute, use as-is; if relative, resolve from monorepo root
+function resolvePath(path: string): string {
+  if (path.startsWith('/')) return path
+  return resolve(rootDir, path)
+}
+
 export const config = {
   smtp: {
     host: envStr('SMTP_HOST', ''),
@@ -51,7 +64,7 @@ export const config = {
     email: envStrOptional('DEFAULT_SENDER_EMAIL'),
   },
   database: {
-    path: envStr('DATABASE_PATH', './data/meremail.db'),
+    path: resolvePath(envStr('DATABASE_PATH', 'data/meremail.db')),
   },
   imageProxy: {
     // URL template with {url} placeholder for the encoded image URL
@@ -62,13 +75,13 @@ export const config = {
     // Maximum file size in bytes (default 20MB)
     maxSize: envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024),
     // Directory for uploaded files
-    path: envStr('UPLOADS_PATH', './data/uploads'),
+    path: resolvePath(envStr('UPLOADS_PATH', 'data/uploads')),
   },
   emlBackup: {
     // Whether to backup raw EML files during IMAP import (default true)
     enabled: envBool('EML_BACKUP_ENABLED', true),
     // Directory for EML backups
-    path: envStr('EML_BACKUP_PATH', './data/eml-backup'),
+    path: resolvePath(envStr('EML_BACKUP_PATH', 'data/eml-backup')),
   },
 } as const
 

@@ -1,16 +1,11 @@
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import Database from 'better-sqlite3'
 import { mkdirSync, existsSync } from 'fs'
-import { dirname, resolve } from 'path'
-import { fileURLToPath } from 'url'
+import { dirname } from 'path'
 import * as schema from './schema'
+import { config } from '../config'
 
-// Resolve default path relative to monorepo root (4 levels up from this file)
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const rootDir = resolve(__dirname, '../../../..')
-const defaultDbPath = resolve(rootDir, 'data/meremail.db')
-
-const dbPath = process.env.DATABASE_PATH || defaultDbPath
+const dbPath = config.database.path
 
 // Ensure data directory exists
 const dbDir = dirname(dbPath)
