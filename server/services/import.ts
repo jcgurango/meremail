@@ -374,14 +374,16 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   }
 
   // Find or create thread
-  let threadId = findThread(messageId, inReplyTo, references, normalizedSubject, isReply, senderIsMe)
+  let threadId: number | null = findThread(messageId, inReplyTo, references, normalizedSubject, isReply, senderIsMe)
   const isNewThread = !threadId
   if (isNewThread) {
     threadId = createThread(normalizedSubject, senderId)
   } else {
     // Check if this email is older than the current first email - update creator if so
-    maybeUpdateThreadCreator(threadId, parsed.date, senderId)
+    maybeUpdateThreadCreator(threadId!, parsed.date, senderId)
   }
+  // At this point threadId is guaranteed to be a number
+  const finalThreadId = threadId!
 
   // Get email content - store both text and HTML
   const contentText = parsed.text || ''
@@ -394,7 +396,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   const emailResult = db
     .insert(emails)
     .values({
-      threadId,
+      threadId: finalThreadId,
       senderId,
       messageId,
       inReplyTo,
@@ -422,7 +424,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
   db.insert(emailContacts).values({ emailId, contactId: senderId, role: 'from' }).onConflictDoNothing().run()
 
   // Link sender to thread
-  db.insert(emailThreadContacts).values({ threadId, contactId: senderId, role: 'sender' }).onConflictDoNothing().run()
+  db.insert(emailThreadContacts).values({ threadId: finalThreadId, contactId: senderId, role: 'sender' }).onConflictDoNothing().run()
 
   // Create contacts for recipients and link to email
   // Helper to extract addresses from AddressObject | AddressObject[] | undefined
@@ -468,7 +470,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
         db.insert(emailContacts).values({ emailId, contactId, role }).onConflictDoNothing().run()
 
         // Also link to thread as recipient
-        db.insert(emailThreadContacts).values({ threadId, contactId, role: 'recipient' }).onConflictDoNothing().run()
+        db.insert(emailThreadContacts).values({ threadId: finalThreadId, contactId, role: 'recipient' }).onConflictDoNothing().run()
       }
     }
   }

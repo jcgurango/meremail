@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Content-Type', attachment.mimeType || 'application/octet-stream')
   setHeader(event, 'Content-Disposition', `inline; filename="${attachment.filename}"`)
   if (attachment.size) {
-    setHeader(event, 'Content-Length', attachment.size.toString())
+    setHeader(event, 'Content-Length', attachment.size)
   }
 
   // Stream the file

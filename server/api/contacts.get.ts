@@ -82,7 +82,7 @@ export default defineEventHandler(async (event) => {
   } else {
     // 'contacts' view shows approved contacts (default)
     // Other views filter to specific bucket
-    const bucketToFilter = view === 'contacts' ? 'approved' : view
+    const bucketToFilter = (view === 'contacts' ? 'approved' : view) as 'approved' | 'feed' | 'paper_trail' | 'quarantine' | 'blocked'
     const bucketFilter = and(eq(contacts.isMe, false), eq(contacts.bucket, bucketToFilter))
 
     const results = await db

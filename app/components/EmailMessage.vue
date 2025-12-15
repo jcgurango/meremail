@@ -115,8 +115,8 @@ const splitContent = computed<SplitContent>(() => {
   // Check if content is wrapped in <pre> tags (plain text email)
   const preMatch = content.match(/^<pre([^>]*)>([\s\S]*)<\/pre>$/i)
   if (preMatch) {
-    const preAttrs = preMatch[1]
-    const innerContent = preMatch[2]
+    const preAttrs = preMatch[1] ?? ''
+    const innerContent = preMatch[2] ?? ''
     const { visible, quoted } = splitInnerContent(innerContent)
     if (quoted) {
       return {
@@ -136,7 +136,8 @@ const splitContent = computed<SplitContent>(() => {
 
 function getParticipantDisplay(participant: Participant | null, showEmail: boolean = true): string {
   if (!participant) return 'Unknown'
-  const displayName = participant.isMe ? 'Me' : (participant.name || participant.email.split('@')[0])
+  const emailPart = participant.email.split('@')[0] ?? participant.email
+  const displayName = participant.isMe ? 'Me' : (participant.name || emailPart)
   if (showEmail && participant.email) {
     return `${displayName} <${participant.email}>`
   }

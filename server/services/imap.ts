@@ -48,6 +48,7 @@ export async function* fetchEmails(
 
     for await (const message of messages) {
       const raw = message.source
+      if (!raw) continue
       // skipImageLinks: don't auto-convert cid: references to data URIs
       const parsed = await simpleParser(raw, { skipImageLinks: true })
 
@@ -56,7 +57,7 @@ export async function* fetchEmails(
         folder,
         parsed,
         raw,
-        flags: message.flags,
+        flags: message.flags ?? new Set<string>(),
       }
     }
   } finally {

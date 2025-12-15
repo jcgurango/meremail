@@ -125,6 +125,8 @@ async function setBucket(contactId: number, bucket: string) {
   if (index === -1) return
 
   const contact = contacts.value[index]
+  if (!contact) return
+
   const previousBucket = contact.bucket
 
   // Optimistically update

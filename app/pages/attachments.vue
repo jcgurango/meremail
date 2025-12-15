@@ -237,7 +237,7 @@ function getSelectedContactName(): string {
   if (!selectedContactId.value) return 'Everyone'
   const contact = filterContacts.value.find(c => c.id === selectedContactId.value)
   if (!contact) return 'Everyone'
-  return contact.name || contact.email.split('@')[0]
+  return contact.name || contact.email.split('@')[0] || contact.email
 }
 
 function clearTypeFilter() {

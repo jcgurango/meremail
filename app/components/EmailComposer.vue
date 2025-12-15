@@ -287,6 +287,7 @@ async function handleFileSelect(event: Event) {
 // Remove attachment
 async function removeAttachment(index: number) {
   const att = attachments.value[index]
+  if (!att) return
 
   // If it's saved to DB (numeric ID), delete via API
   if (typeof att.id === 'number') {
@@ -323,7 +324,7 @@ async function loadMeContacts() {
     // Set default From
     if (props.defaultFromId) {
       selectedFromId.value = props.defaultFromId
-    } else if (data.contacts.length > 0) {
+    } else if (data.contacts.length > 0 && data.contacts[0]) {
       selectedFromId.value = data.contacts[0].id
     }
   } catch (e) {
@@ -606,8 +607,9 @@ function removeRecipient(index: number, field: 'to' | 'cc' | 'bcc') {
 function handleInputKeydown(e: KeyboardEvent, field: 'to' | 'cc' | 'bcc') {
   if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
     e.preventDefault()
-    if (searchResults.value.length > 0) {
-      addRecipient(searchResults.value[0], field)
+    const firstResult = searchResults.value[0]
+    if (searchResults.value.length > 0 && firstResult) {
+      addRecipient(firstResult, field)
     } else if (searchQuery.value.includes('@')) {
       addRawEmail(field)
     }

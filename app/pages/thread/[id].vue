@@ -4,7 +4,7 @@ interface Participant {
   name: string | null
   email: string
   isMe?: boolean
-  role?: string
+  role: string
 }
 
 interface Attachment {
@@ -12,6 +12,7 @@ interface Attachment {
   filename: string
   mimeType: string | null
   size: number | null
+  isInline: boolean | null
 }
 
 interface Email {
