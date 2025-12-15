@@ -147,6 +147,27 @@ During import:
 - Threads are constructed from References/In-Reply-To headers
 - Raw EML files are backed up with IMAP metadata (folder, flags, UID)
 
+### Demo Mode
+
+Try out Meremail without connecting to a real email server:
+
+```bash
+# Reset database and load demo data
+yarn reset && yarn mail:demo
+
+# Start the app
+yarn dev
+```
+
+The demo data includes:
+- Conversation threads with back-and-forth replies
+- Newsletters and marketing emails (Feed material)
+- Receipts and confirmations (Paper Trail material)
+- Suspicious spam emails (auto-quarantined)
+- Unread messages and verification codes
+
+This only works on an empty database.
+
 ### Other Commands
 
 ```bash
