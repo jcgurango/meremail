@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
       references: body.references || null,
       status: 'draft',
       folder: 'Drafts',
-      isRead: true,
+      readAt: new Date(), // Drafts are always "read"
     })
     .returning({ id: emails.id })
     .get()

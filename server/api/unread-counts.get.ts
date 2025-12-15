@@ -1,4 +1,4 @@
-import { eq, and, sql, isNotNull } from 'drizzle-orm'
+import { eq, and, sql, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { emails, contacts, emailThreads } from '../db/schema'
 
@@ -16,7 +16,7 @@ export default defineEventHandler(async () => {
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
     .where(and(
       eq(contacts.bucket, 'approved'),
-      eq(emails.isRead, false)
+      isNull(emails.readAt)
     ))
     .get()
 
@@ -27,7 +27,7 @@ export default defineEventHandler(async () => {
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
     .where(and(
       eq(contacts.bucket, 'feed'),
-      eq(emails.isRead, false)
+      isNull(emails.readAt)
     ))
     .get()
 
@@ -38,7 +38,7 @@ export default defineEventHandler(async () => {
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
     .where(and(
       eq(contacts.bucket, 'paper_trail'),
-      eq(emails.isRead, false)
+      isNull(emails.readAt)
     ))
     .get()
 
@@ -50,7 +50,7 @@ export default defineEventHandler(async () => {
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
     .where(and(
       eq(contacts.bucket, 'quarantine'),
-      eq(emails.isRead, false)
+      isNull(emails.readAt)
     ))
     .get()
 

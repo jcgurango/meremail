@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { sql, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { emails } from '../../db/schema'
 
@@ -15,10 +15,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'All ids must be valid numbers' })
   }
 
-  // Mark emails as read
+  // Mark emails as read (only if not already read)
+  const now = new Date()
   db.update(emails)
-    .set({ isRead: true })
-    .where(sql`${emails.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`)
+    .set({ readAt: now })
+    .where(sql`${emails.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)}) AND ${isNull(emails.readAt)}`)
     .run()
 
   return { success: true, count: ids.length }

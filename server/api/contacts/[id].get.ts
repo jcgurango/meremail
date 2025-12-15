@@ -109,7 +109,7 @@ export default defineEventHandler(async (event) => {
       sentAt: emails.sentAt,
       receivedAt: emails.receivedAt,
       senderId: emails.senderId,
-      isRead: emails.isRead,
+      readAt: emails.readAt,
     })
     .from(emails)
     .leftJoin(emailContacts, eq(emails.id, emailContacts.emailId))
@@ -208,7 +208,7 @@ export default defineEventHandler(async (event) => {
           content,
           sentAt: email.sentAt,
           receivedAt: email.receivedAt,
-          isRead: email.isRead,
+          isRead: !!email.readAt,
           sender: sender ? {
             id: sender.id,
             name: sender.name,

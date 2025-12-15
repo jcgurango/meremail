@@ -35,24 +35,25 @@ export default defineEventHandler(async (event) => {
     whereClause = isNotNull(emailThreads.replyLaterAt)
     orderByClause = [
       asc(emailThreads.replyLaterAt),  // Oldest addition first
-      desc(sql`latest_email_at`)  // Then by latest email date
+      desc(sql`sort_date`)  // Then by sort date
     ]
   } else if (bucket === 'approved') {
     // Filter: thread creator must match bucket or is "me"
     whereClause = sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
     orderByClause = [
       desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),  // Unread threads first
-      desc(sql`latest_email_at`)  // Then by latest email date
+      desc(sql`sort_date`)  // Then by MAX(highest readAt, latest sentAt)
     ]
   } else {
     whereClause = sql`${contacts.bucket} = ${bucket}`
     orderByClause = [
       desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),
-      desc(sql`latest_email_at`)
+      desc(sql`sort_date`)
     ]
   }
 
-  // Get all threads, ordered by: unread first, then by latest email date
+  // Get all threads, ordered by: unread first, then by sort_date
+  // sort_date = MAX(highest readAt in thread, latest email sentAt) - so newly read threads bubble up
   // Filter by thread creator (sender of first email) - must match specified bucket or "me"
   // Uses denormalized creator_id on email_threads for O(n) instead of O(n²)
   const threadsWithUnread = db
@@ -63,7 +64,9 @@ export default defineEventHandler(async (event) => {
       replyLaterAt: emailThreads.replyLaterAt,
       setAsideAt: emailThreads.setAsideAt,
       latestEmailAt: sql<number>`MAX(${emails.sentAt})`.as('latest_email_at'),
-      unreadCount: sql<number>`SUM(CASE WHEN ${emails.isRead} = 0 THEN 1 ELSE 0 END)`.as('unread_count'),
+      // sort_date: MAX of (highest readAt, latest sentAt) - for intuitive sorting
+      sortDate: sql<number>`MAX(COALESCE(${emails.readAt}, 0), ${emails.sentAt})`.as('sort_date'),
+      unreadCount: sql<number>`SUM(CASE WHEN ${emails.readAt} IS NULL THEN 1 ELSE 0 END)`.as('unread_count'),
       totalCount: sql<number>`COUNT(${emails.id})`.as('total_count'),
     })
     .from(emailThreads)

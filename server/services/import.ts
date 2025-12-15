@@ -391,7 +391,9 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
 
   // Insert email
   // Use IMAP \Seen flag for read state, or mark as read if from sent folder
-  const isRead = flags.has('\\Seen') || isSentFolder
+  // If already read, set readAt to receivedAt; otherwise leave null
+  const receivedAt = new Date()
+  const readAt = (flags.has('\\Seen') || isSentFolder) ? receivedAt : null
 
   const emailResult = db
     .insert(emails)
@@ -402,7 +404,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       inReplyTo,
       references,
       folder,
-      isRead,
+      readAt,
       subject,
       headers: parsed.headers ? Object.fromEntries(
         Array.from(parsed.headers.entries()).map(([k, v]) => [
@@ -413,7 +415,7 @@ export async function importEmail(fetched: FetchedEmail): Promise<{ imported: bo
       contentText,
       contentHtml,
       sentAt: parsed.date,
-      receivedAt: new Date(),
+      receivedAt,
     })
     .returning({ id: emails.id })
     .get()

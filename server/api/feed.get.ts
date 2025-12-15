@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     : eq(contacts.bucket, bucket)
 
   // Get emails from contacts with the specified bucket
-  // Order: unread first, then by date (newest first)
+  // Order: unread first (readAt IS NULL), then by MAX(readAt, sentAt)
   const feedEmails = db
     .select({
       id: emails.id,
@@ -34,14 +34,17 @@ export default defineEventHandler(async (event) => {
       contentHtml: emails.contentHtml,
       sentAt: emails.sentAt,
       receivedAt: emails.receivedAt,
-      isRead: emails.isRead,
+      readAt: emails.readAt,
       senderId: emails.senderId,
       headers: emails.headers,
     })
     .from(emails)
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
     .where(whereClause)
-    .orderBy(asc(emails.isRead), desc(emails.sentAt))
+    .orderBy(
+      sql`CASE WHEN ${emails.readAt} IS NULL THEN 0 ELSE 1 END`,  // Unread first
+      desc(sql`MAX(COALESCE(${emails.readAt}, 0), ${emails.sentAt})`)  // Then by MAX(readAt, sentAt)
+    )
     .limit(limit + 1)
     .all()
 
@@ -127,7 +130,7 @@ export default defineEventHandler(async (event) => {
       content,
       sentAt: email.sentAt,
       receivedAt: email.receivedAt,
-      isRead: email.isRead,
+      isRead: !!email.readAt,
       sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
       recipients,
       attachments: emailAttachments,

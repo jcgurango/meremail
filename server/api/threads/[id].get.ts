@@ -1,4 +1,4 @@
-import { eq, desc, inArray } from 'drizzle-orm'
+import { eq, desc, inArray, and, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { emails, emailThreads, contacts, emailContacts, attachments } from '../../db/schema'
 import { proxyImagesInHtml } from '../../utils/proxy-images'
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
       contentHtml: emails.contentHtml,
       sentAt: emails.sentAt,
       receivedAt: emails.receivedAt,
-      isRead: emails.isRead,
+      readAt: emails.readAt,
       senderId: emails.senderId,
       headers: emails.headers,
       messageId: emails.messageId,
@@ -162,7 +162,7 @@ export default defineEventHandler(async (event) => {
       contentHtml: email.contentHtml,  // HTML for editing drafts
       sentAt: email.sentAt,
       receivedAt: email.receivedAt,
-      isRead: email.isRead,
+      isRead: !!email.readAt,
       status: email.status,
       sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
       recipients,
@@ -175,10 +175,10 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  // Mark all emails in thread as read
+  // Mark all unread emails in thread as read
   db.update(emails)
-    .set({ isRead: true })
-    .where(eq(emails.threadId, id))
+    .set({ readAt: new Date() })
+    .where(and(eq(emails.threadId, id), isNull(emails.readAt)))
     .run()
 
   // Find the first "me" identity in this thread (for default From)
