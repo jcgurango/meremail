@@ -29,46 +29,13 @@ interface FeedEmail {
   headers?: Record<string, string> | null
 }
 
-const props = defineProps<{
+defineProps<{
   email: FeedEmail
 }>()
-
-const emit = defineEmits<{
-  visible: []
-}>()
-
-const itemRef = ref<HTMLElement | null>(null)
-const hasBeenVisible = ref(false)
-
-onMounted(() => {
-  if (!itemRef.value) return
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting && !hasBeenVisible.value) {
-          hasBeenVisible.value = true
-          emit('visible')
-          observer.disconnect()
-        }
-      }
-    },
-    {
-      threshold: 0.5, // At least 50% visible
-      rootMargin: '0px'
-    }
-  )
-
-  observer.observe(itemRef.value)
-
-  onBeforeUnmount(() => {
-    observer.disconnect()
-  })
-})
 </script>
 
 <template>
-  <div ref="itemRef" class="feed-email-wrapper">
+  <div class="feed-email-wrapper">
     <div class="feed-email-header">
       <div class="feed-subject">
         <span v-if="!email.isRead" class="unread-dot"></span>

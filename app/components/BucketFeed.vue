@@ -57,7 +57,12 @@ const markedReadIds = ref<Set<number>>(new Set())
 
 // Pending IDs to mark as read (batched)
 const pendingMarkRead = ref<Set<number>>(new Set())
-let markReadTimeout: ReturnType<typeof setTimeout> | null = null
+
+// Scroll-based read tracking
+const feedRef = ref<HTMLElement | null>(null)
+const itemRefs = ref<HTMLElement[]>([])
+const currentMiddleIndex = ref<number | null>(null)
+let readDebounceTimeout: ReturnType<typeof setTimeout> | null = null
 
 async function loadEmails() {
   loading.value = true
@@ -119,25 +124,79 @@ function updateSeenBoundary() {
   seenBoundaryIndex.value = idx >= 0 ? idx : null
 }
 
-// Mark email as read when it becomes visible
-function onEmailVisible(emailId: number) {
-  const email = emails.value.find(e => e.id === emailId)
-  if (!email || email.isRead || markedReadIds.value.has(emailId)) return
+// Find which item index intersects with the middle of the viewport
+function getMiddleItemIndex(): number | null {
+  const items = itemRefs.value
+  const viewportMiddle = window.scrollY + window.innerHeight / 2
 
-  // Mark as read locally
-  email.isRead = true
-  markedReadIds.value.add(emailId)
+  let lastValidIndex = -1
+  let lastValidTop = 0
 
-  // Batch the API call
-  pendingMarkRead.value.add(emailId)
+  for (let i = 0; i < items.length; i++) {
+    const el = items[i]
+    if (!el) continue
 
-  if (markReadTimeout) {
-    clearTimeout(markReadTimeout)
+    const rect = el.getBoundingClientRect()
+    const top = rect.top + window.scrollY
+    const bottom = top + rect.height
+
+    lastValidIndex = i
+    lastValidTop = top
+
+    if (viewportMiddle >= top && viewportMiddle <= bottom) {
+      return i
+    }
   }
 
-  markReadTimeout = setTimeout(() => {
+  // If we're past all items, return the last one
+  if (lastValidIndex >= 0 && viewportMiddle > lastValidTop) {
+    return lastValidIndex
+  }
+
+  return null
+}
+
+// Mark emails up to and including the given index as read
+function markEmailsReadUpTo(index: number) {
+  const idsToMark: number[] = []
+
+  for (let i = 0; i <= index; i++) {
+    const email = emails.value[i]
+    if (!email || email.isRead || markedReadIds.value.has(email.id)) continue
+
+    email.isRead = true
+    markedReadIds.value.add(email.id)
+    idsToMark.push(email.id)
+  }
+
+  if (idsToMark.length > 0) {
+    for (const id of idsToMark) {
+      pendingMarkRead.value.add(id)
+    }
     flushMarkRead()
-  }, 1000) // Batch for 1 second
+  }
+}
+
+function onScroll() {
+  const newIndex = getMiddleItemIndex()
+
+  if (newIndex !== currentMiddleIndex.value) {
+    // Index changed, reset the debounce timer
+    currentMiddleIndex.value = newIndex
+
+    if (readDebounceTimeout) {
+      clearTimeout(readDebounceTimeout)
+    }
+
+    if (newIndex !== null) {
+      readDebounceTimeout = setTimeout(() => {
+        // Index stayed the same for 2 seconds, mark as read
+        if (currentMiddleIndex.value === newIndex) {
+          markEmailsReadUpTo(newIndex)
+        }
+      }, 2000)
+    }
+  }
 }
 
 async function flushMarkRead() {
@@ -156,10 +215,16 @@ async function flushMarkRead() {
   }
 }
 
-// Flush on unmount
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true })
+  // Check initial position
+  onScroll()
+})
+
 onBeforeUnmount(() => {
-  if (markReadTimeout) {
-    clearTimeout(markReadTimeout)
+  window.removeEventListener('scroll', onScroll)
+  if (readDebounceTimeout) {
+    clearTimeout(readDebounceTimeout)
   }
   flushMarkRead()
 })
@@ -179,7 +244,7 @@ await loadEmails()
       {{ emptyMessage }}
     </div>
 
-    <div v-else class="email-feed">
+    <div v-else ref="feedRef" class="email-feed">
       <template v-for="(email, index) in emails" :key="email.id">
         <!-- Show boundary before first already-read email -->
         <div v-if="index === seenBoundaryIndex" class="seen-boundary">
@@ -188,10 +253,9 @@ await loadEmails()
           <span class="seen-boundary-line"></span>
         </div>
 
-        <FeedEmailItem
-          :email="email"
-          @visible="onEmailVisible(email.id)"
-        />
+        <div :ref="el => { if (el) itemRefs[index] = el as HTMLElement }">
+          <FeedEmailItem :email="email" />
+        </div>
       </template>
     </div>
 

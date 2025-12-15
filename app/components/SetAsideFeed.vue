@@ -34,7 +34,7 @@ interface FeedResponse {
   hasMore: boolean
 }
 
-const props = defineProps<{
+defineProps<{
   emptyMessage: string
 }>()
 
@@ -47,10 +47,22 @@ const error = ref<Error | null>(null)
 // Track loaded email IDs to exclude from future fetches
 const loadedIds = ref<Set<number>>(new Set())
 
+// Track emails that have been marked as read this session
+const markedReadIds = ref<Set<number>>(new Set())
+
+// Pending IDs to mark as read (batched)
+const pendingMarkRead = ref<Set<number>>(new Set())
+
+// Scroll-based read tracking
+const itemRefs = ref<HTMLElement[]>([])
+const currentMiddleIndex = ref<number | null>(null)
+let readDebounceTimeout: ReturnType<typeof setTimeout> | null = null
+
 async function loadEmails() {
   loading.value = true
   error.value = null
   loadedIds.value.clear()
+  markedReadIds.value.clear()
 
   try {
     const data = await $fetch<FeedResponse>('/api/set-aside')
@@ -92,6 +104,111 @@ async function loadMore() {
   }
 }
 
+// Find which item index intersects with the middle of the viewport
+function getMiddleItemIndex(): number | null {
+  const items = itemRefs.value
+  const viewportMiddle = window.scrollY + window.innerHeight / 2
+
+  let lastValidIndex = -1
+  let lastValidTop = 0
+
+  for (let i = 0; i < items.length; i++) {
+    const el = items[i]
+    if (!el) continue
+
+    const rect = el.getBoundingClientRect()
+    const top = rect.top + window.scrollY
+    const bottom = top + rect.height
+
+    lastValidIndex = i
+    lastValidTop = top
+
+    if (viewportMiddle >= top && viewportMiddle <= bottom) {
+      return i
+    }
+  }
+
+  // If we're past all items, return the last one
+  if (lastValidIndex >= 0 && viewportMiddle > lastValidTop) {
+    return lastValidIndex
+  }
+
+  return null
+}
+
+// Mark emails up to and including the given index as read
+function markEmailsReadUpTo(index: number) {
+  const idsToMark: number[] = []
+
+  for (let i = 0; i <= index; i++) {
+    const email = emails.value[i]
+    if (!email || email.isRead || markedReadIds.value.has(email.id)) continue
+
+    email.isRead = true
+    markedReadIds.value.add(email.id)
+    idsToMark.push(email.id)
+  }
+
+  if (idsToMark.length > 0) {
+    for (const id of idsToMark) {
+      pendingMarkRead.value.add(id)
+    }
+    flushMarkRead()
+  }
+}
+
+function onScroll() {
+  const newIndex = getMiddleItemIndex()
+
+  if (newIndex !== currentMiddleIndex.value) {
+    // Index changed, reset the debounce timer
+    currentMiddleIndex.value = newIndex
+
+    if (readDebounceTimeout) {
+      clearTimeout(readDebounceTimeout)
+    }
+
+    if (newIndex !== null) {
+      readDebounceTimeout = setTimeout(() => {
+        // Index stayed the same for 2 seconds, mark as read
+        if (currentMiddleIndex.value === newIndex) {
+          markEmailsReadUpTo(newIndex)
+        }
+      }, 2000)
+    }
+  }
+}
+
+async function flushMarkRead() {
+  if (pendingMarkRead.value.size === 0) return
+
+  const ids = Array.from(pendingMarkRead.value)
+  pendingMarkRead.value.clear()
+
+  try {
+    await $fetch('/api/emails/mark-read', {
+      method: 'POST',
+      body: { ids }
+    })
+  } catch (e) {
+    console.error('Failed to mark emails as read:', e)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true })
+  // Check initial position
+  onScroll()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  if (readDebounceTimeout) {
+    clearTimeout(readDebounceTimeout)
+  }
+  flushMarkRead()
+})
+
 await loadEmails()
 </script>
 
@@ -108,11 +225,13 @@ await loadEmails()
     </div>
 
     <div v-else class="email-feed">
-      <FeedEmailItem
-        v-for="email in emails"
+      <div
+        v-for="(email, index) in emails"
         :key="email.id"
-        :email="email"
-      />
+        :ref="el => { if (el) itemRefs[index] = el as HTMLElement }"
+      >
+        <FeedEmailItem :email="email" />
+      </div>
     </div>
 
     <div v-if="hasMore && !loading" class="load-more">
