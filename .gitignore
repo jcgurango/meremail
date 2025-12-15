@@ -1,27 +1,36 @@
-# Nuxt dev/build outputs
-.output
-.data
-.nuxt
-.nitro
-.cache
-dist
+# Dependencies
+node_modules/
 
-# Database
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Data
 data/
+!data/.gitkeep
 
-# Node dependencies
-node_modules
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
-logs
 *.log
+npm-debug.log*
 
-# Misc
-.DS_Store
-.fleet
-.idea
+# Nuxt (legacy, for meremail-old)
+.nuxt/
+.output/
 
-# Local env files
-.env
-.env.*
-!.env.example
+# Vite
+*.local
+
+# PWA
+dev-dist/

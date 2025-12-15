@@ -1,6 +1,6 @@
 # Meremail
 
-A minimalist, self-hosted email client inspired by [HEY](https://hey.com). Built with Nuxt 4, Vue 3, and SQLite.
+A minimalist, self-hosted email client inspired by [HEY](https://hey.com). Built with Hono, Vue 3, and SQLite.
 
 ## Features
 
@@ -33,6 +33,10 @@ Search across all emails, contacts, and attachments.
 - Reply, reply-all, and forward
 - Draft auto-save
 
+### Offline Support
+
+Progressive Web App with offline capabilities - read cached emails and compose drafts without an internet connection.
+
 ### Privacy Features
 
 - External images proxied by default to prevent tracking
@@ -41,8 +45,8 @@ Search across all emails, contacts, and attachments.
 
 ## Tech Stack
 
-- **Frontend**: Nuxt 4, Vue 3, TipTap editor
-- **Backend**: Nitro (Nuxt server), Drizzle ORM
+- **Frontend**: Vue 3, Vite, TipTap editor, PWA
+- **Backend**: Hono (Node.js), Drizzle ORM
 - **Database**: SQLite (via better-sqlite3)
 - **Email**: IMAP for receiving, SMTP for sending
 
@@ -51,7 +55,7 @@ Search across all emails, contacts, and attachments.
 ### Prerequisites
 
 - Node.js 20+
-- Yarn
+- pnpm
 
 ### Installation
 
@@ -61,7 +65,7 @@ git clone https://github.com/yourusername/meremail.git
 cd meremail
 
 # Install dependencies
-yarn install
+pnpm install
 
 # Copy environment template
 cp .env.example .env
@@ -70,26 +74,28 @@ cp .env.example .env
 # (see Configuration below)
 
 # Run database migrations
-yarn db:migrate
+pnpm db:migrate
 
 # Import existing emails from IMAP
-yarn mail:import
+pnpm mail:import
 
 # Start development server
-yarn dev
+pnpm dev
 ```
 
-The app will be available at `http://localhost:3000`.
+The app will be available at `http://localhost:5173` (frontend) with API at `http://localhost:3000`.
 
 ### Production
 
 ```bash
-# Build for production
-yarn build
+# Build all packages
+pnpm build
 
-# Preview production build
-yarn preview
+# Start production server (serves API + static files)
+pnpm start
 ```
+
+In production, the server serves both the API and the built frontend on port 3000.
 
 ## Configuration
 
@@ -135,10 +141,10 @@ EML_BACKUP_PATH=./data/eml-backup
 
 ```bash
 # Import all folders from IMAP
-yarn mail:import
+pnpm mail:import
 
 # Import specific folders only
-yarn mail:import --folders=inbox,sent
+pnpm mail:import --folders=inbox,sent
 ```
 
 During import:
@@ -153,10 +159,10 @@ Try out Meremail without connecting to a real email server:
 
 ```bash
 # Reset database and load demo data
-yarn reset && yarn mail:demo
+pnpm reset && pnpm mail:demo
 
 # Start the app
-yarn dev
+pnpm dev
 ```
 
 The demo data includes:
@@ -172,19 +178,16 @@ This only works on an empty database.
 
 ```bash
 # List available IMAP folders
-yarn mail:folders
-
-# Backup database
-yarn db:backup
+pnpm mail:folders
 
 # Generate new migration after schema changes
-yarn db:generate
+pnpm db:generate
 
 # Run pending migrations
-yarn db:migrate
+pnpm db:migrate
 
 # Reset database (deletes all data!)
-yarn reset
+pnpm reset
 ```
 
 ## Data Storage
@@ -205,30 +208,48 @@ data/
 ## Development
 
 ```bash
-# Start dev server with hot reload
-yarn dev
+# Start dev servers (frontend + backend with hot reload)
+pnpm dev
 
-# Type check
-yarn nuxi typecheck
+# Build all packages
+pnpm build
 
-# Generate migration after schema changes
-yarn db:generate
+# Run only the server
+pnpm -F @meremail/server dev
+
+# Run only the frontend
+pnpm -F @meremail/web dev
+
+# Type check the frontend
+pnpm -F @meremail/web build
 ```
 
 ## Architecture
 
-```
-app/
-├── components/    # Vue components
-├── pages/         # Route pages
-└── app.vue        # Root layout
+This is a pnpm monorepo with three packages:
 
-server/
-├── api/           # API endpoints (Nitro)
-├── cli/           # CLI commands
-├── db/            # Database schema and migrations
-├── services/      # Business logic (IMAP, import, etc.)
-└── types/         # Shared TypeScript types
+```
+packages/
+├── shared/        # Database, types, services, config
+│   └── src/
+│       ├── db/           # Drizzle schema and migrations
+│       ├── types/        # Shared TypeScript types
+│       ├── services/     # Business logic (IMAP, import, etc.)
+│       └── config.ts     # Environment configuration
+│
+├── server/        # Hono API server
+│   └── src/
+│       ├── routes/       # API endpoints
+│       ├── utils/        # Server utilities
+│       ├── cli/          # CLI commands
+│       └── index.ts      # Server entry point
+│
+└── web/           # Vue 3 SPA (Vite + PWA)
+    └── src/
+        ├── pages/        # Route pages
+        ├── components/   # Vue components
+        ├── composables/  # Vue composables
+        └── utils/        # Client utilities
 ```
 
 ### Key Concepts

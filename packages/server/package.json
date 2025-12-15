@@ -1,0 +1,25 @@
+{
+  "name": "@meremail/server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "mail:import": "tsx src/cli/import.ts",
+    "mail:folders": "tsx src/cli/list-folders.ts",
+    "mail:demo": "tsx src/cli/demo.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@meremail/shared": "workspace:*",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.0",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
