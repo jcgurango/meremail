@@ -736,6 +736,195 @@ async function cleanupUnreferencedData(): Promise<void> {
   }
 }
 
+// ============== Pending Changes Syncing ==============
+
+async function syncPendingChanges(): Promise<void> {
+  const db = getSyncDb()
+
+  syncStatus.value['drafts'] = 'syncing'
+
+  try {
+    const pendingItems = await db.pendingSync.toArray()
+
+    for (const item of pendingItems) {
+      if (item.entityType !== 'draft') continue
+
+      try {
+        if (item.action === 'delete') {
+          // Delete on server
+          const response = await fetch(`/api/drafts/${item.entityId}`, { method: 'DELETE' })
+          if (response.ok || response.status === 404) {
+            await db.pendingSync.delete(item.id!)
+            console.log(`[Sync] Deleted draft ${item.entityId}`)
+          }
+        } else if (item.action === 'create') {
+          // Get draft data from cache
+          const email = await db.emails.get(item.entityId)
+          if (!email) {
+            // Draft was deleted locally, remove pending entry
+            await db.pendingSync.delete(item.id!)
+            continue
+          }
+
+          const isReplyDraft = email.threadId !== null
+
+          const response = await fetch('/api/drafts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              threadId: email.threadId,
+              senderId: email.sender?.id,
+              subject: email.subject,
+              contentText: email.contentText,
+              contentHtml: email.contentHtml,
+              recipients: email.recipients.map(r => ({
+                id: r.id || undefined,
+                email: r.email,
+                name: r.name,
+                role: r.role,
+              })),
+              inReplyTo: email.inReplyTo,
+              references: email.references?.split(' ').filter(Boolean),
+            }),
+          })
+
+          if (response.ok) {
+            const result = await response.json() as { id: number }
+            const oldId = item.entityId
+
+            // Update email with server ID
+            await db.emails.delete(oldId)
+            await db.emails.put({ ...email, id: result.id })
+
+            if (!isReplyDraft) {
+              // Standalone draft - update the fake thread entry and bucket membership
+              const thread = await db.threads.get(oldId)
+              await db.threads.delete(oldId)
+              await db.bucketMembership.where('threadId').equals(oldId).delete()
+
+              if (thread) {
+                await db.threads.put({ ...thread, id: result.id })
+              }
+              await db.bucketMembership.put({
+                bucket: 'approved',
+                threadId: result.id,
+                sortKey: email.cachedAt,
+              })
+            }
+
+            await db.pendingSync.delete(item.id!)
+            console.log(`[Sync] Created ${isReplyDraft ? 'reply' : 'standalone'} draft ${result.id} from local ${oldId}`)
+          }
+        } else if (item.action === 'update') {
+          // Get draft data from cache
+          const email = await db.emails.get(item.entityId)
+          if (!email) {
+            await db.pendingSync.delete(item.id!)
+            continue
+          }
+
+          const response = await fetch(`/api/drafts/${item.entityId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              senderId: email.sender?.id,
+              subject: email.subject,
+              contentText: email.contentText,
+              contentHtml: email.contentHtml,
+              recipients: email.recipients.map(r => ({
+                id: r.id || undefined,
+                email: r.email,
+                name: r.name,
+                role: r.role,
+              })),
+              inReplyTo: email.inReplyTo,
+              references: email.references?.split(' ').filter(Boolean),
+            }),
+          })
+
+          if (response.ok) {
+            await db.pendingSync.delete(item.id!)
+            console.log(`[Sync] Updated draft ${item.entityId}`)
+          }
+        }
+      } catch (e) {
+        console.error(`[Sync] Failed to sync ${item.action} for draft ${item.entityId}:`, e)
+      }
+    }
+
+    syncStatus.value['drafts'] = 'idle'
+    console.log(`[Sync] Processed ${pendingItems.length} pending changes`)
+  } catch (e) {
+    console.error('[Sync] Failed to sync pending changes:', e)
+    syncStatus.value['drafts'] = 'error'
+    throw e
+  }
+}
+
+// ============== Orphaned Draft Cleanup ==============
+
+async function cleanupOrphanedDrafts(): Promise<void> {
+  const db = getSyncDb()
+
+  // Get all draft IDs from cache (only server IDs, not local negative IDs)
+  const draftThreads = await db.threads
+    .filter(t => t.type === 'draft' && t.id > 0)
+    .toArray()
+
+  const draftEmails = await db.emails
+    .filter(e => e.status === 'draft' && e.id > 0)
+    .toArray()
+
+  const allDraftIds = new Set<number>()
+  for (const t of draftThreads) allDraftIds.add(t.id)
+  for (const e of draftEmails) allDraftIds.add(e.id)
+
+  if (allDraftIds.size === 0) return
+
+  const idsToCheck = Array.from(allDraftIds)
+
+  try {
+    const response = await fetch('/api/drafts/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: idsToCheck }),
+    })
+
+    if (!response.ok) {
+      console.warn('[Sync] Draft check endpoint not available, skipping orphan cleanup')
+      return
+    }
+
+    const { existing } = await response.json() as { existing: number[] }
+    const existingSet = new Set(existing)
+
+    let deletedCount = 0
+
+    // Delete orphaned draft threads and their bucket memberships
+    for (const thread of draftThreads) {
+      if (!existingSet.has(thread.id)) {
+        await db.threads.delete(thread.id)
+        await db.bucketMembership.where('threadId').equals(thread.id).delete()
+        deletedCount++
+      }
+    }
+
+    // Delete orphaned draft emails
+    for (const email of draftEmails) {
+      if (!existingSet.has(email.id)) {
+        await db.emails.delete(email.id)
+        deletedCount++
+      }
+    }
+
+    if (deletedCount > 0) {
+      console.log(`[Sync] Cleaned up ${deletedCount} orphaned drafts`)
+    }
+  } catch (e) {
+    console.warn('[Sync] Failed to cleanup orphaned drafts:', e)
+  }
+}
+
 // ============== Main Sync Function ==============
 
 export async function syncAll(): Promise<void> {
@@ -751,7 +940,13 @@ export async function syncAll(): Promise<void> {
   console.log('[Sync] Starting full sync...')
 
   try {
-    // Sync contacts first
+    // Sync pending changes first (push local changes before pulling)
+    await syncPendingChanges()
+
+    // Cleanup orphaned drafts (ones deleted on server)
+    await cleanupOrphanedDrafts()
+
+    // Sync contacts
     await syncContacts()
 
     // Sync all buckets in parallel
@@ -830,7 +1025,8 @@ export async function getContacts(): Promise<SyncContact[]> {
 
 export async function getMeContacts(): Promise<SyncContact[]> {
   const db = getSyncDb()
-  return db.contacts.where('isMe').equals(1).toArray()
+  // Use filter instead of where().equals() to avoid boolean indexing quirks
+  return db.contacts.filter(c => c.isMe === true).toArray()
 }
 
 export async function searchContacts(query: string): Promise<SyncContact[]> {
@@ -865,6 +1061,7 @@ export async function clearSyncData(): Promise<void> {
   await db.attachmentBlobs.clear()
   await db.contacts.clear()
   await db.syncMeta.clear()
+  await db.pendingSync.clear()
 }
 
 // ============== Composable ==============
@@ -882,6 +1079,7 @@ export function useSync() {
     syncBucketThreads,
     syncReplyLaterThreads,
     syncSetAsideEmails,
+    syncPendingChanges,
     clearSyncData,
 
     // Retrieval

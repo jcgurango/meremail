@@ -176,13 +176,16 @@ function handleEditDraft(emailId: number) {
   editingDraftId.value = emailId
 }
 
-function closeComposer() {
+async function closeComposer() {
   replyingToEmailId.value = null
   editingDraftId.value = null
+  // Refresh to show any newly created/updated drafts
+  await refresh()
 }
 
 async function onDraftDiscarded() {
-  closeComposer()
+  replyingToEmailId.value = null
+  editingDraftId.value = null
   await refresh() // Refresh to remove deleted draft from list
 }
 

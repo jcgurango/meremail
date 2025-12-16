@@ -10,10 +10,13 @@
 
 import {
   getSyncDb,
+  generateLocalDraftId,
+  isLocalId,
   type SyncThread,
   type SyncEmail,
   type SyncContact,
   type SyncBucketType,
+  type SyncParticipant,
 } from './sync-db'
 
 // ============== Types ==============
@@ -235,12 +238,78 @@ export async function getThreads(params: {
  * GET /api/threads/:id
  */
 export async function getThread(threadId: number): Promise<{ data: ThreadDetail; fromCache: boolean } | null> {
+  const db = getSyncDb()
+
   // Try network first
   const networkResult = await tryFetch<ThreadDetail>(`/api/threads/${threadId}`)
-  if (networkResult) return networkResult
+  if (networkResult) {
+    // Merge any pending local drafts and filter out pending deletes
+    const pendingItems = await db.pendingSync.filter(p => p.entityType === 'draft').toArray()
+    const pendingDeleteIds = new Set(
+      pendingItems.filter(p => p.action === 'delete').map(p => p.entityId)
+    )
+    const pendingCreateIds = new Set(
+      pendingItems.filter(p => p.action === 'create').map(p => p.entityId)
+    )
+
+    // Filter out emails that are pending deletion
+    let emails = networkResult.data.emails.filter(e => !pendingDeleteIds.has(e.id))
+
+    // Add any local drafts (negative IDs) that haven't been synced yet
+    if (pendingCreateIds.size > 0) {
+      const localDrafts = await db.emails
+        .filter(e => e.threadId === threadId && isLocalId(e.id))
+        .toArray()
+
+      for (const draft of localDrafts) {
+        emails.push({
+          id: draft.id,
+          subject: draft.subject,
+          content: draft.contentHtml || draft.contentText,
+          contentText: draft.contentText,
+          contentHtml: draft.contentHtml,
+          sentAt: draft.sentAt ? new Date(draft.sentAt).toISOString() : null,
+          receivedAt: draft.receivedAt ? new Date(draft.receivedAt).toISOString() : null,
+          isRead: draft.isRead,
+          status: draft.status as 'draft' | 'sent',
+          sender: draft.sender ? {
+            id: draft.sender.id,
+            name: draft.sender.name,
+            email: draft.sender.email,
+            isMe: draft.sender.isMe,
+            role: 'from',
+          } : null,
+          recipients: draft.recipients.map(r => ({
+            id: r.id,
+            name: r.name,
+            email: r.email,
+            isMe: r.isMe,
+            role: r.role,
+          })),
+          attachments: draft.attachments.map(a => ({
+            id: a.id,
+            filename: a.filename,
+            mimeType: a.mimeType,
+            size: a.size,
+            isInline: a.isInline ?? null,
+          })),
+          replyTo: draft.replyTo ?? undefined,
+          messageId: draft.messageId ?? undefined,
+          references: draft.references
+            ? (Array.isArray(draft.references) ? draft.references : draft.references.split(/\s+/))
+            : undefined,
+          inReplyTo: draft.inReplyTo ?? undefined,
+        })
+      }
+    }
+
+    return {
+      data: { ...networkResult.data, emails },
+      fromCache: false,
+    }
+  }
 
   // Fallback to sync cache
-  const db = getSyncDb()
   const thread = await db.threads.get(threadId)
   if (!thread) return null
 
@@ -253,6 +322,13 @@ export async function getThread(threadId: number): Promise<{ data: ThreadDetail;
   } else {
     emails = await db.emails.where('threadId').equals(threadId).sortBy('sentAt')
   }
+
+  // Filter out pending deletes from cache too
+  const pendingDeletes = await db.pendingSync
+    .filter(p => p.entityType === 'draft' && p.action === 'delete')
+    .toArray()
+  const pendingDeleteIds = new Set(pendingDeletes.map(p => p.entityId))
+  emails = emails.filter(e => !pendingDeleteIds.has(e.id))
 
   const detail: ThreadDetail = {
     id: thread.id,
@@ -314,7 +390,8 @@ export async function getMeContacts(): Promise<{ data: { contacts: Contact[] }; 
 
   // Fallback to sync cache
   const db = getSyncDb()
-  const meContacts = await db.contacts.where('isMe').equals(1).toArray()
+  // Use filter instead of where().equals() to avoid boolean indexing quirks
+  const meContacts = await db.contacts.filter(c => c.isMe === true).toArray()
 
   return {
     data: {
@@ -547,6 +624,391 @@ export async function getSetAsideEmails(exclude: number[] = []): Promise<{
   return {
     data: { emails, hasMore: false },
     fromCache: true,
+  }
+}
+
+// ============== Draft Mutations ==============
+// All draft content is stored in the sync cache (threads + emails tables).
+// The pendingSync table only tracks which drafts need to be synced to the server.
+
+export interface DraftData {
+  threadId?: number | null
+  senderId: number
+  subject?: string
+  contentText?: string
+  contentHtml?: string | null
+  recipients?: Array<{
+    id?: number
+    email: string
+    name?: string | null
+    role: 'to' | 'cc' | 'bcc'
+  }>
+  attachmentIds?: number[]
+  inReplyTo?: string | null
+  references?: string[] | null
+}
+
+export interface DraftResult {
+  draftId: number  // The ID in the sync cache (negative for local-only, positive for server)
+  pending: boolean
+}
+
+/**
+ * Create a new draft.
+ * Always stores in sync cache immediately (for UI).
+ * If online, also creates on server.
+ * If offline, queues for sync.
+ */
+export async function createDraft(data: DraftData): Promise<DraftResult> {
+  const db = getSyncDb()
+  const now = Date.now()
+
+  // Get sender info for the cache entry
+  const sender = await db.contacts.get(data.senderId)
+  const senderParticipant: SyncParticipant | null = sender ? {
+    id: sender.id,
+    name: sender.name,
+    email: sender.email,
+    isMe: true,
+    role: 'from',
+  } : null
+
+  const recipients: SyncParticipant[] = (data.recipients || []).map(r => ({
+    id: r.id || 0,
+    name: r.name || null,
+    email: r.email,
+    isMe: false,
+    role: r.role,
+  }))
+
+  // Try to create on server first
+  if (!isOffline()) {
+    try {
+      const response = await fetch('/api/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          threadId: data.threadId,
+          senderId: data.senderId,
+          subject: data.subject || '',
+          contentText: data.contentText || '',
+          contentHtml: data.contentHtml,
+          recipients: data.recipients || [],
+          inReplyTo: data.inReplyTo,
+          references: data.references,
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json() as { id: number }
+
+        // Store in sync cache with server ID
+        await storeDraftInCache(db, {
+          id: result.id,
+          threadId: data.threadId,
+          subject: data.subject || '',
+          contentText: data.contentText || '',
+          contentHtml: data.contentHtml ?? null,
+          sender: senderParticipant,
+          recipients,
+          attachments: [],
+          inReplyTo: data.inReplyTo ?? null,
+          references: data.references?.join(' ') ?? null,
+          cachedAt: now,
+        })
+
+        return { draftId: result.id, pending: false }
+      }
+    } catch {
+      // Fall through to offline handling
+    }
+  }
+
+  // Offline: generate local ID and store in cache
+  const localId = await generateLocalDraftId()
+
+  await storeDraftInCache(db, {
+    id: localId,
+    threadId: data.threadId,
+    subject: data.subject || '',
+    contentText: data.contentText || '',
+    contentHtml: data.contentHtml ?? null,
+    sender: senderParticipant,
+    recipients,
+    attachments: [],
+    inReplyTo: data.inReplyTo ?? null,
+    references: data.references?.join(' ') ?? null,
+    cachedAt: now,
+  })
+
+  // Queue for sync
+  await db.pendingSync.add({
+    entityType: 'draft',
+    entityId: localId,
+    action: 'create',
+    createdAt: now,
+  })
+
+  return { draftId: localId, pending: true }
+}
+
+/**
+ * Update an existing draft.
+ * Always updates sync cache immediately (for UI).
+ * If online, also updates on server.
+ * If offline, queues for sync.
+ */
+export async function updateDraft(
+  draftId: number,
+  data: Partial<DraftData>
+): Promise<{ pending: boolean }> {
+  const db = getSyncDb()
+  const now = Date.now()
+
+  // Get existing draft from cache
+  const existingEmail = await db.emails.get(draftId)
+  if (!existingEmail) {
+    throw new Error('Draft not found in cache')
+  }
+
+  // Build updated sender if provided
+  let sender = existingEmail.sender
+  if (data.senderId !== undefined) {
+    const senderContact = await db.contacts.get(data.senderId)
+    sender = senderContact ? {
+      id: senderContact.id,
+      name: senderContact.name,
+      email: senderContact.email,
+      isMe: true,
+      role: 'from' as const,
+    } : null
+  }
+
+  // Build updated recipients if provided
+  const recipients = data.recipients
+    ? data.recipients.map(r => ({
+        id: r.id || 0,
+        name: r.name || null,
+        email: r.email,
+        isMe: false,
+        role: r.role as 'to' | 'cc' | 'bcc',
+      }))
+    : existingEmail.recipients
+
+  // Update sync cache
+  await db.emails.update(draftId, {
+    subject: data.subject ?? existingEmail.subject,
+    contentText: data.contentText ?? existingEmail.contentText,
+    contentHtml: data.contentHtml !== undefined ? data.contentHtml : existingEmail.contentHtml,
+    sender,
+    recipients,
+    inReplyTo: data.inReplyTo !== undefined ? data.inReplyTo : existingEmail.inReplyTo,
+    references: data.references ? data.references.join(' ') : existingEmail.references,
+    cachedAt: now,
+  })
+
+  // Also update thread entry
+  await db.threads.update(draftId, {
+    subject: data.subject ?? existingEmail.subject,
+    snippet: (data.contentText ?? existingEmail.contentText).slice(0, 150),
+    participants: recipients,
+    cachedAt: now,
+  })
+
+  // Try to update on server if it has a server ID
+  if (!isOffline() && !isLocalId(draftId)) {
+    try {
+      const response = await fetch(`/api/drafts/${draftId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: data.senderId,
+          subject: data.subject,
+          contentText: data.contentText,
+          contentHtml: data.contentHtml,
+          recipients: data.recipients,
+          inReplyTo: data.inReplyTo,
+          references: data.references,
+        }),
+      })
+
+      if (response.ok) {
+        return { pending: false }
+      }
+    } catch {
+      // Fall through to offline handling
+    }
+  }
+
+  // Queue for sync (avoid duplicates)
+  const existingSync = await db.pendingSync
+    .filter(p => p.entityType === 'draft' && p.entityId === draftId)
+    .first()
+
+  if (!existingSync) {
+    await db.pendingSync.add({
+      entityType: 'draft',
+      entityId: draftId,
+      action: isLocalId(draftId) ? 'create' : 'update',
+      createdAt: now,
+    })
+  }
+
+  return { pending: true }
+}
+
+/**
+ * Delete a draft.
+ * Always removes from sync cache immediately (for UI).
+ * If online and has server ID, deletes on server.
+ * If offline with server ID, queues deletion for sync.
+ */
+export async function deleteDraft(draftId: number): Promise<{ pending: boolean }> {
+  const db = getSyncDb()
+  const now = Date.now()
+  const hasServerId = !isLocalId(draftId)
+
+  // Remove from sync cache immediately
+  await db.emails.delete(draftId)
+  await db.threads.delete(draftId)
+  await db.bucketMembership.where('threadId').equals(draftId).delete()
+
+  // Remove any pending create/update syncs for this draft
+  const pendingToDelete = await db.pendingSync
+    .filter(p => p.entityType === 'draft' && p.entityId === draftId)
+    .toArray()
+  for (const p of pendingToDelete) {
+    if (p.id) await db.pendingSync.delete(p.id)
+  }
+
+  // If it has a server ID, we need to delete on server
+  if (hasServerId) {
+    if (!isOffline()) {
+      try {
+        const response = await fetch(`/api/drafts/${draftId}`, { method: 'DELETE' })
+        if (response.ok) {
+          return { pending: false }
+        }
+      } catch {
+        // Fall through to offline handling
+      }
+    }
+
+    // Queue deletion for sync
+    await db.pendingSync.add({
+      entityType: 'draft',
+      entityId: draftId,
+      action: 'delete',
+      createdAt: now,
+    })
+
+    return { pending: true }
+  }
+
+  // Local-only draft, just removing from cache is enough
+  return { pending: false }
+}
+
+/**
+ * Helper to store a draft in the sync cache (threads + emails tables).
+ */
+async function storeDraftInCache(
+  db: ReturnType<typeof getSyncDb>,
+  draft: {
+    id: number
+    threadId?: number | null  // If set, this is a reply to an existing thread
+    subject: string
+    contentText: string
+    contentHtml: string | null
+    sender: SyncParticipant | null
+    recipients: SyncParticipant[]
+    attachments: Array<{ id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean }>
+    inReplyTo: string | null
+    references: string | null
+    cachedAt: number
+  }
+): Promise<void> {
+  if (draft.threadId) {
+    // Reply draft - add to existing thread
+    const existingThread = await db.threads.get(draft.threadId)
+    if (existingThread) {
+      // Update existing thread's draft count
+      await db.threads.update(draft.threadId, {
+        draftCount: existingThread.draftCount + 1,
+        cachedAt: draft.cachedAt,
+      })
+    }
+
+    // Store email linked to the thread
+    const email: SyncEmail = {
+      id: draft.id,
+      threadId: draft.threadId,
+      subject: draft.subject,
+      contentText: draft.contentText,
+      contentHtml: draft.contentHtml,
+      sentAt: null,
+      receivedAt: null,
+      isRead: true,
+      status: 'draft',
+      sender: draft.sender,
+      recipients: draft.recipients,
+      attachments: draft.attachments,
+      replyTo: null,
+      messageId: null,
+      references: draft.references,
+      inReplyTo: draft.inReplyTo,
+      cachedAt: draft.cachedAt,
+    }
+    await db.emails.put(email)
+  } else {
+    // Standalone draft - create a new "thread" entry
+    const thread: SyncThread = {
+      id: draft.id,
+      type: 'draft',
+      subject: draft.subject || '(No subject)',
+      createdAt: draft.cachedAt,
+      replyLaterAt: null,
+      setAsideAt: null,
+      latestEmailAt: draft.cachedAt,
+      unreadCount: 0,
+      totalCount: 1,
+      draftCount: 1,
+      participants: draft.recipients,
+      snippet: draft.contentText.slice(0, 150),
+      defaultFromId: draft.sender?.id ?? null,
+      cachedAt: draft.cachedAt,
+      hasFullContent: true,
+    }
+    await db.threads.put(thread)
+
+    // Store as email with status='draft'
+    const email: SyncEmail = {
+      id: draft.id,
+      threadId: null, // Standalone draft
+      subject: draft.subject,
+      contentText: draft.contentText,
+      contentHtml: draft.contentHtml,
+      sentAt: null,
+      receivedAt: null,
+      isRead: true,
+      status: 'draft',
+      sender: draft.sender,
+      recipients: draft.recipients,
+      attachments: draft.attachments,
+      replyTo: null,
+      messageId: null,
+      references: draft.references,
+      inReplyTo: draft.inReplyTo,
+      cachedAt: draft.cachedAt,
+    }
+    await db.emails.put(email)
+
+    // Add to approved bucket (standalone drafts show in inbox)
+    await db.bucketMembership.put({
+      bucket: 'approved',
+      threadId: draft.id,
+      sortKey: draft.cachedAt,
+    })
   }
 }
 

@@ -5,7 +5,13 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
-import { getMeContacts, searchContacts as apiSearchContacts } from '@/utils/api'
+import {
+  getMeContacts,
+  searchContacts as apiSearchContacts,
+  createDraft as apiCreateDraft,
+  updateDraft as apiUpdateDraft,
+  deleteDraft as apiDeleteDraft,
+} from '@/utils/api'
 
 interface Contact {
   id: number
@@ -95,7 +101,8 @@ let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 // Saving state
 const saving = ref(false)
-const draftId = ref<number | null>(null)
+const draftId = ref<number | null>(null)  // ID in sync cache (negative for local-only, positive for server)
+const isPending = ref(false)  // True if draft is pending sync
 let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
 
 // File input ref
@@ -158,8 +165,9 @@ const editor = useEditor({
 })
 
 // Ensure draft exists before uploading (so we can link the attachment)
+// Note: This requires being online since attachments need server upload
 async function ensureDraftExists(): Promise<number> {
-  if (draftId.value) return draftId.value
+  if (draftId.value && draftId.value > 0) return draftId.value
 
   // Create a minimal draft first
   if (!selectedFromId.value) {
@@ -172,28 +180,26 @@ async function ensureDraftExists(): Promise<number> {
     ...bccRecipients.value.map(r => ({ ...r, role: 'bcc' as const })),
   ]
 
-  const response = await fetch('/api/drafts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      threadId: props.threadId,
-      senderId: selectedFromId.value,
-      subject: subject.value,
-      contentText: isRichText.value ? getPlainText() : bodyText.value,
-      contentHtml: isRichText.value ? getEditorContent() : undefined,
-      inReplyTo: props.originalEmail?.messageId,
-      references: props.originalEmail?.references,
-      recipients,
-    }),
+  const result = await apiCreateDraft({
+    threadId: props.threadId,
+    senderId: selectedFromId.value,
+    subject: subject.value,
+    contentText: isRichText.value ? getPlainText() : bodyText.value,
+    contentHtml: isRichText.value ? getEditorContent() : undefined,
+    inReplyTo: props.originalEmail?.messageId,
+    references: props.originalEmail?.references,
+    recipients,
   })
 
-  if (!response.ok) {
-    throw new Error('Failed to create draft')
+  draftId.value = result.draftId
+  isPending.value = result.pending
+
+  // Attachments require a server ID (positive number)
+  if (result.draftId < 0) {
+    throw new Error('Cannot upload attachments while offline')
   }
 
-  const result = await response.json() as { id: number }
-  draftId.value = result.id
-  return result.id
+  return result.draftId
 }
 
 // Upload file and return metadata with progress tracking
@@ -418,7 +424,7 @@ function loadExistingDraft() {
   if (!props.existingDraft) return
 
   const draft = props.existingDraft
-  draftId.value = draft.id
+  draftId.value = draft.id || null
   subject.value = draft.subject
 
   // Load content
@@ -430,9 +436,13 @@ function loadExistingDraft() {
     isRichText.value = false
   }
 
-  // Set sender
+  // Set sender (only if it's a valid "me" contact)
   if (draft.sender) {
-    selectedFromId.value = draft.sender.id
+    const senderIsMe = meContacts.value.some(m => m.id === draft.sender!.id)
+    if (senderIsMe) {
+      selectedFromId.value = draft.sender.id
+    }
+    // If sender isn't in meContacts, keep the default that was set by loadMeContacts
   }
 
   // Load recipients
@@ -658,32 +668,18 @@ async function saveDraft() {
       inReplyTo: props.originalEmail?.messageId,
       references: props.originalEmail?.references,
       recipients,
-      attachments: attachments.value.map(a => ({
-        id: a.id,
-        filename: a.filename,
-        mimeType: a.mimeType,
-        size: a.size,
-        url: a.url,
-        isInline: a.isInline,
-      })),
+      attachmentIds: attachments.value.map(a => typeof a.id === 'number' ? a.id : parseInt(a.id as string)).filter(id => !isNaN(id)),
     }
 
     if (draftId.value) {
-      await fetch(`/api/drafts/${draftId.value}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draftData),
-      })
+      // Update existing draft
+      const result = await apiUpdateDraft(draftId.value, draftData)
+      isPending.value = result.pending
     } else {
-      const response = await fetch('/api/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draftData),
-      })
-      if (response.ok) {
-        const result = await response.json() as { id: number }
-        draftId.value = result.id
-      }
+      // Create new draft
+      const result = await apiCreateDraft(draftData)
+      draftId.value = result.draftId
+      isPending.value = result.pending
     }
   } catch (e) {
     console.error('Failed to save draft:', e)
@@ -704,7 +700,7 @@ async function discardDraft() {
 
   if (draftId.value) {
     try {
-      await fetch(`/api/drafts/${draftId.value}`, { method: 'DELETE' })
+      await apiDeleteDraft(draftId.value)
       emit('discarded')
     } catch (e) {
       console.error('Failed to delete draft:', e)
@@ -755,6 +751,7 @@ onUnmounted(() => {
       <div class="header-right">
         <span v-if="uploading" class="uploading-indicator">Uploading...</span>
         <span v-else-if="saving" class="saving-indicator">Saving...</span>
+        <span v-else-if="isPending" class="pending-indicator">Saved locally</span>
         <span v-else-if="draftId" class="saved-indicator">Draft saved</span>
         <button class="close-btn" @click="closeKeepDraft" title="Close (draft saved)">×</button>
       </div>
@@ -1096,6 +1093,11 @@ onUnmounted(() => {
 .saved-indicator {
   font-size: 12px;
   color: #22c55e;
+}
+
+.pending-indicator {
+  font-size: 12px;
+  color: #f59e0b;
 }
 
 .close-btn {

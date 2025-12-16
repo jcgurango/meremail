@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailComposer from '@/components/EmailComposer.vue'
 import { getDraft as apiGetDraft } from '@/utils/api'
+import { isLocalId } from '@/utils/sync-db'
 
 interface Recipient {
   id: number
@@ -35,7 +36,9 @@ interface Draft {
 
 const route = useRoute()
 const router = useRouter()
-const draftId = Number(route.params.id)
+
+// Draft ID can be positive (server) or negative (local-only)
+const draftId = computed(() => Number(route.params.id))
 
 const draft = ref<Draft | null>(null)
 const pending = ref(true)
@@ -58,6 +61,8 @@ watch(pageTitle, (newTitle) => {
 })
 
 const isFromCache = ref(false)
+// Local drafts (negative IDs) are always pending sync
+const isOfflineDraft = computed(() => draft.value && isLocalId(draft.value.id))
 
 async function loadDraft() {
   pending.value = true
@@ -65,7 +70,12 @@ async function loadDraft() {
   isFromCache.value = false
 
   try {
-    const result = await apiGetDraft(draftId)
+    if (!draftId.value) {
+      throw new Error('No draft ID provided')
+    }
+
+    // getDraft handles both server and local (negative ID) drafts
+    const result = await apiGetDraft(draftId.value)
     if (result) {
       draft.value = result.data
       isFromCache.value = result.fromCache
@@ -114,11 +124,14 @@ function goBack() {
         Failed to load draft: {{ error.message }}
       </div>
 
-      <div v-if="isFromCache" class="offline-notice">
-          Viewing cached version (offline)
-        </div>
+      <div v-if="isOfflineDraft" class="offline-notice">
+        Draft created offline - will sync when back online
+      </div>
+      <div v-else-if="isFromCache" class="offline-notice">
+        Viewing cached version (offline)
+      </div>
 
-        <div v-if="draft" class="composer-wrapper">
+      <div v-if="draft" class="composer-wrapper">
         <EmailComposer
           :existing-draft="{
             id: draft.id,

@@ -94,6 +94,16 @@ export interface SyncMeta {
   itemCount: number
 }
 
+// Pending sync actions for offline support
+// Only tracks WHAT needs syncing - actual content is in threads/emails tables
+export interface PendingSync {
+  id?: number  // Auto-increment
+  entityType: 'draft'  // For now just drafts, could expand later
+  entityId: number  // ID in threads/emails table (negative for local-only)
+  action: 'create' | 'update' | 'delete'
+  createdAt: number
+}
+
 // ============== Database Class ==============
 
 class SyncDatabase extends Dexie {
@@ -103,11 +113,12 @@ class SyncDatabase extends Dexie {
   bucketMembership!: EntityTable<SyncBucketMembership, 'id'>
   attachmentBlobs!: EntityTable<SyncAttachmentBlob, 'id'>
   syncMeta!: EntityTable<SyncMeta, 'key'>
+  pendingSync!: EntityTable<PendingSync, 'id'>
 
   constructor() {
     super('MereMail')
 
-    this.version(2).stores({
+    this.version(4).stores({
       // Contacts: index by bucket for filtering
       contacts: 'id, email, bucket, isMe, cachedAt',
 
@@ -125,6 +136,14 @@ class SyncDatabase extends Dexie {
 
       // Sync metadata
       syncMeta: 'key',
+
+      // Pending sync actions (replaces pendingDrafts)
+      pendingSync: '++id, entityType, entityId, action',
+    }).upgrade(tx => {
+      // Drop the old pendingDrafts table data (schema change handles table)
+      return tx.table('pendingDrafts').clear().catch(() => {
+        // Table might not exist, that's fine
+      })
     })
   }
 }
@@ -150,3 +169,30 @@ export const SYNC_LIMITS = {
   // Total attachment cache limit (100 MB)
   totalAttachmentCacheSize: 100 * 1024 * 1024,
 } as const
+
+// Generate a local ID for offline-created drafts
+// Uses negative numbers to distinguish from server IDs
+let nextLocalId = -1
+
+export async function generateLocalDraftId(): Promise<number> {
+  const db = getSyncDb()
+
+  // Find the lowest existing ID to avoid collisions
+  const lowestThread = await db.threads.orderBy('id').first()
+  const lowestEmail = await db.emails.orderBy('id').first()
+
+  const lowestExisting = Math.min(
+    lowestThread?.id ?? 0,
+    lowestEmail?.id ?? 0,
+    nextLocalId
+  )
+
+  // Use one less than the lowest
+  nextLocalId = Math.min(lowestExisting - 1, nextLocalId - 1)
+  return nextLocalId
+}
+
+// Check if an ID is a local (not-yet-synced) ID
+export function isLocalId(id: number): boolean {
+  return id < 0
+}

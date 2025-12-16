@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { getThreads } from '@/utils/api'
+import { useSyncInit } from '@/composables/useSyncInit'
 
 interface Thread {
   type: 'thread' | 'draft'
@@ -20,6 +21,8 @@ const props = defineProps<{
   replyLater?: boolean
   emptyMessage?: string
 }>()
+
+const { syncVersion, isInitialSyncInProgress } = useSyncInit()
 
 const threads = ref<Thread[]>([])
 const hasMore = ref(false)
@@ -48,6 +51,11 @@ async function loadThreads() {
     loading.value = false
   }
 }
+
+// Reload when sync completes (syncVersion increments)
+watch(syncVersion, () => {
+  loadThreads()
+})
 
 async function loadMore() {
   if (loadingMore.value || !hasMore.value || fromCache.value) return
@@ -109,6 +117,10 @@ onMounted(() => {
 
     <div v-else-if="error" class="error">
       Failed to load threads: {{ error?.message }}
+    </div>
+
+    <div v-else-if="threads.length === 0 && isInitialSyncInProgress" class="loading">
+      Syncing...
     </div>
 
     <div v-else-if="threads.length === 0" class="empty">

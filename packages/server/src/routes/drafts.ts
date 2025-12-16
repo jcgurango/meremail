@@ -22,6 +22,34 @@ interface DraftBody {
   recipients?: Recipient[]
 }
 
+// POST /api/drafts/check - Check which draft IDs still exist
+// Must be defined before /:id to avoid route parameter conflicts
+draftsRoutes.post('/check', async (c) => {
+  const body = await c.req.json<{ ids: number[] }>()
+
+  if (!body.ids || !Array.isArray(body.ids)) {
+    return c.json({ error: 'Missing required field: ids (array)' }, 400)
+  }
+
+  if (body.ids.length === 0) {
+    return c.json({ existing: [] })
+  }
+
+  // Find which of the provided IDs exist as drafts
+  const existingDrafts = db
+    .select({ id: emails.id })
+    .from(emails)
+    .where(and(
+      inArray(emails.id, body.ids),
+      eq(emails.status, 'draft')
+    ))
+    .all()
+
+  return c.json({
+    existing: existingDrafts.map(d => d.id)
+  })
+})
+
 // POST /api/drafts
 draftsRoutes.post('/', async (c) => {
   const body = await c.req.json<DraftBody>()

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import SearchModal from '@/components/SearchModal.vue'
+import { getMeContacts, createDraft } from '@/utils/api'
 
 const router = useRouter()
 const searchOpen = ref(false)
@@ -20,42 +21,24 @@ async function loadUnscreenedCount() {
   }
 }
 
-async function getDefaultSender(): Promise<number | null> {
-  try {
-    const response = await fetch('/api/contacts?isMe=true&limit=1')
-    if (response.ok) {
-      const data = await response.json()
-      return data.contacts[0]?.id || null
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
 async function compose() {
   if (composing.value) return
   composing.value = true
 
   try {
-    const senderId = await getDefaultSender()
+    // Use offline-aware getMeContacts
+    const { data } = await getMeContacts()
+    const senderId = data.contacts[0]?.id
     if (!senderId) {
-      alert('No sender identity found. Please import emails first.')
+      alert('No sender identity found. Please sync while online first.')
       return
     }
 
-    const response = await fetch('/api/drafts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senderId })
-    })
+    // Create draft (works offline with negative IDs)
+    const result = await createDraft({ senderId })
 
-    if (response.ok) {
-      const result = await response.json()
-      router.push(`/draft/${result.id}`)
-    } else {
-      throw new Error('Failed to create draft')
-    }
+    // Navigate to draft page (handles both positive and negative IDs)
+    router.push(`/draft/${result.draftId}`)
   } catch (e) {
     console.error('Failed to create draft:', e)
     alert('Failed to create new message')
