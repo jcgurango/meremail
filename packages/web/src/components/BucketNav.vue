@@ -63,7 +63,7 @@ watch(() => route.path, () => {
       :class="{ active: route.path === tab.path }"
     >
       {{ tab.label }}
-      <span v-if="counts[tab.key] > 0" class="pill-count">{{ counts[tab.key] }}</span>
+      <span v-if="counts[tab.key] > 0 && tab.key !== 'quarantine'" class="pill-count">{{ counts[tab.key] }}</span>
     </RouterLink>
   </nav>
 </template>

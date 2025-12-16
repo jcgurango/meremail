@@ -133,6 +133,11 @@ MAX_ATTACHMENT_SIZE=20971520
 # EML backup during IMAP import (default: enabled)
 EML_BACKUP_ENABLED=true
 EML_BACKUP_PATH=./data/eml-backup
+
+# Authentication
+AUTH_USERNAME=admin
+AUTH_PASSWORD=changeme
+AUTH_COOKIE_SECRET=change-this-to-a-random-string
 ```
 
 ## CLI Commands

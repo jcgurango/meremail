@@ -16,6 +16,7 @@ import { searchRoutes } from './routes/search'
 import { miscRoutes } from './routes/misc'
 import { authRoutes, requireAuth } from './routes/auth'
 import { startSendQueueProcessor } from './services/send-queue'
+import { startDailyScheduler } from './services/daily-scheduler'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -72,6 +73,9 @@ serve({ fetch: app.fetch, port }, (info) => {
 
   // Start background send queue processor
   startSendQueueProcessor()
+
+  // Start daily scheduler (backups and quarantine cleanup)
+  startDailyScheduler()
 })
 
 export default app
