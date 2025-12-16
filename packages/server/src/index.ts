@@ -17,6 +17,7 @@ import { miscRoutes } from './routes/misc'
 import { authRoutes, requireAuth } from './routes/auth'
 import { startSendQueueProcessor } from './services/send-queue'
 import { startDailyScheduler } from './services/daily-scheduler'
+import { startImapSync } from './services/imap-sync'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -76,6 +77,9 @@ serve({ fetch: app.fetch, port }, (info) => {
 
   // Start daily scheduler (backups and quarantine cleanup)
   startDailyScheduler()
+
+  // Start IMAP sync (fetch new emails periodically)
+  startImapSync()
 })
 
 export default app
