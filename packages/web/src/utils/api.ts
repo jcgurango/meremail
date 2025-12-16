@@ -950,6 +950,9 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
   const db = getSyncDb()
   const now = Date.now()
 
+  // Get email before updating to check threadId
+  const email = await db.emails.get(draftId)
+
   // Update local cache to queued immediately
   await db.emails.update(draftId, {
     status: 'queued',
@@ -959,12 +962,23 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
   })
 
   // Also update thread entry if standalone draft
-  const email = await db.emails.get(draftId)
   if (email && !email.threadId) {
     // Standalone draft - update thread type
     await db.threads.update(draftId, {
       type: 'draft', // Keep as draft type but the email status shows queued
     })
+  }
+
+  // If this is in a thread, check if we should clear replyLaterAt locally
+  // (clear when no more drafts remain - queued emails are considered "handled")
+  if (email?.threadId) {
+    const remainingDrafts = await db.emails
+      .filter(e => e.threadId === email.threadId && e.status === 'draft' && e.id !== draftId)
+      .count()
+
+    if (remainingDrafts === 0) {
+      await db.threads.update(email.threadId, { replyLaterAt: null })
+    }
   }
 
   // Check if already has a pending create (local draft not yet synced)

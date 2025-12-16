@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { eq, and, inArray } from 'drizzle-orm'
-import { db, emails, emailContacts, emailThreadContacts, contacts, attachments } from '@meremail/shared'
+import { db, emails, emailContacts, emailThreadContacts, contacts, attachments, emailThreads } from '@meremail/shared'
 
 export const draftsRoutes = new Hono()
 
@@ -313,7 +313,7 @@ draftsRoutes.post('/:id/send', async (c) => {
 
   // Verify draft exists and is in 'draft' status
   const draft = db
-    .select({ id: emails.id, status: emails.status })
+    .select({ id: emails.id, status: emails.status, threadId: emails.threadId })
     .from(emails)
     .where(eq(emails.id, id))
     .get()
@@ -351,6 +351,26 @@ draftsRoutes.post('/:id/send', async (c) => {
     })
     .where(eq(emails.id, id))
     .run()
+
+  // If this is in a thread, check if we should unflag reply-later
+  // (unflag when no more drafts remain - queued emails are considered "handled")
+  if (draft.threadId) {
+    const remainingDrafts = db
+      .select({ id: emails.id })
+      .from(emails)
+      .where(and(
+        eq(emails.threadId, draft.threadId),
+        eq(emails.status, 'draft')
+      ))
+      .all()
+
+    if (remainingDrafts.length === 0) {
+      db.update(emailThreads)
+        .set({ replyLaterAt: null })
+        .where(eq(emailThreads.id, draft.threadId))
+        .run()
+    }
+  }
 
   return c.json({ success: true, status: 'queued' })
 })
