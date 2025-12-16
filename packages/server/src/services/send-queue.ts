@@ -14,6 +14,76 @@ const RETRY_INTERVALS = [
 const MAX_ATTEMPTS = 5
 
 /**
+ * Format a date in the standard email reply format
+ * e.g., "Mon, Jan 15, 2024 at 2:30 PM"
+ */
+function formatReplyDate(date: Date): string {
+  const options: Intl.DateTimeFormatOptions = {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }
+  return date.toLocaleString('en-US', options)
+}
+
+/**
+ * Format the sender for the reply header
+ * e.g., "Sarah Chen <sarah@example.com>"
+ */
+function formatSenderForQuote(name: string | null, email: string): string {
+  if (name) {
+    return `${name} <${email}>`
+  }
+  return email
+}
+
+/**
+ * Quote text content by adding > prefix to each line
+ */
+function quoteTextContent(text: string): string {
+  return text
+    .split('\n')
+    .map(line => `> ${line}`)
+    .join('\n')
+}
+
+/**
+ * Build the quoted reply content for text
+ * Format: "On Mon, Jan 15, 2024 at 2:30 PM, Sarah Chen <sarah@example.com> wrote:"
+ */
+function buildTextQuote(originalDate: Date, senderName: string | null, senderEmail: string, originalText: string): string {
+  const dateStr = formatReplyDate(originalDate)
+  const sender = formatSenderForQuote(senderName, senderEmail)
+  const header = `On ${dateStr}, ${sender} wrote:`
+  const quotedContent = quoteTextContent(originalText)
+  return `\n\n${header}\n${quotedContent}`
+}
+
+/**
+ * Build the quoted reply content for HTML
+ * Uses standard email blockquote styling
+ */
+function buildHtmlQuote(originalDate: Date, senderName: string | null, senderEmail: string, originalHtml: string): string {
+  const dateStr = formatReplyDate(originalDate)
+  const sender = senderName
+    ? `${senderName} &lt;${senderEmail}&gt;`
+    : senderEmail
+
+  return `
+<br><br>
+<div class="gmail_quote">
+  <div dir="ltr" class="gmail_attr">On ${dateStr}, ${sender} wrote:</div>
+  <blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px #ccc solid;padding-left:1ex">
+    ${originalHtml}
+  </blockquote>
+</div>`
+}
+
+/**
  * Build a sendable email from database records
  */
 async function buildSendableEmail(emailId: number): Promise<SendableEmail | null> {
@@ -85,6 +155,62 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
     .where(eq(attachments.emailId, emailId))
     .all()
 
+  // Build the content with quoted original if this is a reply
+  let finalText = email.contentText
+  let finalHtml = email.contentHtml || undefined
+
+  if (email.inReplyTo) {
+    // Find the original email by messageId
+    const originalEmail = db
+      .select({
+        id: emails.id,
+        sentAt: emails.sentAt,
+        contentText: emails.contentText,
+        contentHtml: emails.contentHtml,
+        senderId: emails.senderId,
+      })
+      .from(emails)
+      .where(eq(emails.messageId, email.inReplyTo))
+      .get()
+
+    if (originalEmail && originalEmail.senderId) {
+      // Get the original sender
+      const originalSender = db
+        .select({
+          name: contacts.name,
+          email: contacts.email,
+        })
+        .from(contacts)
+        .where(eq(contacts.id, originalEmail.senderId))
+        .get()
+
+      if (originalSender && originalEmail.sentAt) {
+        const originalDate = originalEmail.sentAt
+
+        // Append quoted text content
+        if (originalEmail.contentText) {
+          finalText += buildTextQuote(
+            originalDate,
+            originalSender.name,
+            originalSender.email,
+            originalEmail.contentText
+          )
+        }
+
+        // Append quoted HTML content
+        if (originalEmail.contentHtml) {
+          const baseHtml = finalHtml || `<div>${email.contentText.replace(/\n/g, '<br>')}</div>`
+          finalHtml = baseHtml + buildHtmlQuote(
+            originalDate,
+            originalSender.name,
+            originalSender.email,
+            originalEmail.contentHtml
+          )
+        }
+      }
+    }
+  }
+
   return {
     from: {
       email: senderData.email,
@@ -94,8 +220,8 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
     cc,
     bcc,
     subject: email.subject,
-    text: email.contentText,
-    html: email.contentHtml || undefined,
+    text: finalText,
+    html: finalHtml,
     inReplyTo: email.inReplyTo || undefined,
     references: email.references || undefined,
     attachments: attachmentsData.map(a => ({
