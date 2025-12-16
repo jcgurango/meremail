@@ -6,7 +6,7 @@ import { getDraft as apiGetDraft } from '@/utils/api'
 import { isLocalId } from '@/utils/sync-db'
 
 interface Recipient {
-  id: number
+  id?: number
   name: string | null
   email: string
   role: string

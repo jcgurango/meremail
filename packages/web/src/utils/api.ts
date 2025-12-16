@@ -532,7 +532,7 @@ export async function getDraft(draftId: number): Promise<{
     contentText: string
     contentHtml: string | null
     sender: { id: number; name: string | null; email: string } | null
-    recipients: Array<{ id: number; name: string | null; email: string; role: string }>
+    recipients: Array<{ id?: number; name: string | null; email: string; role: string }>
     attachments: Array<{ id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean | null }>
   }
   fromCache: boolean
@@ -544,7 +544,7 @@ export async function getDraft(draftId: number): Promise<{
     contentText: string
     contentHtml: string | null
     sender: { id: number; name: string | null; email: string }
-    recipients: Array<{ id: number; name: string | null; email: string; role: string }>
+    recipients: Array<{ id?: number; name: string | null; email: string; role: string }>
     attachments: Array<{ id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean | null }>
   }>(`/api/drafts/${draftId}`)
 
@@ -749,8 +749,10 @@ export async function createDraft(data: DraftData): Promise<DraftResult> {
     role: 'from',
   } : null
 
+  // Note: id is 0 for unresolved recipients (email-only, no contact yet)
+  // Server will handle these via pendingRecipients
   const recipients: SyncParticipant[] = (data.recipients || []).map(r => ({
-    id: r.id || 0,
+    id: r.id ?? 0,
     name: r.name || null,
     email: r.email,
     isMe: false,
@@ -862,9 +864,10 @@ export async function updateDraft(
   }
 
   // Build updated recipients if provided
+  // Note: id is 0 for unresolved recipients (email-only, no contact yet)
   const recipients = data.recipients
     ? data.recipients.map(r => ({
-        id: r.id || 0,
+        id: r.id ?? 0,
         name: r.name || null,
         email: r.email,
         isMe: false,

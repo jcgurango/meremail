@@ -26,4 +26,11 @@ export const emails = sqliteTable('emails', {
   sendAttempts: integer('send_attempts').default(0),
   lastSendError: text('last_send_error'),
   lastSendAttemptAt: integer('last_send_attempt_at', { mode: 'timestamp' }),
+  // Pending recipients (email-only, not yet created as contacts)
+  // Stored as JSON array: [{email: string, name: string | null, role: 'to'|'cc'|'bcc'}]
+  pendingRecipients: text('pending_recipients', { mode: 'json' }).$type<Array<{
+    email: string
+    name: string | null
+    role: 'to' | 'cc' | 'bcc'
+  }>>(),
 })

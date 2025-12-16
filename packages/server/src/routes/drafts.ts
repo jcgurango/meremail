@@ -7,7 +7,13 @@ export const draftsRoutes = new Hono()
 interface Recipient {
   id?: number
   email: string
-  name?: string
+  name?: string | null
+  role: 'to' | 'cc' | 'bcc'
+}
+
+interface PendingRecipient {
+  email: string
+  name: string | null
   role: 'to' | 'cc' | 'bcc'
 }
 
@@ -60,6 +66,23 @@ draftsRoutes.post('/', async (c) => {
 
   const threadId = body.threadId || null
 
+  // Split recipients into those with contact IDs and those without
+  const recipients = body.recipients || []
+  const linkedRecipients: Recipient[] = []
+  const pendingRecipients: PendingRecipient[] = []
+
+  for (const recipient of recipients) {
+    if (recipient.id) {
+      linkedRecipients.push(recipient)
+    } else {
+      pendingRecipients.push({
+        email: recipient.email,
+        name: recipient.name || null,
+        role: recipient.role,
+      })
+    }
+  }
+
   const result = db
     .insert(emails)
     .values({
@@ -73,24 +96,23 @@ draftsRoutes.post('/', async (c) => {
       status: 'draft',
       folder: 'Drafts',
       readAt: new Date(),
+      pendingRecipients: pendingRecipients.length > 0 ? pendingRecipients : null,
     })
     .returning({ id: emails.id })
     .get()
 
   const emailId = result.id
 
-  const recipients = body.recipients || []
-  for (const recipient of recipients) {
-    if (recipient.id) {
-      db.insert(emailContacts)
-        .values({
-          emailId,
-          contactId: recipient.id,
-          role: recipient.role,
-        })
-        .onConflictDoNothing()
-        .run()
-    }
+  // Link recipients that have contact IDs
+  for (const recipient of linkedRecipients) {
+    db.insert(emailContacts)
+      .values({
+        emailId,
+        contactId: recipient.id!,
+        role: recipient.role,
+      })
+      .onConflictDoNothing()
+      .run()
   }
 
   db.insert(emailContacts)
@@ -104,7 +126,7 @@ draftsRoutes.post('/', async (c) => {
 
   if (threadId) {
     const allContactIds = new Set<number>([body.senderId])
-    for (const r of recipients) {
+    for (const r of linkedRecipients) {
       if (r.id) allContactIds.add(r.id)
     }
 
@@ -139,6 +161,7 @@ draftsRoutes.get('/:id', async (c) => {
       senderId: emails.senderId,
       status: emails.status,
       threadId: emails.threadId,
+      pendingRecipients: emails.pendingRecipients,
     })
     .from(emails)
     .where(and(eq(emails.id, id), eq(emails.status, 'draft')))
@@ -158,7 +181,8 @@ draftsRoutes.get('/:id', async (c) => {
     .where(eq(contacts.id, draft.senderId))
     .get()
 
-  const recipientsData = db
+  // Get linked recipients (those with contact IDs)
+  const linkedRecipients = db
     .select({
       id: contacts.id,
       name: contacts.name,
@@ -170,6 +194,22 @@ draftsRoutes.get('/:id', async (c) => {
     .where(eq(emailContacts.emailId, id))
     .all()
     .filter(r => r.role !== 'from')
+
+  // Merge linked recipients with pending recipients (email-only)
+  const allRecipients = [
+    ...linkedRecipients.map(r => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      role: r.role,
+    })),
+    ...(draft.pendingRecipients || []).map(r => ({
+      id: undefined as number | undefined,
+      name: r.name,
+      email: r.email,
+      role: r.role,
+    })),
+  ]
 
   const attachmentsData = db
     .select({
@@ -190,12 +230,7 @@ draftsRoutes.get('/:id', async (c) => {
     contentHtml: draft.contentHtml,
     threadId: draft.threadId,
     sender: sender || null,
-    recipients: recipientsData.map(r => ({
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      role: r.role,
-    })),
+    recipients: allRecipients,
     attachments: attachmentsData.map(a => ({
       id: a.id,
       filename: a.filename,
@@ -231,15 +266,27 @@ draftsRoutes.patch('/:id', async (c) => {
   if (body.contentHtml !== undefined) updateData.contentHtml = body.contentHtml
   if (body.senderId !== undefined) updateData.senderId = body.senderId
 
-  if (Object.keys(updateData).length > 0) {
-    db.update(emails)
-      .set(updateData)
-      .where(eq(emails.id, id))
-      .run()
-  }
-
   // Update recipients if provided
   if (body.recipients !== undefined) {
+    // Split recipients into those with contact IDs and those without
+    const linkedRecipients: Recipient[] = []
+    const pendingRecipients: PendingRecipient[] = []
+
+    for (const recipient of body.recipients) {
+      if (recipient.id) {
+        linkedRecipients.push(recipient)
+      } else {
+        pendingRecipients.push({
+          email: recipient.email,
+          name: recipient.name || null,
+          role: recipient.role,
+        })
+      }
+    }
+
+    // Update pendingRecipients in the email record
+    updateData.pendingRecipients = pendingRecipients.length > 0 ? pendingRecipients : null
+
     // Remove existing recipients (except 'from')
     db.delete(emailContacts)
       .where(and(
@@ -257,19 +304,24 @@ draftsRoutes.patch('/:id', async (c) => {
         .run()
     }
 
-    // Add new recipients
-    for (const recipient of body.recipients) {
-      if (recipient.id) {
-        db.insert(emailContacts)
-          .values({
-            emailId: id,
-            contactId: recipient.id,
-            role: recipient.role,
-          })
-          .onConflictDoNothing()
-          .run()
-      }
+    // Add linked recipients (those with contact IDs)
+    for (const recipient of linkedRecipients) {
+      db.insert(emailContacts)
+        .values({
+          emailId: id,
+          contactId: recipient.id!,
+          role: recipient.role,
+        })
+        .onConflictDoNothing()
+        .run()
     }
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    db.update(emails)
+      .set(updateData)
+      .where(eq(emails.id, id))
+      .run()
   }
 
   return c.json({ success: true, id })
@@ -319,6 +371,7 @@ draftsRoutes.post('/:id/send', async (c) => {
       threadId: emails.threadId,
       subject: emails.subject,
       senderId: emails.senderId,
+      pendingRecipients: emails.pendingRecipients,
     })
     .from(emails)
     .where(eq(emails.id, id))
@@ -332,7 +385,58 @@ draftsRoutes.post('/:id/send', async (c) => {
     return c.json({ error: 'Email is not a draft' }, 400)
   }
 
-  // Verify draft has at least one recipient
+  // Resolve pending recipients to contacts before checking recipient count
+  // This creates contacts for email-only recipients and auto-approves them
+  if (draft.pendingRecipients && draft.pendingRecipients.length > 0) {
+    for (const pending of draft.pendingRecipients) {
+      // Try to find existing contact by email
+      let contact = db
+        .select({ id: contacts.id, bucket: contacts.bucket })
+        .from(contacts)
+        .where(eq(contacts.email, pending.email.toLowerCase()))
+        .get()
+
+      if (!contact) {
+        // Create new contact with 'approved' bucket (we're sending to them)
+        const result = db
+          .insert(contacts)
+          .values({
+            email: pending.email.toLowerCase(),
+            name: pending.name,
+            bucket: 'approved',
+          })
+          .returning({ id: contacts.id })
+          .get()
+        contact = { id: result.id, bucket: 'approved' }
+        console.log(`[Drafts] Created new approved contact ${contact.id} for ${pending.email}`)
+      } else if (!contact.bucket) {
+        // Existing contact without bucket - approve them
+        db.update(contacts)
+          .set({ bucket: 'approved' })
+          .where(eq(contacts.id, contact.id))
+          .run()
+        console.log(`[Drafts] Auto-approved existing contact ${contact.id} (${pending.email})`)
+      }
+
+      // Link contact to email
+      db.insert(emailContacts)
+        .values({
+          emailId: id,
+          contactId: contact.id,
+          role: pending.role,
+        })
+        .onConflictDoNothing()
+        .run()
+    }
+
+    // Clear pending recipients since they're now linked
+    db.update(emails)
+      .set({ pendingRecipients: null })
+      .where(eq(emails.id, id))
+      .run()
+  }
+
+  // Get all recipient contacts (including newly linked ones)
   const recipientContacts = db
     .select({
       contactId: emailContacts.contactId,

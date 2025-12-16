@@ -1,0 +1,1 @@
+ALTER TABLE `emails` ADD `pending_recipients` text;

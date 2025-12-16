@@ -44,7 +44,7 @@ interface ExistingDraft {
   contentText: string
   contentHtml?: string | null
   sender: { id: number } | null
-  recipients: { id: number; email: string; name: string | null; role: string }[]
+  recipients: { id?: number; email: string; name: string | null; role: string }[]
   attachments?: { id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean | null }[]
 }
 
