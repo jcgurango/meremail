@@ -30,7 +30,8 @@ attachmentsRoutes.get('/', async (c) => {
   let hasMore = false
 
   if (textSearch && textSearch.length >= 2) {
-    const searchTerm = textSearch.replace(/['"*()]/g, ' ').trim() + '*'
+    // Escape FTS5 special characters
+    const searchTerm = textSearch.replace(/['"*()@\-+.:^]/g, ' ').trim() + '*'
 
     let ftsSql = `
       SELECT

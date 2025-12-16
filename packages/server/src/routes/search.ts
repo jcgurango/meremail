@@ -65,7 +65,8 @@ searchRoutes.get('/', async (c) => {
   let hasMore = false
 
   const hasSearchTerm = q.length >= 2
-  const searchTerm = hasSearchTerm ? q.replace(/['"*()]/g, ' ').trim() + '*' : ''
+  // Escape FTS5 special characters
+  const searchTerm = hasSearchTerm ? q.replace(/['"*()@\-+.:^]/g, ' ').trim() + '*' : ''
 
   // Search emails
   const hasEmailFilters = senderId || dateFromUnix || dateToUnix
