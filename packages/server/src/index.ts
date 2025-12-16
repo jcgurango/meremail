@@ -14,6 +14,7 @@ import { attachmentsRoutes } from './routes/attachments'
 import { uploadsRoutes } from './routes/uploads'
 import { searchRoutes } from './routes/search'
 import { miscRoutes } from './routes/misc'
+import { startSendQueueProcessor } from './services/send-queue'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -63,6 +64,9 @@ console.log(`  Port: ${port}`)
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Server running at http://localhost:${info.port}`)
+
+  // Start background send queue processor
+  startSendQueueProcessor()
 })
 
 export default app

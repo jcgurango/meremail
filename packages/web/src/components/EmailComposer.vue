@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
@@ -11,6 +11,7 @@ import {
   createDraft as apiCreateDraft,
   updateDraft as apiUpdateDraft,
   deleteDraft as apiDeleteDraft,
+  sendDraft as apiSendDraft,
 } from '@/utils/api'
 
 interface Contact {
@@ -103,7 +104,13 @@ let searchDebounce: ReturnType<typeof setTimeout> | null = null
 const saving = ref(false)
 const draftId = ref<number | null>(null)  // ID in sync cache (negative for local-only, positive for server)
 const isPending = ref(false)  // True if draft is pending sync
+const sending = ref(false)  // True while queueing send
 let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
+
+// Whether the draft can be sent (has recipients and sender)
+const canSend = computed(() => {
+  return toRecipients.value.length > 0 && selectedFromId.value !== null
+})
 
 // File input ref
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -718,6 +725,29 @@ function closeKeepDraft() {
   emit('close')
 }
 
+// Queue draft for sending
+async function handleSend() {
+  if (!canSend.value || sending.value) return
+
+  // Save draft first if needed
+  await saveDraft()
+
+  if (!draftId.value) {
+    console.error('Cannot send: no draft ID')
+    return
+  }
+
+  sending.value = true
+  try {
+    await apiSendDraft(draftId.value)
+    emit('sent', draftId.value)
+  } catch (e) {
+    console.error('Failed to queue send:', e)
+  } finally {
+    sending.value = false
+  }
+}
+
 function getRecipientDisplay(r: Recipient): string {
   return r.name || r.email
 }
@@ -1045,6 +1075,9 @@ onUnmounted(() => {
 
     <!-- Actions -->
     <div class="composer-actions">
+      <button class="send-btn" @click="handleSend" :disabled="!canSend || sending">
+        {{ sending ? 'Sending...' : 'Send' }}
+      </button>
       <button class="discard-btn" @click="discardDraft">Discard</button>
     </div>
   </div>
@@ -1503,6 +1536,26 @@ onUnmounted(() => {
   gap: 12px;
   padding: 16px;
   border-top: 1px solid #e5e5e5;
+}
+
+.send-btn {
+  padding: 8px 24px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.send-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.send-btn:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
 }
 
 .discard-btn {

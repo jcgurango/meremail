@@ -42,7 +42,7 @@ export interface SyncEmail {
   sentAt: number | null
   receivedAt: number | null
   isRead: boolean
-  status: 'draft' | 'sent' | 'received'
+  status: 'draft' | 'queued' | 'sent' | 'received'
   sender: SyncParticipant | null
   recipients: SyncParticipant[]
   attachments: SyncAttachmentMeta[]
@@ -51,6 +51,10 @@ export interface SyncEmail {
   references: string | null
   inReplyTo: string | null
   cachedAt: number
+  // Send queue tracking
+  queuedAt: number | null
+  sendAttempts: number
+  lastSendError: string | null
 }
 
 export interface SyncThread {
@@ -100,7 +104,7 @@ export interface PendingSync {
   id?: number  // Auto-increment
   entityType: 'draft'  // For now just drafts, could expand later
   entityId: number  // ID in threads/emails table (negative for local-only)
-  action: 'create' | 'update' | 'delete'
+  action: 'create' | 'update' | 'delete' | 'send'
   createdAt: number
 }
 

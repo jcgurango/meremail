@@ -30,7 +30,7 @@ interface Email {
   sentAt: string | null
   receivedAt: string | null
   isRead: boolean
-  status: 'draft' | 'sent'
+  status: 'draft' | 'queued' | 'sent'
   sender: Participant | null
   recipients: Participant[]
   attachments: Attachment[]
@@ -38,6 +38,9 @@ interface Email {
   references?: string[] | null
   inReplyTo?: string | null
   replyTo?: string | null
+  queuedAt?: string | null
+  sendAttempts?: number
+  lastSendError?: string | null
 }
 
 interface Thread {
@@ -113,10 +116,13 @@ const sortedEmails = computed(() => {
     }
   }
 
-  // Sort sent emails by date descending
+  // Sort sent/queued emails by date descending
+  // For queued emails, use queuedAt since they don't have sentAt yet
   result.sort((a, b) => {
-    const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0
-    const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0
+    const dateA = a.sentAt ? new Date(a.sentAt).getTime()
+      : (a.queuedAt ? new Date(a.queuedAt).getTime() : 0)
+    const dateB = b.sentAt ? new Date(b.sentAt).getTime()
+      : (b.queuedAt ? new Date(b.queuedAt).getTime() : 0)
     return dateB - dateA
   })
 
@@ -381,9 +387,24 @@ function goBack() {
               <button class="edit-draft-btn">Edit</button>
             </article>
 
+            <!-- Queued email - show like regular email with status badge -->
+            <div v-else-if="email.status === 'queued'" class="queued-email-wrapper">
+              <div class="queued-status-bar">
+                <span class="queued-badge">Queued</span>
+                <span v-if="email.lastSendError" class="queued-error">
+                  Send failed: {{ email.lastSendError }}
+                  <span class="retry-info">(Retrying automatically)</span>
+                </span>
+              </div>
+              <EmailMessage
+                :email="email"
+                :show-reply-buttons="false"
+              />
+            </div>
+
             <!-- Regular sent email -->
             <EmailMessage
-              v-else-if="email.status !== 'draft'"
+              v-else
               :email="email"
               :show-reply-buttons="true"
               @reply="handleReply"
@@ -619,5 +640,39 @@ h1 {
 
 .edit-draft-btn:hover {
   border-color: #999;
+}
+
+.queued-email-wrapper {
+  border-bottom: 1px solid #eee;
+}
+
+.queued-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #eff6ff;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.queued-badge {
+  padding: 4px 8px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 4px;
+}
+
+.queued-error {
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.retry-info {
+  color: #666;
+  font-style: italic;
+  margin-left: 4px;
 }
 </style>

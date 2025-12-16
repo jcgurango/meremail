@@ -66,7 +66,7 @@ interface ThreadDetail {
     sentAt: string | null
     receivedAt: string | null
     isRead: boolean
-    status: 'draft' | 'sent'
+    status: 'draft' | 'queued' | 'sent'
     sender: {
       id: number
       name: string | null
@@ -92,6 +92,9 @@ interface ThreadDetail {
     messageId?: string | null
     references?: string[] | null
     inReplyTo?: string | null
+    queuedAt?: string | null
+    sendAttempts?: number
+    lastSendError?: string | null
   }>
   defaultFromId: number | null
 }
@@ -251,9 +254,32 @@ export async function getThread(threadId: number): Promise<{ data: ThreadDetail;
     const pendingCreateIds = new Set(
       pendingItems.filter(p => p.action === 'create').map(p => p.entityId)
     )
+    const pendingSendIds = new Set(
+      pendingItems.filter(p => p.action === 'send').map(p => p.entityId)
+    )
 
     // Filter out emails that are pending deletion
     let emails = networkResult.data.emails.filter(e => !pendingDeleteIds.has(e.id))
+
+    // Update status for emails with pending send (server still shows draft, but locally queued)
+    // Also get queuedAt from local cache
+    const pendingSendEmailsCache = new Map<number, { queuedAt: number | null }>()
+    if (pendingSendIds.size > 0) {
+      for (const id of pendingSendIds) {
+        const cached = await db.emails.get(id)
+        if (cached) {
+          pendingSendEmailsCache.set(id, { queuedAt: cached.queuedAt })
+        }
+      }
+    }
+    emails = emails.map(e => {
+      if (pendingSendIds.has(e.id) && e.status === 'draft') {
+        const cached = pendingSendEmailsCache.get(e.id)
+        const queuedAt = cached?.queuedAt ? new Date(cached.queuedAt).toISOString() : new Date().toISOString()
+        return { ...e, status: 'queued' as const, queuedAt }
+      }
+      return e
+    })
 
     // Add any local drafts (negative IDs) that haven't been synced yet
     if (pendingCreateIds.size > 0) {
@@ -271,7 +297,7 @@ export async function getThread(threadId: number): Promise<{ data: ThreadDetail;
           sentAt: draft.sentAt ? new Date(draft.sentAt).toISOString() : null,
           receivedAt: draft.receivedAt ? new Date(draft.receivedAt).toISOString() : null,
           isRead: draft.isRead,
-          status: draft.status as 'draft' | 'sent',
+          status: draft.status as 'draft' | 'queued' | 'sent',
           sender: draft.sender ? {
             id: draft.sender.id,
             name: draft.sender.name,
@@ -299,6 +325,9 @@ export async function getThread(threadId: number): Promise<{ data: ThreadDetail;
             ? (Array.isArray(draft.references) ? draft.references : draft.references.split(/\s+/))
             : undefined,
           inReplyTo: draft.inReplyTo ?? undefined,
+          queuedAt: draft.queuedAt ? new Date(draft.queuedAt).toISOString() : null,
+          sendAttempts: draft.sendAttempts ?? 0,
+          lastSendError: draft.lastSendError ?? null,
         })
       }
     }
@@ -345,7 +374,7 @@ export async function getThread(threadId: number): Promise<{ data: ThreadDetail;
       sentAt: e.sentAt ? new Date(e.sentAt).toISOString() : null,
       receivedAt: e.receivedAt ? new Date(e.receivedAt).toISOString() : null,
       isRead: e.isRead,
-      status: e.status as 'draft' | 'sent',
+      status: e.status as 'draft' | 'queued' | 'sent',
       sender: e.sender ? {
         id: e.sender.id,
         name: e.sender.name,
@@ -373,6 +402,9 @@ export async function getThread(threadId: number): Promise<{ data: ThreadDetail;
         ? (Array.isArray(e.references) ? e.references : e.references.split(/\s+/))
         : undefined,
       inReplyTo: e.inReplyTo ?? undefined,
+      queuedAt: e.queuedAt ? new Date(e.queuedAt).toISOString() : null,
+      sendAttempts: e.sendAttempts ?? 0,
+      lastSendError: e.lastSendError ?? null,
     })),
     defaultFromId: thread.defaultFromId,
   }
@@ -910,6 +942,83 @@ export async function deleteDraft(draftId: number): Promise<{ pending: boolean }
 }
 
 /**
+ * Queue a draft for sending.
+ * If online, immediately queues on server.
+ * If offline, stores in pendingSync and transitions locally to 'queued'.
+ */
+export async function sendDraft(draftId: number): Promise<{ pending: boolean }> {
+  const db = getSyncDb()
+  const now = Date.now()
+
+  // Update local cache to queued immediately
+  await db.emails.update(draftId, {
+    status: 'queued',
+    queuedAt: now,
+    sendAttempts: 0,
+    lastSendError: null,
+  })
+
+  // Also update thread entry if standalone draft
+  const email = await db.emails.get(draftId)
+  if (email && !email.threadId) {
+    // Standalone draft - update thread type
+    await db.threads.update(draftId, {
+      type: 'draft', // Keep as draft type but the email status shows queued
+    })
+  }
+
+  // Check if already has a pending create (local draft not yet synced)
+  const pendingCreate = await db.pendingSync
+    .filter(p => p.entityType === 'draft' && p.entityId === draftId && p.action === 'create')
+    .first()
+
+  // If it's a local draft that hasn't been synced yet, we need to create then send
+  // The sync handler will handle this sequence
+  if (isLocalId(draftId) || pendingCreate) {
+    // Add send to pending sync - sync handler will create first, then send
+    await db.pendingSync.add({
+      entityType: 'draft',
+      entityId: draftId,
+      action: 'send',
+      createdAt: now,
+    })
+    return { pending: true }
+  }
+
+  // Try to send to server if online
+  if (!isOffline()) {
+    try {
+      const response = await fetch(`/api/drafts/${draftId}/send`, {
+        method: 'POST',
+      })
+
+      if (response.ok) {
+        // Clean up any pending update/create entries for this draft
+        const pendingEntries = await db.pendingSync
+          .filter(p => p.entityType === 'draft' && p.entityId === draftId)
+          .toArray()
+        for (const entry of pendingEntries) {
+          await db.pendingSync.delete(entry.id!)
+        }
+        return { pending: false }
+      }
+    } catch {
+      // Fall through to offline handling
+    }
+  }
+
+  // Queue for sync
+  await db.pendingSync.add({
+    entityType: 'draft',
+    entityId: draftId,
+    action: 'send',
+    createdAt: now,
+  })
+
+  return { pending: true }
+}
+
+/**
  * Helper to store a draft in the sync cache (threads + emails tables).
  */
 async function storeDraftInCache(
@@ -958,6 +1067,9 @@ async function storeDraftInCache(
       references: draft.references,
       inReplyTo: draft.inReplyTo,
       cachedAt: draft.cachedAt,
+      queuedAt: null,
+      sendAttempts: 0,
+      lastSendError: null,
     }
     await db.emails.put(email)
   } else {
@@ -1000,6 +1112,9 @@ async function storeDraftInCache(
       references: draft.references,
       inReplyTo: draft.inReplyTo,
       cachedAt: draft.cachedAt,
+      queuedAt: null,
+      sendAttempts: 0,
+      lastSendError: null,
     }
     await db.emails.put(email)
 

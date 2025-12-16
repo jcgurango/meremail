@@ -241,6 +241,9 @@ threadsRoutes.get('/:id', async (c) => {
       references: emails.references,
       status: emails.status,
       inReplyTo: emails.inReplyTo,
+      queuedAt: emails.queuedAt,
+      sendAttempts: emails.sendAttempts,
+      lastSendError: emails.lastSendError,
     })
     .from(emails)
     .where(eq(emails.threadId, id))
@@ -366,6 +369,9 @@ threadsRoutes.get('/:id', async (c) => {
       messageId: email.messageId,
       references: email.references,
       inReplyTo: email.inReplyTo,
+      queuedAt: email.queuedAt,
+      sendAttempts: email.sendAttempts,
+      lastSendError: email.lastSendError,
     }
   })
 

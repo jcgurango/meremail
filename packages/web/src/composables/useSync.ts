@@ -2,6 +2,7 @@ import { ref, readonly } from 'vue'
 import {
   getSyncDb,
   SYNC_LIMITS,
+  isLocalId,
   type SyncThread,
   type SyncEmail,
   type SyncContact,
@@ -43,7 +44,7 @@ interface ApiEmail {
   sentAt: number | null
   receivedAt: number | null
   isRead: boolean
-  status: 'draft' | 'sent' | 'received'
+  status: 'draft' | 'queued' | 'sent' | 'received'
   sender: {
     id: number
     name: string | null
@@ -68,6 +69,9 @@ interface ApiEmail {
   messageId: string | null
   references: string | null
   inReplyTo: string | null
+  queuedAt?: string | null
+  sendAttempts?: number
+  lastSendError?: string | null
 }
 
 interface ApiThreadDetail {
@@ -250,6 +254,9 @@ async function syncThreadOrDraft(
         references: null,
         inReplyTo: null,
         cachedAt: now,
+        queuedAt: null,
+        sendAttempts: 0,
+        lastSendError: null,
       }
 
       await db.emails.put(syncEmail)
@@ -330,6 +337,9 @@ async function syncThreadOrDraft(
           references: Array.isArray(email.references) ? email.references.join(' ') : email.references,
           inReplyTo: email.inReplyTo,
           cachedAt: now,
+          queuedAt: email.queuedAt ? new Date(email.queuedAt).getTime() : null,
+          sendAttempts: email.sendAttempts ?? 0,
+          lastSendError: email.lastSendError ?? null,
         }
 
         await db.emails.put(syncEmail)
@@ -523,6 +533,9 @@ async function syncSetAsideEmails(): Promise<void> {
           references: null,
           inReplyTo: null,
           cachedAt: now,
+          queuedAt: null,
+          sendAttempts: 0,
+          lastSendError: null,
         }
 
         await db.emails.put(syncEmail)
@@ -812,6 +825,20 @@ async function syncPendingChanges(): Promise<void> {
               })
             }
 
+            // Update any pending send entries that reference the old ID
+            const pendingSends = await db.pendingSync
+              .filter(p => p.entityType === 'draft' && p.entityId === oldId && p.action === 'send')
+              .toArray()
+            for (const pendingSend of pendingSends) {
+              await db.pendingSync.update(pendingSend.id!, { entityId: result.id })
+              // Also update in-memory items for this sync cycle
+              const inMemoryItem = pendingItems.find(p => p.id === pendingSend.id)
+              if (inMemoryItem) {
+                inMemoryItem.entityId = result.id
+              }
+              console.log(`[Sync] Updated pending send entry from ${oldId} to ${result.id}`)
+            }
+
             await db.pendingSync.delete(item.id!)
             console.log(`[Sync] Created ${isReplyDraft ? 'reply' : 'standalone'} draft ${result.id} from local ${oldId}`)
           }
@@ -845,6 +872,91 @@ async function syncPendingChanges(): Promise<void> {
           if (response.ok) {
             await db.pendingSync.delete(item.id!)
             console.log(`[Sync] Updated draft ${item.entityId}`)
+          }
+        } else if (item.action === 'send') {
+          // Get draft data from cache
+          const email = await db.emails.get(item.entityId)
+          if (!email) {
+            await db.pendingSync.delete(item.id!)
+            continue
+          }
+
+          // Check if this is a local draft that needs to be created first
+          const pendingCreate = pendingItems.find(
+            p => p.entityType === 'draft' && p.entityId === item.entityId && p.action === 'create'
+          )
+
+          let serverId = item.entityId
+
+          // If local draft, create it first
+          if (isLocalId(item.entityId) || pendingCreate) {
+            const isReplyDraft = email.threadId !== null
+
+            const createResponse = await fetch('/api/drafts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                threadId: email.threadId,
+                senderId: email.sender?.id,
+                subject: email.subject,
+                contentText: email.contentText,
+                contentHtml: email.contentHtml,
+                recipients: email.recipients.map(r => ({
+                  id: r.id || undefined,
+                  email: r.email,
+                  name: r.name,
+                  role: r.role,
+                })),
+                inReplyTo: email.inReplyTo,
+                references: email.references?.split(' ').filter(Boolean),
+              }),
+            })
+
+            if (!createResponse.ok) {
+              console.error(`[Sync] Failed to create draft before sending ${item.entityId}`)
+              continue
+            }
+
+            const result = await createResponse.json() as { id: number }
+            serverId = result.id
+            const oldId = item.entityId
+
+            // Update email with server ID
+            await db.emails.delete(oldId)
+            await db.emails.put({ ...email, id: serverId })
+
+            if (!isReplyDraft) {
+              // Standalone draft - update the fake thread entry and bucket membership
+              const thread = await db.threads.get(oldId)
+              await db.threads.delete(oldId)
+              await db.bucketMembership.where('threadId').equals(oldId).delete()
+
+              if (thread) {
+                await db.threads.put({ ...thread, id: serverId })
+              }
+              await db.bucketMembership.put({
+                bucket: 'approved',
+                threadId: serverId,
+                sortKey: email.cachedAt,
+              })
+            }
+
+            // Remove the create pending entry if there was one
+            if (pendingCreate?.id) {
+              await db.pendingSync.delete(pendingCreate.id)
+            }
+
+            console.log(`[Sync] Created draft ${serverId} from local ${oldId} before sending`)
+          }
+
+          // Now queue for sending on the server
+          const sendResponse = await fetch(`/api/drafts/${serverId}/send`, {
+            method: 'POST',
+          })
+
+          if (sendResponse.ok) {
+            await db.pendingSync.delete(item.id!)
+            console.log(`[Sync] Queued draft ${serverId} for sending`)
           }
         }
       } catch (e) {

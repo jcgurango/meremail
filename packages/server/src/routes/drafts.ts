@@ -303,3 +303,54 @@ draftsRoutes.delete('/:id', async (c) => {
 
   return c.json({ success: true })
 })
+
+// POST /api/drafts/:id/send - Queue a draft for sending
+draftsRoutes.post('/:id/send', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid draft ID' }, 400)
+  }
+
+  // Verify draft exists and is in 'draft' status
+  const draft = db
+    .select({ id: emails.id, status: emails.status })
+    .from(emails)
+    .where(eq(emails.id, id))
+    .get()
+
+  if (!draft) {
+    return c.json({ error: 'Draft not found' }, 404)
+  }
+
+  if (draft.status !== 'draft') {
+    return c.json({ error: 'Email is not a draft' }, 400)
+  }
+
+  // Verify draft has at least one recipient
+  const recipients = db
+    .select({ emailId: emailContacts.emailId })
+    .from(emailContacts)
+    .where(and(
+      eq(emailContacts.emailId, id),
+      inArray(emailContacts.role, ['to', 'cc', 'bcc'])
+    ))
+    .all()
+
+  if (recipients.length === 0) {
+    return c.json({ error: 'No recipients specified' }, 400)
+  }
+
+  // Transition to 'queued' status
+  db.update(emails)
+    .set({
+      status: 'queued',
+      queuedAt: new Date(),
+      sendAttempts: 0,
+      lastSendError: null,
+      lastSendAttemptAt: null,
+    })
+    .where(eq(emails.id, id))
+    .run()
+
+  return c.json({ success: true, status: 'queued' })
+})
