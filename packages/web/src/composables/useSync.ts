@@ -409,41 +409,6 @@ async function syncBucketThreads(bucket: Bucket): Promise<void> {
   }
 }
 
-async function syncReplyLaterThreads(): Promise<void> {
-  const db = getSyncDb()
-  const now = Date.now()
-
-  syncStatus.value['reply_later'] = 'syncing'
-
-  try {
-    // Clear existing reply_later memberships
-    await db.bucketMembership.where('bucket').equals('reply_later').delete()
-
-    // Fetch Reply Later threads
-    const response = await fetch(`/api/threads?replyLater=true&limit=50`)
-    if (!response.ok) throw new Error(`Failed to fetch Reply Later threads: ${response.status}`)
-
-    const data = await response.json() as { threads: ApiThreadListItem[]; hasMore: boolean }
-
-    for (const item of data.threads) {
-      await syncThreadOrDraft(item, 'reply_later', now)
-    }
-
-    await db.syncMeta.put({
-      key: 'reply_later',
-      lastSyncedAt: now,
-      itemCount: data.threads.length,
-    })
-
-    syncStatus.value['reply_later'] = 'idle'
-    console.log(`[Sync] Synced ${data.threads.length} Reply Later threads/drafts`)
-  } catch (e) {
-    console.error('[Sync] Failed to sync Reply Later:', e)
-    syncStatus.value['reply_later'] = 'error'
-    throw e
-  }
-}
-
 async function syncSetAsideEmails(): Promise<void> {
   const db = getSyncDb()
   const now = Date.now()
@@ -955,6 +920,46 @@ async function syncPendingChanges(): Promise<void> {
           })
 
           if (sendResponse.ok) {
+            const sendResult = await sendResponse.json() as { success: boolean; status: string; threadId?: number }
+
+            // If server created a thread for a standalone draft, update local cache
+            if (sendResult.threadId && !email.threadId) {
+              // Update the email to point to the new thread
+              await db.emails.update(serverId, { threadId: sendResult.threadId })
+
+              // Remove the standalone draft entry from threads table
+              await db.threads.delete(serverId)
+              await db.bucketMembership.where('threadId').equals(serverId).delete()
+
+              // Create a proper thread entry for the new thread
+              await db.threads.put({
+                id: sendResult.threadId,
+                type: 'thread',
+                subject: email.subject || '(No subject)',
+                createdAt: Date.now(),
+                replyLaterAt: null,
+                setAsideAt: null,
+                latestEmailAt: Date.now(),
+                unreadCount: 0,
+                totalCount: 1,
+                draftCount: 0,
+                participants: email.recipients || [],
+                snippet: email.contentText?.substring(0, 150) || '',
+                cachedAt: Date.now(),
+                defaultFromId: email.sender?.id || null,
+                hasFullContent: false,
+              })
+
+              // Add bucket membership for the new thread
+              await db.bucketMembership.put({
+                bucket: 'approved',
+                threadId: sendResult.threadId,
+                sortKey: Date.now(),
+              })
+
+              console.log(`[Sync] Created thread ${sendResult.threadId} for standalone draft ${serverId}`)
+            }
+
             await db.pendingSync.delete(item.id!)
             console.log(`[Sync] Queued draft ${serverId} for sending`)
           }
@@ -1052,11 +1057,11 @@ export async function syncAll(): Promise<void> {
   console.log('[Sync] Starting full sync...')
 
   try {
-    // Sync pending changes first (push local changes before pulling)
-    await syncPendingChanges()
-
     // Cleanup orphaned drafts (ones deleted on server)
     await cleanupOrphanedDrafts()
+
+    // Sync pending changes first (push local changes before pulling)
+    await syncPendingChanges()
 
     // Sync contacts
     await syncContacts()
@@ -1066,7 +1071,7 @@ export async function syncAll(): Promise<void> {
       syncBucketThreads('approved'),
       syncBucketThreads('feed'),
       syncBucketThreads('paper_trail'),
-      syncReplyLaterThreads(),
+      syncBucketThreads('reply_later'),
       syncSetAsideEmails(),
     ])
 
@@ -1189,7 +1194,6 @@ export function useSync() {
     syncAll,
     syncContacts,
     syncBucketThreads,
-    syncReplyLaterThreads,
     syncSetAsideEmails,
     syncPendingChanges,
     clearSyncData,

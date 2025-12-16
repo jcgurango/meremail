@@ -1012,6 +1012,36 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
       })
 
       if (response.ok) {
+        const result = await response.json() as { success: boolean; status: string; threadId?: number }
+
+        // If server created a thread for a standalone draft, update local cache
+        if (result.threadId && email && !email.threadId) {
+          // Update the email to point to the new thread
+          await db.emails.update(draftId, { threadId: result.threadId })
+
+          // Remove the standalone draft entry from threads table (was using draftId as thread ID)
+          await db.threads.delete(draftId)
+
+          // Create a proper thread entry for the new thread
+          await db.threads.put({
+            id: result.threadId,
+            type: 'thread',
+            subject: email.subject || '(No subject)',
+            createdAt: now,
+            replyLaterAt: null,
+            setAsideAt: null,
+            latestEmailAt: now,
+            unreadCount: 0,
+            totalCount: 1,
+            draftCount: 0,
+            participants: email.recipients || [],
+            snippet: email.contentText?.substring(0, 150) || '',
+            cachedAt: now,
+            defaultFromId: email.sender?.id || null,
+            hasFullContent: false,
+          })
+        }
+
         // Clean up any pending update/create entries for this draft
         const pendingEntries = await db.pendingSync
           .filter(p => p.entityType === 'draft' && p.entityId === draftId)

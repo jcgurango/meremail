@@ -313,7 +313,13 @@ draftsRoutes.post('/:id/send', async (c) => {
 
   // Verify draft exists and is in 'draft' status
   const draft = db
-    .select({ id: emails.id, status: emails.status, threadId: emails.threadId })
+    .select({
+      id: emails.id,
+      status: emails.status,
+      threadId: emails.threadId,
+      subject: emails.subject,
+      senderId: emails.senderId,
+    })
     .from(emails)
     .where(eq(emails.id, id))
     .get()
@@ -327,8 +333,11 @@ draftsRoutes.post('/:id/send', async (c) => {
   }
 
   // Verify draft has at least one recipient
-  const recipients = db
-    .select({ emailId: emailContacts.emailId })
+  const recipientContacts = db
+    .select({
+      contactId: emailContacts.contactId,
+      role: emailContacts.role,
+    })
     .from(emailContacts)
     .where(and(
       eq(emailContacts.emailId, id),
@@ -336,8 +345,50 @@ draftsRoutes.post('/:id/send', async (c) => {
     ))
     .all()
 
-  if (recipients.length === 0) {
+  if (recipientContacts.length === 0) {
     return c.json({ error: 'No recipients specified' }, 400)
+  }
+
+  let threadId = draft.threadId
+
+  // For standalone drafts, create a thread now
+  if (!threadId && draft.senderId) {
+    // Create new thread with the draft's subject and sender as creator
+    const threadResult = db
+      .insert(emailThreads)
+      .values({
+        subject: draft.subject || '(No subject)',
+        creatorId: draft.senderId,
+      })
+      .returning({ id: emailThreads.id })
+      .get()
+
+    threadId = threadResult.id
+
+    // Update the email to point to the new thread
+    db.update(emails)
+      .set({ threadId })
+      .where(eq(emails.id, id))
+      .run()
+
+    // Add thread contacts (sender and all recipients)
+    const allContactIds = new Set<number>([draft.senderId])
+    for (const r of recipientContacts) {
+      allContactIds.add(r.contactId)
+    }
+
+    for (const contactId of allContactIds) {
+      db.insert(emailThreadContacts)
+        .values({
+          threadId,
+          contactId,
+          role: contactId === draft.senderId ? 'sender' : 'recipient',
+        })
+        .onConflictDoNothing()
+        .run()
+    }
+
+    console.log(`[Drafts] Created thread ${threadId} for standalone draft ${id}`)
   }
 
   // Transition to 'queued' status
@@ -354,12 +405,12 @@ draftsRoutes.post('/:id/send', async (c) => {
 
   // If this is in a thread, check if we should unflag reply-later
   // (unflag when no more drafts remain - queued emails are considered "handled")
-  if (draft.threadId) {
+  if (threadId) {
     const remainingDrafts = db
       .select({ id: emails.id })
       .from(emails)
       .where(and(
-        eq(emails.threadId, draft.threadId),
+        eq(emails.threadId, threadId),
         eq(emails.status, 'draft')
       ))
       .all()
@@ -367,10 +418,10 @@ draftsRoutes.post('/:id/send', async (c) => {
     if (remainingDrafts.length === 0) {
       db.update(emailThreads)
         .set({ replyLaterAt: null })
-        .where(eq(emailThreads.id, draft.threadId))
+        .where(eq(emailThreads.id, threadId))
         .run()
     }
   }
 
-  return c.json({ success: true, status: 'queued' })
+  return c.json({ success: true, status: 'queued', threadId })
 })

@@ -18,7 +18,6 @@ interface Thread {
 
 const props = defineProps<{
   bucket?: string
-  replyLater?: boolean
   emptyMessage?: string
 }>()
 
@@ -39,7 +38,6 @@ async function loadThreads() {
   try {
     const result = await getThreads({
       bucket: props.bucket,
-      replyLater: props.replyLater,
       offset: 0,
     })
     threads.value = result.data.threads
@@ -63,7 +61,6 @@ async function loadMore() {
   try {
     const result = await getThreads({
       bucket: props.bucket,
-      replyLater: props.replyLater,
       offset: threads.value.length,
     })
     threads.value = [...threads.value, ...result.data.threads]

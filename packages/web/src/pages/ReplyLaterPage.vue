@@ -16,7 +16,7 @@ onMounted(() => {
     </header>
 
     <main class="main">
-      <ThreadList :reply-later="true" empty-message="No threads in your reply later queue" />
+      <ThreadList bucket="reply_later" empty-message="No threads in your reply later queue" />
     </main>
   </div>
 </template>

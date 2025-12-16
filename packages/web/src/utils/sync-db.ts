@@ -3,8 +3,8 @@ import Dexie, { type EntityTable } from 'dexie'
 // ============== Type Definitions ==============
 // These closely match the server API response shapes
 
-export type Bucket = 'approved' | 'feed' | 'paper_trail' | 'blocked' | 'quarantine'
-export type SyncBucketType = Bucket | 'reply_later' | 'set_aside'
+export type Bucket = 'approved' | 'feed' | 'paper_trail' | 'blocked' | 'quarantine' | 'reply_later'
+export type SyncBucketType = Bucket | 'set_aside'
 
 export interface SyncContact {
   id: number
