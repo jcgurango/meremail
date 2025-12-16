@@ -1,6 +1,6 @@
 # Meremail
 
-A minimalist, self-hosted email server + client inspired by [HEY](https://hey.com). Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
+A minimalist, self-hosted email API + client inspired by [HEY](https://hey.com). Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
 
 ## Features
 
