@@ -25,6 +25,7 @@ interface ApiThreadListItem {
   unreadCount: number
   totalCount: number
   draftCount: number
+  queuedCount: number
   participants: Array<{
     id: number
     name: string | null
@@ -201,6 +202,7 @@ async function syncThreadOrDraft(
         unreadCount: 0,
         totalCount: 1,
         draftCount: 1,
+        queuedCount: 0,
         participants: draft.recipients.map(r => ({
           id: r.id,
           name: r.name,
@@ -289,6 +291,7 @@ async function syncThreadOrDraft(
         unreadCount: item.unreadCount,
         totalCount: item.totalCount,
         draftCount: item.draftCount,
+        queuedCount: item.queuedCount,
         participants: item.participants.map(toSyncParticipant),
         snippet: item.snippet,
         defaultFromId: detail.defaultFromId,
@@ -451,6 +454,7 @@ async function syncSetAsideEmails(): Promise<void> {
         unreadCount: emails.filter(e => !e.isRead).length,
         totalCount: emails.length,
         draftCount: 0,
+        queuedCount: 0,
         participants: [],
         snippet: '',
         defaultFromId: null,
@@ -943,6 +947,7 @@ async function syncPendingChanges(): Promise<void> {
                 unreadCount: 0,
                 totalCount: 1,
                 draftCount: 0,
+                queuedCount: 1,
                 participants: email.recipients || [],
                 snippet: email.contentText?.substring(0, 150) || '',
                 cachedAt: Date.now(),

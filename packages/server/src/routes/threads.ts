@@ -70,11 +70,12 @@ threadsRoutes.get('/', async (c) => {
       createdAt: emailThreads.createdAt,
       replyLaterAt: emailThreads.replyLaterAt,
       setAsideAt: emailThreads.setAsideAt,
-      latestEmailAt: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}))`.as('latest_email_at'),
-      sortDate: sql<number>`MAX(COALESCE(${emails.readAt}, 0), ${emails.sentAt}, COALESCE(${emails.queuedAt}, 0))`.as('sort_date'),
+      latestEmailAt: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}, ${emails.createdAt}))`.as('latest_email_at'),
+      sortDate: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}, ${emails.createdAt}))`.as('sort_date'),
       unreadCount: sql<number>`SUM(CASE WHEN ${emails.readAt} IS NULL THEN 1 ELSE 0 END)`.as('unread_count'),
       totalCount: sql<number>`COUNT(${emails.id})`.as('total_count'),
       draftCount: sql<number>`SUM(CASE WHEN ${emails.status} = 'draft' THEN 1 ELSE 0 END)`.as('draft_count'),
+      queuedCount: sql<number>`SUM(CASE WHEN ${emails.status} = 'queued' THEN 1 ELSE 0 END)`.as('queued_count'),
     })
     .from(emailThreads)
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
@@ -190,6 +191,7 @@ threadsRoutes.get('/', async (c) => {
         unreadCount: 0,
         totalCount: 1,
         draftCount: 1,
+        queuedCount: 0,
         participants: recipientsRaw.filter(p => !p.isMe),
         snippet: draft.contentText?.substring(0, 150) || '',
       }

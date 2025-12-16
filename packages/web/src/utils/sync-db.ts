@@ -68,6 +68,7 @@ export interface SyncThread {
   unreadCount: number
   totalCount: number
   draftCount: number
+  queuedCount: number
   participants: SyncParticipant[]
   snippet: string
   defaultFromId: number | null

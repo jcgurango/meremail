@@ -12,6 +12,7 @@ interface Thread {
   unreadCount: number
   totalCount: number
   draftCount?: number
+  queuedCount?: number
   participants: { id: number; name: string | null; email: string; role: string }[]
   snippet: string
 }
@@ -135,7 +136,8 @@ onMounted(() => {
         class="thread-item"
         :class="{
           unread: thread.unreadCount > 0,
-          'is-draft': thread.type === 'draft'
+          'is-draft': thread.type === 'draft',
+          'is-queued': thread.queuedCount && thread.queuedCount > 0
         }"
       >
         <RouterLink
@@ -145,6 +147,7 @@ onMounted(() => {
           <div class="thread-header">
             <span class="thread-participants">
               <span v-if="thread.type === 'draft'" class="draft-badge">Draft</span>
+              <span v-else-if="thread.queuedCount && thread.queuedCount > 0" class="queued-badge">Queued</span>
               {{ thread.type === 'draft' && thread.participants.length === 0
                 ? 'New Message'
                 : getParticipantDisplay(thread.participants) }}
@@ -314,6 +317,27 @@ onMounted(() => {
   text-transform: uppercase;
   border-radius: 3px;
   vertical-align: middle;
+}
+
+.queued-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-right: 6px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.thread-item.is-queued {
+  background: #eff6ff;
+}
+
+.thread-item.is-queued:hover {
+  background: #dbeafe;
 }
 
 .cache-notice {

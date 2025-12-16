@@ -42,6 +42,7 @@ interface ThreadListItem {
   unreadCount: number
   totalCount: number
   draftCount: number
+  queuedCount: number
   participants: Array<{
     id: number
     name: string | null
@@ -222,14 +223,56 @@ export async function getThreads(params: {
     .equals(syncBucket)
     .toArray()
 
-  memberships.sort((a, b) => b.sortKey - a.sortKey)
-
+  // Load all threads first
   const threads: ThreadListItem[] = []
   for (const m of memberships) {
     const thread = await db.threads.get(m.threadId)
     if (thread) {
       threads.push(syncThreadToListItem(thread))
     }
+  }
+
+  // Sort based on bucket type (matching server sorting logic)
+  if (syncBucket === 'approved') {
+    // Approved bucket: drafts-only first, then unread, then by date
+    threads.sort((a, b) => {
+      // Drafts-only threads first (draftCount > 0 && draftCount === totalCount)
+      const aIsDraftOnly = a.draftCount > 0 && a.draftCount === a.totalCount ? 1 : 0
+      const bIsDraftOnly = b.draftCount > 0 && b.draftCount === b.totalCount ? 1 : 0
+      if (aIsDraftOnly !== bIsDraftOnly) return bIsDraftOnly - aIsDraftOnly
+
+      // Then unread threads
+      const aHasUnread = a.unreadCount > 0 ? 1 : 0
+      const bHasUnread = b.unreadCount > 0 ? 1 : 0
+      if (aHasUnread !== bHasUnread) return bHasUnread - aHasUnread
+
+      // Then by date (newest first)
+      const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
+      const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
+      return bDate - aDate
+    })
+  } else if (syncBucket === 'reply_later') {
+    // Reply later: sort by replyLaterAt, then by date
+    threads.sort((a, b) => {
+      const aReplyLater = a.replyLaterAt ? new Date(a.replyLaterAt).getTime() : Infinity
+      const bReplyLater = b.replyLaterAt ? new Date(b.replyLaterAt).getTime() : Infinity
+      if (aReplyLater !== bReplyLater) return aReplyLater - bReplyLater
+
+      const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
+      const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
+      return bDate - aDate
+    })
+  } else {
+    // Other buckets: unread first, then by date
+    threads.sort((a, b) => {
+      const aHasUnread = a.unreadCount > 0 ? 1 : 0
+      const bHasUnread = b.unreadCount > 0 ? 1 : 0
+      if (aHasUnread !== bHasUnread) return bHasUnread - aHasUnread
+
+      const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
+      const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
+      return bDate - aDate
+    })
   }
 
   return {
@@ -1034,6 +1077,7 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
             unreadCount: 0,
             totalCount: 1,
             draftCount: 0,
+            queuedCount: 1,
             participants: email.recipients || [],
             snippet: email.contentText?.substring(0, 150) || '',
             cachedAt: now,
@@ -1135,6 +1179,7 @@ async function storeDraftInCache(
       unreadCount: 0,
       totalCount: 1,
       draftCount: 1,
+      queuedCount: 0,
       participants: draft.recipients,
       snippet: draft.contentText.slice(0, 150),
       defaultFromId: draft.sender?.id ?? null,
@@ -1191,6 +1236,7 @@ function syncThreadToListItem(thread: SyncThread): ThreadListItem {
     unreadCount: thread.unreadCount,
     totalCount: thread.totalCount,
     draftCount: thread.draftCount,
+    queuedCount: thread.queuedCount,
     participants: thread.participants.map(p => ({
       id: p.id,
       name: p.name,
