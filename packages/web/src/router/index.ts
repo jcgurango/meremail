@@ -2,6 +2,12 @@ import type { RouteRecordRaw } from 'vue-router'
 
 export const routes: RouteRecordRaw[] = [
   {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/pages/LoginPage.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/',
     name: 'inbox',
     component: () => import('@/pages/IndexPage.vue'),

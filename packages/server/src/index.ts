@@ -14,6 +14,7 @@ import { attachmentsRoutes } from './routes/attachments'
 import { uploadsRoutes } from './routes/uploads'
 import { searchRoutes } from './routes/search'
 import { miscRoutes } from './routes/misc'
+import { authRoutes, requireAuth } from './routes/auth'
 import { startSendQueueProcessor } from './services/send-queue'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -24,7 +25,14 @@ const app = new Hono()
 app.use('*', logger())
 app.use('/api/*', cors())
 
-// API Routes
+// Auth routes (public - no auth required)
+app.route('/api/auth', authRoutes)
+
+// Health check (public)
+app.get('/api/health', (c) => c.json({ status: 'ok' }))
+
+// Protected API Routes - require authentication
+app.use('/api/*', requireAuth())
 app.route('/api/threads', threadsRoutes)
 app.route('/api/contacts', contactsRoutes)
 app.route('/api/drafts', draftsRoutes)
@@ -32,9 +40,6 @@ app.route('/api/attachments', attachmentsRoutes)
 app.route('/api/uploads', uploadsRoutes)
 app.route('/api/search', searchRoutes)
 app.route('/api', miscRoutes)
-
-// Health check
-app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
 // In production, serve the Vue app from packages/web/dist
 if (process.env.NODE_ENV === 'production') {
