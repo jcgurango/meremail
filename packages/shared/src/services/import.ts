@@ -11,8 +11,9 @@ import {
   attachments,
 } from '../db/schema'
 import type { ImportableEmail, EmailAddress, EmailAttachment } from '../types/email'
+import { resolvePath } from '../config'
 
-const ATTACHMENTS_DIR = process.env.ATTACHMENTS_PATH || './data/attachments'
+const ATTACHMENTS_DIR = resolvePath('data/attachments');
 
 /**
  * Check if subject indicates this is a reply/forward (has Re:, Fwd:, etc.)

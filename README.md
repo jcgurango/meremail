@@ -124,19 +124,14 @@ IMAP_SECURE=true
 DEFAULT_SENDER_NAME=Your Name
 DEFAULT_SENDER_EMAIL=you@example.com
 
-# Database location
-DATABASE_PATH=./data/meremail.db
-
 # Image proxy for privacy (set empty to disable)
 IMAGE_PROXY_URL=https://images.weserv.nl/?url={url}
 
 # Attachment uploads
-UPLOADS_PATH=./data/uploads
 MAX_ATTACHMENT_SIZE=20971520
 
 # EML backup during IMAP import (default: enabled)
 EML_BACKUP_ENABLED=true
-EML_BACKUP_PATH=./data/eml-backup
 
 # Authentication
 AUTH_USERNAME=admin

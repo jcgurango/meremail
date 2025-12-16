@@ -80,13 +80,13 @@ export const config = {
     // Maximum file size in bytes (default 20MB)
     maxSize: envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024),
     // Directory for uploaded files
-    path: resolvePath(envStr('UPLOADS_PATH', 'data/uploads')),
+    path: resolvePath('data/uploads'),
   },
   emlBackup: {
     // Whether to backup raw EML files during IMAP import (default true)
     enabled: envBool('EML_BACKUP_ENABLED', true),
     // Directory for EML backups
-    path: resolvePath(envStr('EML_BACKUP_PATH', 'data/eml-backup')),
+    path: resolvePath('data/eml-backup'),
   },
 } as const
 
