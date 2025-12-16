@@ -305,7 +305,7 @@ miscRoutes.patch('/screener/:id', async (c) => {
   const body = await c.req.json()
   const bucket = body?.bucket
 
-  const validBuckets = ['approved', 'feed', 'paper_trail', 'blocked']
+  const validBuckets = ['approved', 'feed', 'paper_trail', 'blocked', 'quarantine']
   if (!validBuckets.includes(bucket)) {
     return c.json({ error: `Invalid bucket. Must be one of: ${validBuckets.join(', ')}` }, 400)
   }
