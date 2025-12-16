@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useOffline } from '@/composables/useOffline'
-import {
-  getCachedInboxThreads,
-  getCachedReplyLaterThreads,
-} from '@/composables/useOfflineThreadCache'
-import type { CachedThread, OfflineThread } from '@/utils/offline-db'
+import { getThreads } from '@/utils/api'
 
 interface Thread {
   type: 'thread' | 'draft'
@@ -20,143 +15,51 @@ interface Thread {
   snippet: string
 }
 
-interface ThreadsResponse {
-  threads: Thread[]
-  hasMore: boolean
-}
-
 const props = defineProps<{
   bucket?: string
   replyLater?: boolean
   emptyMessage?: string
 }>()
 
-const { isOnline } = useOffline()
-
 const threads = ref<Thread[]>([])
 const hasMore = ref(false)
 const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<Error | null>(null)
-const usingCache = ref(false)
-
-function buildQuery(offset = 0) {
-  const query: Record<string, string | number> = { offset }
-  if (props.replyLater) {
-    query.replyLater = 'true'
-  } else if (props.bucket) {
-    query.bucket = props.bucket
-  }
-  return query
-}
-
-function cachedToThread(cached: OfflineThread): Thread {
-  return {
-    type: cached.type,
-    id: cached.id,
-    subject: cached.subject,
-    latestEmailAt: cached.latestEmailAt ? new Date(cached.latestEmailAt).toISOString() : null,
-    unreadCount: cached.unreadCount,
-    totalCount: cached.totalCount,
-    draftCount: cached.draftCount,
-    participants: cached.participants,
-    snippet: cached.snippet,
-  }
-}
-
-function cachedReplyLaterToThread(cached: CachedThread): Thread {
-  const latestEmail = cached.emails[0]
-  return {
-    type: 'thread',
-    id: cached.id,
-    subject: cached.subject,
-    latestEmailAt: latestEmail?.sentAt ? new Date(latestEmail.sentAt).toISOString() : null,
-    unreadCount: 0,
-    totalCount: cached.emails.length,
-    draftCount: cached.emails.filter((e: { status: string }) => e.status === 'draft').length,
-    participants: latestEmail?.sender ? [latestEmail.sender] : [],
-    snippet: latestEmail?.contentText?.substring(0, 150) || '',
-  }
-}
-
-async function loadFromCache(): Promise<boolean> {
-  try {
-    if (props.replyLater) {
-      const cachedThreads = await getCachedReplyLaterThreads()
-      if (cachedThreads.length > 0) {
-        threads.value = cachedThreads.map(cachedReplyLaterToThread)
-        hasMore.value = false
-        usingCache.value = true
-        return true
-      }
-    } else if (props.bucket === 'approved' || !props.bucket) {
-      const cachedThreads = await getCachedInboxThreads()
-      if (cachedThreads.length > 0) {
-        threads.value = cachedThreads.map(cachedToThread)
-        hasMore.value = false
-        usingCache.value = true
-        return true
-      }
-    }
-    return false
-  } catch (e) {
-    console.error('[Offline] Failed to load from cache:', e)
-    return false
-  }
-}
+const fromCache = ref(false)
 
 async function loadThreads() {
   loading.value = true
   error.value = null
-  usingCache.value = false
-
-  if (!isOnline.value) {
-    await loadFromCache()
-    loading.value = false
-    return
-  }
+  fromCache.value = false
 
   try {
-    const queryParams = new URLSearchParams()
-    const query = buildQuery()
-    for (const [key, value] of Object.entries(query)) {
-      queryParams.set(key, String(value))
-    }
-
-    const response = await fetch(`/api/threads?${queryParams}`)
-    if (response.ok) {
-      const data: ThreadsResponse = await response.json()
-      threads.value = data.threads
-      hasMore.value = data.hasMore
-    } else {
-      throw new Error(`Failed to load threads: ${response.status}`)
-    }
+    const result = await getThreads({
+      bucket: props.bucket,
+      replyLater: props.replyLater,
+      offset: 0,
+    })
+    threads.value = result.data.threads
+    hasMore.value = result.data.hasMore
+    fromCache.value = result.fromCache
   } catch (e) {
-    const loaded = await loadFromCache()
-    if (!loaded) {
-      error.value = e as Error
-    }
+    error.value = e as Error
   } finally {
     loading.value = false
   }
 }
 
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value || usingCache.value) return
+  if (loadingMore.value || !hasMore.value || fromCache.value) return
   loadingMore.value = true
   try {
-    const queryParams = new URLSearchParams()
-    const query = buildQuery(threads.value.length)
-    for (const [key, value] of Object.entries(query)) {
-      queryParams.set(key, String(value))
-    }
-
-    const response = await fetch(`/api/threads?${queryParams}`)
-    if (response.ok) {
-      const data: ThreadsResponse = await response.json()
-      threads.value = [...threads.value, ...data.threads]
-      hasMore.value = data.hasMore
-    }
+    const result = await getThreads({
+      bucket: props.bucket,
+      replyLater: props.replyLater,
+      offset: threads.value.length,
+    })
+    threads.value = [...threads.value, ...result.data.threads]
+    hasMore.value = result.data.hasMore
   } catch (e) {
     console.error('Failed to load more threads:', e)
   } finally {
@@ -212,7 +115,7 @@ onMounted(() => {
       {{ emptyMessage || 'No threads' }}
     </div>
 
-    <div v-if="usingCache && !loading" class="cache-notice">
+    <div v-if="fromCache && !loading" class="cache-notice">
       Showing cached data (offline)
     </div>
 

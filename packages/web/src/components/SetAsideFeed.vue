@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useOffline } from '@/composables/useOffline'
-import { getCachedSetAsideThreads } from '@/composables/useOfflineThreadCache'
+import { getSetAsideEmails } from '@/utils/api'
 import FeedEmailItem from '@/components/FeedEmailItem.vue'
 
 interface Participant {
@@ -31,26 +30,18 @@ interface FeedEmail {
   recipients: Participant[]
   attachments: Attachment[]
   replyTo?: string | null
-  headers?: Record<string, string> | null
-}
-
-interface FeedResponse {
-  emails: FeedEmail[]
-  hasMore: boolean
 }
 
 defineProps<{
   emptyMessage: string
 }>()
 
-const { isOnline } = useOffline()
-
 const emails = ref<FeedEmail[]>([])
 const hasMore = ref(false)
 const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<Error | null>(null)
-const usingCache = ref(false)
+const fromCache = ref(false)
 const loadedIds = ref<Set<number>>(new Set())
 const markedReadIds = ref<Set<number>>(new Set())
 const pendingMarkRead = ref<Set<number>>(new Set())
@@ -58,107 +49,42 @@ const itemRefs = ref<HTMLElement[]>([])
 const currentMiddleIndex = ref<number | null>(null)
 let readDebounceTimeout: ReturnType<typeof setTimeout> | null = null
 
-async function loadFromCache(): Promise<boolean> {
-  try {
-    const cachedThreads = await getCachedSetAsideThreads()
-    if (cachedThreads.length === 0) return false
-
-    const cachedEmails: FeedEmail[] = []
-    for (const thread of cachedThreads) {
-      for (const email of thread.emails) {
-        cachedEmails.push({
-          id: email.id,
-          threadId: email.threadId,
-          subject: email.subject,
-          content: email.contentHtml || email.contentText,
-          sentAt: email.sentAt ? new Date(email.sentAt).toISOString() : null,
-          receivedAt: null,
-          isRead: true,
-          sender: email.sender,
-          recipients: email.recipients,
-          attachments: email.attachmentIds.map(id => ({
-            id,
-            filename: '',
-            mimeType: null,
-            size: null,
-          })),
-        })
-      }
-    }
-
-    cachedEmails.sort((a, b) => {
-      const aTime = a.sentAt ? new Date(a.sentAt).getTime() : 0
-      const bTime = b.sentAt ? new Date(b.sentAt).getTime() : 0
-      return bTime - aTime
-    })
-
-    emails.value = cachedEmails
-    hasMore.value = false
-    usingCache.value = true
-
-    for (const email of cachedEmails) {
-      loadedIds.value.add(email.id)
-    }
-
-    return true
-  } catch (e) {
-    console.error('[Offline] Failed to load from cache:', e)
-    return false
-  }
-}
-
 async function loadEmails() {
   loading.value = true
   error.value = null
   loadedIds.value.clear()
   markedReadIds.value.clear()
-  usingCache.value = false
-
-  if (!isOnline.value) {
-    await loadFromCache()
-    loading.value = false
-    return
-  }
+  fromCache.value = false
 
   try {
-    const response = await fetch('/api/set-aside')
-    if (response.ok) {
-      const data: FeedResponse = await response.json()
-      emails.value = data.emails
-      hasMore.value = data.hasMore
+    const result = await getSetAsideEmails()
+    emails.value = result.data.emails
+    hasMore.value = result.data.hasMore
+    fromCache.value = result.fromCache
 
-      for (const email of data.emails) {
-        loadedIds.value.add(email.id)
-      }
-    } else {
-      throw new Error(`Failed to load: ${response.status}`)
+    for (const email of result.data.emails) {
+      loadedIds.value.add(email.id)
     }
   } catch (e) {
-    const loaded = await loadFromCache()
-    if (!loaded) {
-      error.value = e as Error
-    }
+    error.value = e as Error
   } finally {
     loading.value = false
   }
 }
 
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value || usingCache.value) return
+  if (loadingMore.value || !hasMore.value || fromCache.value) return
   loadingMore.value = true
   try {
-    const excludeList = Array.from(loadedIds.value).join(',')
-    const response = await fetch(`/api/set-aside?exclude=${excludeList}`)
-    if (response.ok) {
-      const data: FeedResponse = await response.json()
+    const excludeList = Array.from(loadedIds.value)
+    const result = await getSetAsideEmails(excludeList)
 
-      for (const email of data.emails) {
-        loadedIds.value.add(email.id)
-      }
-
-      emails.value = [...emails.value, ...data.emails]
-      hasMore.value = data.hasMore
+    for (const email of result.data.emails) {
+      loadedIds.value.add(email.id)
     }
+
+    emails.value = [...emails.value, ...result.data.emails]
+    hasMore.value = result.data.hasMore
   } catch (e) {
     console.error('Failed to load more:', e)
   } finally {
@@ -280,7 +206,7 @@ onBeforeUnmount(() => {
       {{ emptyMessage }}
     </div>
 
-    <div v-if="usingCache && !loading" class="cache-notice">
+    <div v-if="fromCache && !loading" class="cache-notice">
       Showing cached data (offline)
     </div>
 

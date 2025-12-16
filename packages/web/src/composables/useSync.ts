@@ -327,7 +327,7 @@ async function syncThreadOrDraft(
           })),
           replyTo: email.replyTo,
           messageId: email.messageId,
-          references: email.references,
+          references: Array.isArray(email.references) ? email.references.join(' ') : email.references,
           inReplyTo: email.inReplyTo,
           cachedAt: now,
         }

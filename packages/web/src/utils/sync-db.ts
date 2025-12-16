@@ -105,7 +105,7 @@ class SyncDatabase extends Dexie {
   syncMeta!: EntityTable<SyncMeta, 'key'>
 
   constructor() {
-    super('MereMailSync')
+    super('MereMail')
 
     this.version(2).stores({
       // Contacts: index by bucket for filtering

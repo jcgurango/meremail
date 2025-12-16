@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
 import EmailComposer from '@/components/EmailComposer.vue'
-import { getCachedThread, cacheReplyLaterThreads, cacheSetAsideThreads } from '@/composables/useOfflineThreadCache'
+import { getThread as apiGetThread } from '@/utils/api'
 
 interface Participant {
   id: number
@@ -78,64 +78,15 @@ async function loadThread() {
   const threadId = Number(route.params.id)
 
   try {
-    const response = await fetch(`/api/threads/${threadId}`)
-    if (response.ok) {
-      thread.value = await response.json() as Thread
+    const result = await apiGetThread(threadId)
+    if (result) {
+      thread.value = result.data
+      isFromCache.value = result.fromCache
     } else {
-      throw new Error(`Failed to load thread: ${response.status}`)
+      throw new Error('Thread not found')
     }
   } catch (e) {
-    // Try to load from offline cache
-    const cached = await getCachedThread(threadId, 'replyLater') || await getCachedThread(threadId, 'setAside')
-    if (cached) {
-      thread.value = {
-        id: cached.id,
-        subject: cached.subject,
-        createdAt: new Date(cached.cachedAt).toISOString(),
-        replyLaterAt: cached.replyLaterAt ? new Date(cached.replyLaterAt).toISOString() : null,
-        setAsideAt: cached.setAsideAt ? new Date(cached.setAsideAt).toISOString() : null,
-        defaultFromId: null,
-        emails: cached.emails.map(email => ({
-          id: email.id,
-          subject: email.subject,
-          content: email.contentHtml || email.contentText,
-          contentText: email.contentText,
-          contentHtml: email.contentHtml,
-          sentAt: email.sentAt ? new Date(email.sentAt).toISOString() : null,
-          receivedAt: null,
-          isRead: true,
-          status: email.status,
-          sender: email.sender ? {
-            id: email.sender.id,
-            name: email.sender.name,
-            email: email.sender.email,
-            isMe: email.sender.isMe,
-            role: email.sender.role,
-          } : null,
-          recipients: email.recipients.map(r => ({
-            id: r.id,
-            name: r.name,
-            email: r.email,
-            isMe: r.isMe,
-            role: r.role,
-          })),
-          attachments: email.attachmentIds.map(id => ({
-            id,
-            filename: 'Attachment',
-            mimeType: null,
-            size: null,
-            isInline: null,
-          })),
-          messageId: null,
-          references: null,
-          inReplyTo: null,
-          replyTo: null,
-        })),
-      }
-      isFromCache.value = true
-    } else {
-      error.value = e as Error
-    }
+    error.value = e as Error
   } finally {
     pending.value = false
   }
@@ -235,12 +186,8 @@ async function onDraftDiscarded() {
   await refresh() // Refresh to remove deleted draft from list
 }
 
-function onDraftSaved(draftId: number) {
+function onDraftSaved(_draftId: number) {
   closeComposer()
-  // If this thread is in Reply Later, refresh the cache so the draft shows up offline
-  if (thread.value?.replyLaterAt || draftCount.value > 0) {
-    cacheReplyLaterThreads().catch(e => console.warn('Failed to refresh Reply Later cache:', e))
-  }
 }
 
 // Send to menu state
@@ -301,9 +248,6 @@ async function toggleReplyLater(deleteDrafts = false) {
       }
 
       showSendToMenu.value = false
-
-      // Refresh Reply Later cache in background
-      cacheReplyLaterThreads().catch(e => console.warn('Failed to refresh Reply Later cache:', e))
     }
   } catch (e) {
     console.error('Failed to update reply later status:', e)
@@ -323,9 +267,6 @@ async function toggleSetAside() {
     // Update local state - set to current time or null
     thread.value.setAsideAt = newValue ? new Date().toISOString() : null
     showSendToMenu.value = false
-
-    // Refresh Set Aside cache in background
-    cacheSetAsideThreads().catch(e => console.warn('Failed to refresh Set Aside cache:', e))
   } catch (e) {
     console.error('Failed to update set aside status:', e)
   }

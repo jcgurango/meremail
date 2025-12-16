@@ -5,29 +5,19 @@ import { useOfflineStatus } from '@/composables/useOffline'
 const { overallStatus } = useOfflineStatus()
 
 const statusConfig = computed(() => {
-  switch (overallStatus.value) {
-    case 'online':
-      return { color: '#22c55e', label: 'Online', icon: '' }
-    case 'syncing':
-      return { color: '#f59e0b', label: 'Syncing...', icon: '' }
-    case 'pending':
-      return { color: '#f59e0b', label: 'Pending sync', icon: '' }
-    case 'offline':
-      return { color: '#ef4444', label: 'Offline', icon: '' }
-    case 'error':
-      return { color: '#ef4444', label: 'Sync error', icon: '' }
-    default:
-      return { color: '#6b7280', label: 'Unknown', icon: '' }
+  if (overallStatus.value === 'offline') {
+    return { color: '#ef4444', label: 'Offline' }
   }
+  return { color: '#22c55e', label: 'Online' }
 })
 
-const showIndicator = computed(() => overallStatus.value !== 'online')
+const showIndicator = computed(() => overallStatus.value === 'offline')
 </script>
 
 <template>
   <Transition name="slide">
     <div v-if="showIndicator" class="offline-indicator" :style="{ '--status-color': statusConfig.color }">
-      <span class="status-dot" :class="{ pulse: overallStatus === 'syncing' }"></span>
+      <span class="status-dot"></span>
       <span class="status-label">{{ statusConfig.label }}</span>
     </div>
   </Transition>
@@ -53,21 +43,6 @@ const showIndicator = computed(() => overallStatus.value !== 'online')
   background: #fff;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.status-dot.pulse {
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(0.8);
-  }
 }
 
 .status-label {

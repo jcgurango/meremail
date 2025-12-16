@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailComposer from '@/components/EmailComposer.vue'
-import { getOfflineDraftByServerId } from '@/composables/useOfflineDrafts'
+import { getDraft as apiGetDraft } from '@/utils/api'
 
 interface Recipient {
   id: number
@@ -65,40 +65,15 @@ async function loadDraft() {
   isFromCache.value = false
 
   try {
-    const response = await fetch(`/api/drafts/${draftId}`)
-    if (response.ok) {
-      draft.value = await response.json() as Draft
+    const result = await apiGetDraft(draftId)
+    if (result) {
+      draft.value = result.data
+      isFromCache.value = result.fromCache
     } else {
-      throw new Error(`Failed to load draft: ${response.status}`)
+      throw new Error('Draft not found')
     }
   } catch (e) {
-    // Try to load from offline drafts cache
-    const offlineDraft = await getOfflineDraftByServerId(draftId)
-    if (offlineDraft) {
-      draft.value = {
-        id: offlineDraft.serverId || draftId,
-        subject: offlineDraft.subject.value,
-        contentText: offlineDraft.contentText.value,
-        contentHtml: offlineDraft.contentHtml.value,
-        sender: null, // We don't store full sender info in offline drafts
-        recipients: offlineDraft.recipients.value.map(r => ({
-          id: r.id || 0,
-          name: r.name ?? null,
-          email: r.email,
-          role: r.role,
-        })),
-        attachments: offlineDraft.attachments.map(a => ({
-          id: a.serverId || 0,
-          filename: a.filename,
-          mimeType: a.mimeType,
-          size: a.size,
-          isInline: null,
-        })),
-      }
-      isFromCache.value = true
-    } else {
-      error.value = e as Error
-    }
+    error.value = e as Error
   } finally {
     pending.value = false
   }

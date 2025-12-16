@@ -5,8 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
-import { useOffline } from '@/composables/useOffline'
-import { searchCachedContacts, getCachedMeContacts } from '@/composables/useOfflineContacts'
+import { getMeContacts, searchContacts as apiSearchContacts } from '@/utils/api'
 
 interface Contact {
   id: number
@@ -326,21 +325,8 @@ function formatFileSize(bytes: number): string {
 
 // Load "me" contacts for From dropdown
 async function loadMeContacts() {
-  let contacts: Contact[] = []
-
-  try {
-    const response = await fetch('/api/contacts/me')
-    if (!response.ok) throw new Error('Failed to load identities')
-    const data = await response.json() as { contacts: Contact[] }
-    contacts = data.contacts
-  } catch (e) {
-    // Fall back to cached identities
-    const cached = await getCachedMeContacts()
-    contacts = cached.map(c => ({ id: c.id, name: c.name, email: c.email }))
-    if (contacts.length === 0) {
-      console.error('Failed to load identities:', e)
-    }
-  }
+  const result = await getMeContacts()
+  const contacts = result.data.contacts
 
   meContacts.value = contacts
 
@@ -549,9 +535,7 @@ function toggleEditorMode() {
 }
 
 // Contact search
-const { isOnline } = useOffline()
-
-async function searchContacts() {
+async function doContactSearch() {
   if (searchQuery.value.length < 2) {
     searchResults.value = []
     return
@@ -565,18 +549,8 @@ async function searchContacts() {
       ...bccRecipients.value.map(r => r.id),
     ].filter(Boolean))
 
-    let contacts: Contact[]
-
-    // Use cached contacts when offline
-    if (!isOnline.value) {
-      const cached = await searchCachedContacts(searchQuery.value)
-      contacts = cached.map(c => ({ id: c.id, name: c.name, email: c.email }))
-    } else {
-      const response = await fetch(`/api/contacts?q=${encodeURIComponent(searchQuery.value)}&limit=10`)
-      if (!response.ok) throw new Error('Search failed')
-      const data = await response.json() as { contacts: Contact[] }
-      contacts = data.contacts
-    }
+    const result = await apiSearchContacts(searchQuery.value, 10)
+    const contacts = result.data.contacts
 
     searchResults.value = contacts.filter(c =>
       !addedIds.has(c.id) && !meContacts.value.some(m => m.id === c.id)
@@ -590,7 +564,7 @@ async function searchContacts() {
 
 function onSearchInput() {
   if (searchDebounce) clearTimeout(searchDebounce)
-  searchDebounce = setTimeout(searchContacts, 200)
+  searchDebounce = setTimeout(doContactSearch, 200)
 }
 
 function addRecipient(contact: Contact, field: 'to' | 'cc' | 'bcc') {
