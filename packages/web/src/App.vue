@@ -11,11 +11,12 @@ const showBottomNav = computed(() => {
 })
 
 onMounted(async () => {
+  // Initialize new sync system (proactively fetches all data)
   try {
-    const { initializeOfflineCache } = await import('@/composables/useOfflineInit')
-    initializeOfflineCache()
+    const { initializeSync } = await import('@/composables/useSyncInit')
+    initializeSync()
   } catch (e) {
-    console.error('Failed to initialize offline cache:', e)
+    console.error('Failed to initialize sync:', e)
   }
 })
 </script>
