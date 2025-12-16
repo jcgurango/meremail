@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import ThreadList from '@/components/ThreadList.vue'
+import FolderNav from '@/components/FolderNav.vue'
 import { getFolders } from '@/utils/api'
 
 const props = defineProps<{
@@ -9,13 +9,10 @@ const props = defineProps<{
   name?: string  // Folder name from route param
 }>()
 
-// Dynamic folder data
+// Dynamic folder data for title
 interface Folder {
   id: number
   name: string
-  imapFolder: string | null
-  position: number
-  unreadCount: number
 }
 
 const folders = ref<Folder[]>([])
@@ -45,24 +42,6 @@ const currentFolder = computed(() => {
 const pageTitle = computed(() => {
   return currentFolder.value?.name ?? 'Inbox'
 })
-
-// Icon mapping for folders
-function getFolderIcon(folder: Folder): string {
-  const name = folder.name.toLowerCase()
-  if (name === 'inbox') return '📥'
-  if (name === 'junk' || name === 'spam') return '🗑️'
-  if (name === 'sent') return '📤'
-  if (name === 'drafts') return '📝'
-  if (name === 'archive') return '📦'
-  if (name === 'trash') return '🗑️'
-  return '📁'
-}
-
-// Route for folder
-function getFolderRoute(folder: Folder): string {
-  if (folder.id === 1) return '/'
-  return `/folder/${folder.name.toLowerCase()}`
-}
 
 async function loadFolders() {
   try {
@@ -95,19 +74,7 @@ watch(() => props.name, () => {
   <div class="page">
     <header class="header">
       <h1>{{ pageTitle }}</h1>
-      <nav class="folder-nav">
-        <RouterLink
-          v-for="folder in folders"
-          :key="folder.id"
-          :to="getFolderRoute(folder)"
-          class="folder-pill"
-          :class="{ active: currentFolderId === folder.id }"
-        >
-          <span class="folder-icon">{{ getFolderIcon(folder) }}</span>
-          <span class="folder-label">{{ folder.name }}</span>
-          <span v-if="folder.unreadCount" class="folder-count">{{ folder.unreadCount }}</span>
-        </RouterLink>
-      </nav>
+      <FolderNav :active-folder-id="currentFolderId" />
     </header>
 
     <main class="main">
@@ -137,63 +104,6 @@ watch(() => props.name, () => {
   font-weight: 600;
   letter-spacing: -0.02em;
   margin: 0 0 16px 0;
-}
-
-.folder-nav {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.folder-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 20px;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  color: #666;
-  background: #f5f5f5;
-  transition: all 0.15s;
-}
-
-.folder-pill:hover {
-  background: #e5e5e5;
-  color: #333;
-}
-
-.folder-pill.active {
-  background: #1a1a1a;
-  color: #fff;
-}
-
-.folder-icon {
-  font-size: 14px;
-}
-
-.folder-label {
-  font-weight: 500;
-}
-
-.folder-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  background: #ef4444;
-  color: #fff;
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.folder-pill.active .folder-count {
-  background: #fff;
-  color: #1a1a1a;
 }
 
 .main {

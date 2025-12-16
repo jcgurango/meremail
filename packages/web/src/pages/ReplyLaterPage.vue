@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import ThreadList from '@/components/ThreadList.vue'
+import FolderNav from '@/components/FolderNav.vue'
 
 onMounted(() => {
   document.title = 'Reply Later - MereMail'
@@ -11,6 +12,7 @@ onMounted(() => {
   <div class="page">
     <header class="header">
       <h1>Reply Later</h1>
+      <FolderNav active-queue="reply_later" />
     </header>
 
     <main class="main">
@@ -34,7 +36,7 @@ onMounted(() => {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 0;
+  margin: 0 0 16px 0;
 }
 
 .main {
