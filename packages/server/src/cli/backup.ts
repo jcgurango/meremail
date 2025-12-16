@@ -1,13 +1,9 @@
 import { existsSync, mkdirSync, copyFileSync, readdirSync, unlinkSync, statSync } from 'fs'
-import { dirname, resolve, basename } from 'path'
-import { fileURLToPath } from 'url'
-import { config } from '@meremail/shared'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const rootDir = resolve(__dirname, '../../../../..')
+import { resolve, basename } from 'path'
+import { config, resolvePath } from '@meremail/shared'
 
 // Default backup location
-const DEFAULT_BACKUP_DIR = resolve(rootDir, 'data/backups')
+const DEFAULT_BACKUP_DIR = resolvePath('data/backups')
 
 // Retention period in days
 const DEFAULT_RETENTION_DAYS = 7

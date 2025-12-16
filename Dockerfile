@@ -55,6 +55,10 @@ COPY packages/server/src ./packages/server/src
 # Copy built web frontend
 COPY --from=build /app/packages/web/dist ./packages/web/dist
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
 # Create data directory
 RUN mkdir -p /app/data
 
@@ -69,5 +73,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# Run the server
-CMD ["pnpm", "start"]
+# Run entrypoint (runs migrations then starts server)
+ENTRYPOINT ["./docker-entrypoint.sh"]

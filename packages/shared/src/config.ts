@@ -2,9 +2,11 @@ import dotenv from 'dotenv'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
-// Load .env from monorepo root (3 levels up from this directory)
+// Calculate monorepo root from this file's location (3 levels up from packages/shared/src)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const rootDir = resolve(__dirname, '../../..')
+
+// Load .env from monorepo root
 dotenv.config({ path: resolve(rootDir, '.env') })
 
 function envStr(key: string, fallback?: string): string {
@@ -38,8 +40,11 @@ function envStrOptional(key: string): string | undefined {
   return process.env[key] || undefined
 }
 
-// Helper to resolve paths - if absolute, use as-is; if relative, resolve from monorepo root
-function resolvePath(path: string): string {
+// Export rootDir for other modules to use
+export { rootDir }
+
+// Helper to resolve paths - if absolute, use as-is; if relative, resolve from rootDir
+export function resolvePath(path: string): string {
   if (path.startsWith('/')) return path
   return resolve(rootDir, path)
 }

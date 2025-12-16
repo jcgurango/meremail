@@ -1,6 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { dirname, resolve } from 'path'
-import { fileURLToPath } from 'url'
+import { dirname } from 'path'
 import {
   createImapClient,
   fetchEmails,
@@ -9,13 +8,11 @@ import {
   backupEml,
   importEmail,
   config,
+  resolvePath,
 } from '@meremail/shared'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const rootDir = resolve(__dirname, '../../../../..')
-
 // State file to track sync progress
-const STATE_FILE = resolve(rootDir, 'data/.imap-sync-state.json')
+const STATE_FILE = resolvePath('data/.imap-sync-state.json')
 
 // Sync interval (5 minutes)
 const SYNC_INTERVAL = 5 * 60 * 1000

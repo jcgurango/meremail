@@ -1,14 +1,11 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { dirname, resolve } from 'path'
-import { fileURLToPath } from 'url'
-import { createBackup, cleanupOldBackups } from '../cli/backup'
+import { dirname } from 'path'
+import { resolvePath } from '@meremail/shared'
 import { deleteQuarantinedEmailsOlderThan } from '@meremail/shared/services'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const rootDir = resolve(__dirname, '../../../../..')
+import { createBackup, cleanupOldBackups } from '../cli/backup'
 
 // State file to track last run
-const STATE_FILE = resolve(rootDir, 'data/.daily-scheduler-state.json')
+const STATE_FILE = resolvePath('data/.daily-scheduler-state.json')
 
 // Configuration
 const BACKUP_RETENTION_DAYS = 7
