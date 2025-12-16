@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import BucketNav from '@/components/BucketNav.vue'
 import SetAsideFeed from '@/components/SetAsideFeed.vue'
 
 onMounted(() => {
@@ -12,7 +11,6 @@ onMounted(() => {
   <div class="page">
     <header class="header">
       <h1>Set Aside</h1>
-      <BucketNav />
     </header>
 
     <main class="main">
@@ -36,7 +34,7 @@ onMounted(() => {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 0 0 16px 0;
+  margin: 0;
 }
 
 .main {

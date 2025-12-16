@@ -541,11 +541,9 @@ async function main() {
   // Show contact summary
   const allContacts = db.select().from(contacts).all()
   const meContacts = allContacts.filter(c => c.isMe)
-  const quarantined = allContacts.filter(c => c.bucket === 'quarantine')
 
   console.log(`\nContacts created: ${allContacts.length}`)
   console.log(`  - "Me" contacts: ${meContacts.length}`)
-  console.log(`  - Auto-quarantined: ${quarantined.length}`)
 
   console.log('\nDemo data ready! Start the app with "pnpm dev"')
 }

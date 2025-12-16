@@ -1,3 +1,4 @@
+export * from './folders'
 export * from './email-threads'
 export * from './emails'
 export * from './attachments'

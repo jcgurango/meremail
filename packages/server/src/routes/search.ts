@@ -19,7 +19,6 @@ interface ContactResult {
   id: number
   name: string | null
   email: string
-  bucket: string | null
   isMe: boolean
 }
 
@@ -87,8 +86,7 @@ searchRoutes.get('/', async (c) => {
         FROM emails_fts
         JOIN emails e ON emails_fts.rowid = e.id
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE emails_fts MATCH ?
-          AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
+        WHERE emails_fts MATCH ?`
       emailParams.push(searchTerm)
     } else {
       emailSql = `
@@ -102,7 +100,7 @@ searchRoutes.get('/', async (c) => {
           c.email as senderEmail
         FROM emails e
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE (c.bucket IS NULL OR c.bucket != 'quarantine')`
+        WHERE 1=1`
     }
 
     if (senderId) {
@@ -151,7 +149,6 @@ searchRoutes.get('/', async (c) => {
         c.id,
         c.name,
         c.email,
-        c.bucket,
         c.is_me as isMe
       FROM contacts_fts
       JOIN contacts c ON contacts_fts.rowid = c.id
@@ -172,7 +169,6 @@ searchRoutes.get('/', async (c) => {
         id: row.id,
         name: row.name,
         email: row.email,
-        bucket: row.bucket,
         isMe: !!row.isMe,
       })
     }
@@ -199,8 +195,7 @@ searchRoutes.get('/', async (c) => {
         JOIN attachments a ON attachments_fts.rowid = a.id
         JOIN emails e ON a.email_id = e.id
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE attachments_fts MATCH ?
-          AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
+        WHERE attachments_fts MATCH ?`
       attachmentParams.push(searchTerm)
     } else {
       attachmentSql = `
@@ -217,8 +212,7 @@ searchRoutes.get('/', async (c) => {
         FROM attachments a
         JOIN emails e ON a.email_id = e.id
         LEFT JOIN contacts c ON e.sender_id = c.id
-        WHERE a.is_inline = 0
-          AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
+        WHERE a.is_inline = 0`
     }
 
     if (senderId) {

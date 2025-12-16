@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { RouterLink } from 'vue-router'
 import { getSetAsideEmails } from '@/utils/api'
-import FeedEmailItem from '@/components/FeedEmailItem.vue'
+import EmailMessage from '@/components/EmailMessage.vue'
 import { retractNotification } from '@/composables/useOffline'
 
 interface Participant {
@@ -221,8 +222,14 @@ onBeforeUnmount(() => {
         v-for="(email, index) in emails"
         :key="email.id"
         :ref="el => { if (el) itemRefs[index] = el as HTMLElement }"
+        class="email-card"
       >
-        <FeedEmailItem :email="email" />
+        <div class="email-thread-link">
+          <RouterLink :to="`/thread/${email.threadId}`" class="thread-subject">
+            {{ email.subject }}
+          </RouterLink>
+        </div>
+        <EmailMessage :email="email" />
       </div>
     </div>
 
@@ -250,7 +257,34 @@ onBeforeUnmount(() => {
 .email-feed {
   max-width: 800px;
   margin: 0 auto;
-  padding: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.email-card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.email-thread-link {
+  padding: 12px 16px;
+  background: #f9f9f9;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.thread-subject {
+  font-weight: 600;
+  font-size: 14px;
+  color: #000;
+  text-decoration: none;
+}
+
+.thread-subject:hover {
+  text-decoration: underline;
 }
 
 .load-more {

@@ -18,7 +18,6 @@ interface ContactResult {
   id: number
   name: string | null
   email: string
-  bucket: string | null
   isMe: boolean
 }
 
@@ -217,9 +216,7 @@ const groupedResults = computed(() => {
                 <div class="result-content">
                   <div class="result-title">{{ result.name || result.email }}</div>
                   <div v-if="result.name" class="result-meta">{{ result.email }}</div>
-                  <div v-if="result.bucket" class="result-badge" :class="result.bucket">
-                    {{ result.bucket.replace('_', ' ') }}
-                  </div>
+                  <div v-if="result.isMe" class="result-badge me">You</div>
                 </div>
               </button>
               <button
@@ -428,24 +425,9 @@ const groupedResults = computed(() => {
   margin-top: 4px;
 }
 
-.result-badge.approved {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.result-badge.feed {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.result-badge.paper_trail {
-  background: #f3e8ff;
-  color: #7c3aed;
-}
-
-.result-badge.blocked {
-  background: #fee2e2;
-  color: #991b1b;
+.result-badge.me {
+  background: #f5f5f5;
+  color: #666;
 }
 
 .see-more-btn {

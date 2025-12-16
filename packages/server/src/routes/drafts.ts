@@ -386,36 +386,28 @@ draftsRoutes.post('/:id/send', async (c) => {
   }
 
   // Resolve pending recipients to contacts before checking recipient count
-  // This creates contacts for email-only recipients and auto-approves them
+  // This creates contacts for email-only recipients
   if (draft.pendingRecipients && draft.pendingRecipients.length > 0) {
     for (const pending of draft.pendingRecipients) {
       // Try to find existing contact by email
       let contact = db
-        .select({ id: contacts.id, bucket: contacts.bucket })
+        .select({ id: contacts.id })
         .from(contacts)
         .where(eq(contacts.email, pending.email.toLowerCase()))
         .get()
 
       if (!contact) {
-        // Create new contact with 'approved' bucket (we're sending to them)
+        // Create new contact
         const result = db
           .insert(contacts)
           .values({
             email: pending.email.toLowerCase(),
             name: pending.name,
-            bucket: 'approved',
           })
           .returning({ id: contacts.id })
           .get()
-        contact = { id: result.id, bucket: 'approved' }
-        console.log(`[Drafts] Created new approved contact ${contact.id} for ${pending.email}`)
-      } else if (!contact.bucket) {
-        // Existing contact without bucket - approve them
-        db.update(contacts)
-          .set({ bucket: 'approved' })
-          .where(eq(contacts.id, contact.id))
-          .run()
-        console.log(`[Drafts] Auto-approved existing contact ${contact.id} (${pending.email})`)
+        contact = { id: result.id }
+        console.log(`[Drafts] Created new contact ${contact.id} for ${pending.email}`)
       }
 
       // Link contact to email

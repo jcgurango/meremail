@@ -13,19 +13,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/IndexPage.vue'),
   },
   {
-    path: '/feed',
-    name: 'feed',
-    component: () => import('@/pages/FeedPage.vue'),
-  },
-  {
-    path: '/paper-trail',
-    name: 'paper-trail',
-    component: () => import('@/pages/PaperTrailPage.vue'),
-  },
-  {
-    path: '/quarantine',
-    name: 'quarantine',
-    component: () => import('@/pages/QuarantinePage.vue'),
+    // Dynamic folder route - matches folder by name
+    path: '/folder/:name',
+    name: 'folder',
+    component: () => import('@/pages/IndexPage.vue'),
+    props: true,
   },
   {
     path: '/reply-later',

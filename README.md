@@ -1,18 +1,17 @@
 # Meremail
 
-A minimalist, self-hosted email API + client inspired by [HEY](https://hey.com). Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
+A minimalist, self-hosted email client inspired by [HEY](https://hey.com). Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
 
 ## Features
 
-### Contact-Based Filtering
+### Folder-Based Organization
 
-New senders are screened before reaching your inbox. You decide where each contact's emails go:
+Emails are organized into folders that sync with your IMAP server:
 
-- **Inbox** - Important emails from people you care about
-- **The Feed** - Newsletters, updates, and subscriptions you want to browse
-- **Paper Trail** - Receipts, confirmations, and automated emails you need but don't need to read
-- **Quarantine** - Suspected spam held for review
-- **Blocked** - Senders you never want to hear from
+- **Inbox** - Your main email folder
+- **Junk** - Spam and unwanted emails
+
+Folders are dynamic - add more folders on your IMAP server and they'll sync automatically.
 
 ### Reply Later Queue
 
@@ -35,7 +34,10 @@ Search across all emails, contacts, and attachments.
 
 ### Offline Support
 
-Progressive Web App with offline capabilities - read cached emails and compose drafts without an internet connection.
+Progressive Web App with offline capabilities:
+- Read cached emails without an internet connection
+- Compose drafts offline (synced when back online)
+- Folder and contact metadata cached for offline navigation
 
 ### Privacy Features
 
@@ -153,8 +155,9 @@ pnpm mail:import --folders=inbox,sent
 
 During import:
 - Emails are deduplicated by Message-ID
-- Contacts are auto-created and categorized
+- Contacts are auto-created from senders and recipients
 - Threads are constructed from References/In-Reply-To headers
+- Emails are assigned to folders based on IMAP source (INBOX, Junk, etc.)
 - Raw EML files are backed up with IMAP metadata (folder, flags, UID)
 
 ### Demo Mode
@@ -171,9 +174,8 @@ pnpm dev
 
 The demo data includes:
 - Conversation threads with back-and-forth replies
-- Newsletters and marketing emails (Feed material)
-- Receipts and confirmations (Paper Trail material)
-- Suspicious spam emails (auto-quarantined)
+- Newsletters and marketing emails
+- Receipts and confirmations
 - Unread messages and verification codes
 
 This only works on an empty database.
@@ -252,16 +254,17 @@ packages/
     └── src/
         ├── pages/        # Route pages
         ├── components/   # Vue components
-        ├── composables/  # Vue composables
-        └── utils/        # Client utilities
+        ├── composables/  # Vue composables (including offline sync)
+        └── utils/        # Client utilities (API, IndexedDB sync)
 ```
 
 ### Key Concepts
 
-- **Contacts** have a `bucket` that determines where their emails appear
+- **Folders** organize threads (Inbox, Junk, etc.) and sync from IMAP
 - **Threads** group related emails by References/In-Reply-To headers
 - **Emails** have `readAt` timestamp (null = unread) for read tracking
-- **ImportableEmail** is a source-agnostic DTO - the import service doesn't know about IMAP
+- **Contacts** are a simple address book of senders and recipients
+- **Offline Sync** caches folders, threads, emails, and contacts to IndexedDB for PWA support
 
 ## License
 

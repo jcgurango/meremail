@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, RouterLink } from 'vue-router'
 import { useOffline } from '@/composables/useOffline'
 import MustBeOnline from '@/components/MustBeOnline.vue'
 
@@ -11,14 +11,12 @@ onMounted(() => {
 
 const { isOnline } = useOffline()
 
-const route = useRoute()
 const router = useRouter()
 
 interface Contact {
   id: number
   name: string | null
   email: string
-  bucket: string | null
   isMe: boolean
   lastEmailAt: string | null
   emailCount: number
@@ -27,58 +25,16 @@ interface Contact {
 interface ApiResponse {
   contacts: Contact[]
   hasMore: boolean
-  counts: Record<string, number>
 }
 
-// View state from URL - default to 'contacts' (approved contacts)
-// 'contacts' = approved contacts only (default)
-// 'screener' = unsorted contacts
-// bucket names (approved, feed, paper_trail, blocked, quarantine) = filter within screener mode
-const activeView = computed(() => (route.query.view as string) || 'contacts')
-const searchQuery = ref((route.query.q as string) || '')
-
-// Screener mode: any view that's not 'contacts'
-const isScreenerMode = computed(() => activeView.value !== 'contacts')
-
+const searchQuery = ref('')
 const contacts = ref<Contact[]>([])
 const hasMore = ref(false)
-const counts = ref<Record<string, number>>({})
 const loading = ref(false)
 const loadingMore = ref(false)
 
 // Debounce search
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
-
-const buckets = [
-  { value: 'approved', label: 'Approved', color: '#22c55e' },
-  { value: 'feed', label: 'Feed', color: '#3b82f6' },
-  { value: 'paper_trail', label: 'Paper Trail', color: '#a855f7' },
-  { value: 'blocked', label: 'Blocked', color: '#ef4444' },
-  { value: 'quarantine', label: 'Quarantine', color: '#f59e0b' },
-]
-
-function getBucketLabel(bucket: string | null): string {
-  if (!bucket) return 'Unscreened'
-  const found = buckets.find(b => b.value === bucket)
-  return found?.label || bucket
-}
-
-function getBucketColor(bucket: string | null): string {
-  if (!bucket) return '#999'
-  const found = buckets.find(b => b.value === bucket)
-  return found?.color || '#999'
-}
-
-function updateUrl() {
-  const query: Record<string, string> = {}
-  if (activeView.value !== 'contacts') query.view = activeView.value
-  if (searchQuery.value) query.q = searchQuery.value
-  router.replace({ query })
-}
-
-function setView(view: string) {
-  router.replace({ query: { ...route.query, view: view === 'contacts' ? undefined : view } })
-}
 
 async function loadContacts(reset = false) {
   if (loading.value) return
@@ -89,8 +45,6 @@ async function loadContacts(reset = false) {
     const params = new URLSearchParams({
       limit: '50',
       offset: String(offset),
-      view: activeView.value,
-      counts: 'true',
     })
     if (searchQuery.value) {
       params.set('q', searchQuery.value)
@@ -106,7 +60,6 @@ async function loadContacts(reset = false) {
         contacts.value.push(...data.contacts)
       }
       hasMore.value = data.hasMore
-      counts.value = data.counts
     }
   } finally {
     loading.value = false
@@ -120,7 +73,6 @@ async function loadMore() {
     const params = new URLSearchParams({
       limit: '50',
       offset: String(contacts.value.length),
-      view: activeView.value,
     })
     if (searchQuery.value) {
       params.set('q', searchQuery.value)
@@ -137,65 +89,9 @@ async function loadMore() {
   }
 }
 
-async function setBucket(contactId: number, bucket: string) {
-  const index = contacts.value.findIndex(c => c.id === contactId)
-  if (index === -1) return
-
-  const contact = contacts.value[index]
-  if (!contact) return
-
-  const previousBucket = contact.bucket
-
-  // Optimistically update
-  contact.bucket = bucket
-
-  // Track if we removed from list for revert purposes
-  let removedFromList = false
-  let previousCountKey: string | null = null
-
-  // In screener mode, remove from list when bucket changes
-  if (isScreenerMode.value) {
-    contacts.value.splice(index, 1)
-    removedFromList = true
-
-    // Update counts based on current view
-    if (activeView.value === 'screener') {
-      // Unsorted view: decrement unsorted, increment new bucket
-      counts.value.unsorted = Math.max(0, (counts.value.unsorted || 0) - 1)
-      previousCountKey = 'unsorted'
-    } else {
-      // Bucket view (feed, approved, etc.): decrement current bucket, increment new bucket
-      const currentViewBucket = activeView.value
-      counts.value[currentViewBucket] = Math.max(0, (counts.value[currentViewBucket] || 0) - 1)
-      previousCountKey = currentViewBucket
-    }
-    counts.value[bucket] = (counts.value[bucket] || 0) + 1
-  }
-
-  try {
-    await fetch(`/api/screener/${contactId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bucket }),
-    })
-  } catch (e) {
-    // Revert on error
-    contact.bucket = previousBucket
-    if (removedFromList) {
-      contacts.value.splice(index, 0, contact)
-      if (previousCountKey) {
-        counts.value[previousCountKey] = (counts.value[previousCountKey] || 0) + 1
-      }
-      counts.value[bucket] = Math.max(0, (counts.value[bucket] || 0) - 1)
-    }
-    console.error('Failed to update bucket:', e)
-  }
-}
-
 function handleSearchInput() {
   if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    updateUrl()
     loadContacts(true)
   }, 300)
 }
@@ -209,11 +105,6 @@ function formatDate(dateStr: string | null): string {
     year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
   })
 }
-
-// Watch for view changes
-watch(() => route.query.view, () => {
-  loadContacts(true)
-})
 </script>
 
 <template>
@@ -226,24 +117,6 @@ watch(() => route.query.view, () => {
     <MustBeOnline v-if="!isOnline" message="Contact management requires an internet connection" />
 
     <template v-else>
-      <nav class="view-nav">
-        <button
-          class="view-pill"
-          :class="{ active: activeView === 'contacts' }"
-          @click="setView('contacts')"
-        >
-          Contacts
-        </button>
-        <button
-          class="view-pill"
-          :class="{ active: isScreenerMode }"
-          @click="setView('screener')"
-        >
-          Screener
-          <span v-if="counts.unsorted" class="pill-count">{{ counts.unsorted }}</span>
-        </button>
-      </nav>
-
       <div class="search-box">
         <input
           v-model="searchQuery"
@@ -253,71 +126,33 @@ watch(() => route.query.view, () => {
         />
       </div>
 
-    <div v-if="isScreenerMode" class="bucket-counts">
-      <button
-        class="count-item"
-        :class="{ active: activeView === 'screener' }"
-        @click="setView('screener')"
-      >
-        <span class="count-number">{{ counts.unsorted || 0 }}</span>
-        <span class="count-label">Unsorted</span>
-      </button>
-      <button
-        v-for="bucket in buckets"
-        :key="bucket.value"
-        class="count-item"
-        :class="{ active: activeView === bucket.value }"
-        @click="setView(bucket.value)"
-      >
-        <span class="count-number">{{ counts[bucket.value] || 0 }}</span>
-        <span class="count-label">{{ bucket.label }}</span>
-      </button>
-    </div>
+      <div v-if="contacts.length === 0 && !loading" class="empty-state">
+        No contacts found
+      </div>
 
-    <div v-if="contacts.length === 0 && !loading" class="empty-state">
-      {{ activeView === 'screener' ? 'No contacts to screen' : 'No contacts found' }}
-    </div>
+      <div v-if="loading && contacts.length === 0" class="loading-state">
+        Loading...
+      </div>
 
-    <div v-if="loading && contacts.length === 0" class="loading-state">
-      Loading...
-    </div>
-
-    <div class="contacts-list">
-      <div v-for="contact in contacts" :key="contact.id" class="contact-card">
-        <RouterLink :to="`/contact/${contact.id}`" class="contact-info">
-          <div class="contact-name">{{ contact.name || contact.email.split('@')[0] }}</div>
-          <div class="contact-email">{{ contact.email }}</div>
-          <div class="contact-meta">
-            <span class="email-count">{{ contact.emailCount }} email{{ contact.emailCount !== 1 ? 's' : '' }}</span>
-            <span v-if="contact.lastEmailAt" class="last-email"> &middot; Last: {{ formatDate(contact.lastEmailAt) }}</span>
-            <span
-              v-else-if="isScreenerMode && !contact.bucket"
-              class="bucket-badge unscreened"
-            >
-              Unscreened
-            </span>
-          </div>
-        </RouterLink>
-        <div v-if="isScreenerMode" class="bucket-buttons">
-          <button
-            v-for="bucket in buckets.filter(b => b.value !== 'quarantine')"
-            :key="bucket.value"
-            class="bucket-btn"
-            :class="{ active: contact.bucket === bucket.value }"
-            :style="{ '--btn-color': bucket.color }"
-            @click="setBucket(contact.id, bucket.value)"
-          >
-            {{ bucket.label }}
-          </button>
+      <div class="contacts-list">
+        <div v-for="contact in contacts" :key="contact.id" class="contact-card">
+          <RouterLink :to="`/contact/${contact.id}`" class="contact-info">
+            <div class="contact-name">{{ contact.name || contact.email.split('@')[0] }}</div>
+            <div class="contact-email">{{ contact.email }}</div>
+            <div class="contact-meta">
+              <span class="email-count">{{ contact.emailCount }} email{{ contact.emailCount !== 1 ? 's' : '' }}</span>
+              <span v-if="contact.lastEmailAt" class="last-email"> &middot; Last: {{ formatDate(contact.lastEmailAt) }}</span>
+              <span v-if="contact.isMe" class="me-badge">You</span>
+            </div>
+          </RouterLink>
         </div>
       </div>
-    </div>
 
-    <div v-if="hasMore" class="load-more">
-      <button @click="loadMore" :disabled="loadingMore">
-        {{ loadingMore ? 'Loading...' : 'Load More' }}
-      </button>
-    </div>
+      <div v-if="hasMore" class="load-more">
+        <button @click="loadMore" :disabled="loadingMore">
+          {{ loadingMore ? 'Loading...' : 'Load More' }}
+        </button>
+      </div>
     </template>
   </div>
 </template>
@@ -351,57 +186,6 @@ h1 {
   margin: 0 0 16px 0;
 }
 
-.view-nav {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.view-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 1px solid #e5e5e5;
-  border-radius: 20px;
-  background: #fff;
-  font-size: 14px;
-  font-weight: 500;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.view-pill:hover {
-  border-color: #ccc;
-  color: #333;
-}
-
-.view-pill.active {
-  background: #1a1a1a;
-  border-color: #1a1a1a;
-  color: #fff;
-}
-
-.pill-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  background: #ef4444;
-  color: #fff;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.view-pill.active .pill-count {
-  background: #fff;
-  color: #1a1a1a;
-}
-
 .search-box {
   margin-bottom: 16px;
 }
@@ -418,54 +202,6 @@ h1 {
 
 .search-box input:focus {
   border-color: #999;
-}
-
-.bucket-counts {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-  padding: 12px;
-  background: #f5f5f5;
-  border-radius: 8px;
-  flex-wrap: wrap;
-}
-
-.count-item {
-  text-align: center;
-  flex: 1;
-  min-width: 70px;
-  padding: 8px 4px;
-  background: transparent;
-  border: 2px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.count-item:hover {
-  background: #fff;
-}
-
-.count-item.active {
-  background: #fff;
-  border-color: #1a1a1a;
-}
-
-.count-number {
-  display: block;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.count-label {
-  font-size: 11px;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.count-item.active .count-label {
-  color: #1a1a1a;
 }
 
 .empty-state,
@@ -527,45 +263,13 @@ h1 {
   flex-wrap: wrap;
 }
 
-.bucket-badge {
+.me-badge {
   padding: 2px 8px;
+  background: #f5f5f5;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-}
-
-.bucket-badge.unscreened {
-  background: #f5f5f5;
   color: #666;
-}
-
-.bucket-buttons {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.bucket-btn {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid var(--btn-color);
-  background: #fff;
-  color: var(--btn-color);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.bucket-btn:hover {
-  background: var(--btn-color);
-  color: #fff;
-}
-
-.bucket-btn.active {
-  background: var(--btn-color);
-  color: #fff;
 }
 
 .load-more {
@@ -591,17 +295,5 @@ h1 {
 .load-more button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-@media (max-width: 600px) {
-  .contact-card {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .bucket-buttons {
-    margin-top: 12px;
-    justify-content: flex-start;
-  }
 }
 </style>

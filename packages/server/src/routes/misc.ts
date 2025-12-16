@@ -7,140 +7,12 @@ import {
   contacts,
   emailContacts,
   attachments,
+  folders,
 } from '@meremail/shared'
 import { proxyImagesInHtml } from '../utils/proxy-images'
 import { replaceCidReferences } from '../utils/replace-cid'
 
 export const miscRoutes = new Hono()
-
-// GET /api/feed
-miscRoutes.get('/feed', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100)
-  const bucket = c.req.query('bucket') || 'feed'
-  const excludeParam = c.req.query('exclude') || ''
-  const excludeIds = excludeParam ? excludeParam.split(',').map(id => parseInt(id, 10)).filter(id => !isNaN(id)) : []
-
-  if (bucket !== 'feed' && bucket !== 'paper_trail') {
-    return c.json({ error: 'Invalid bucket. Must be "feed" or "paper_trail"' }, 400)
-  }
-
-  const whereClause = excludeIds.length > 0
-    ? and(eq(contacts.bucket, bucket), notInArray(emails.id, excludeIds))
-    : eq(contacts.bucket, bucket)
-
-  const feedEmails = db
-    .select({
-      id: emails.id,
-      threadId: emails.threadId,
-      subject: emails.subject,
-      contentText: emails.contentText,
-      contentHtml: emails.contentHtml,
-      sentAt: emails.sentAt,
-      receivedAt: emails.receivedAt,
-      readAt: emails.readAt,
-      senderId: emails.senderId,
-      headers: emails.headers,
-    })
-    .from(emails)
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(whereClause)
-    .orderBy(
-      sql`CASE WHEN ${emails.readAt} IS NULL THEN 0 ELSE 1 END`,
-      desc(sql`MAX(COALESCE(${emails.readAt}, 0), ${emails.sentAt})`)
-    )
-    .limit(limit + 1)
-    .all()
-
-  const hasMore = feedEmails.length > limit
-  const emailList = hasMore ? feedEmails.slice(0, limit) : feedEmails
-
-  const emailsWithDetails = emailList.map((email) => {
-    const sender = email.senderId
-      ? db.select().from(contacts).where(eq(contacts.id, email.senderId)).get()
-      : null
-
-    const recipients = db
-      .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        isMe: contacts.isMe,
-        role: emailContacts.role,
-      })
-      .from(emailContacts)
-      .innerJoin(contacts, eq(contacts.id, emailContacts.contactId))
-      .where(eq(emailContacts.emailId, email.id))
-      .all()
-      .filter((r) => r.role !== 'from')
-
-    let content: string
-    if (email.contentHtml) {
-      const withCidReplaced = replaceCidReferences(email.contentHtml, email.id)
-      content = proxyImagesInHtml(withCidReplaced)
-    } else if (email.contentText?.trim()) {
-      content = `<pre style="white-space: pre-wrap; font-family: inherit;">${email.contentText}</pre>`
-    } else {
-      content = ''
-    }
-
-    const emailAttachments = db
-      .select({
-        id: attachments.id,
-        filename: attachments.filename,
-        mimeType: attachments.mimeType,
-        size: attachments.size,
-      })
-      .from(attachments)
-      .where(and(eq(attachments.emailId, email.id), eq(attachments.isInline, false)))
-      .all()
-
-    const headers = email.headers as Record<string, string> | null
-    const replyToRaw = headers?.['reply-to']
-    let replyTo: string | null = null
-    if (replyToRaw) {
-      try {
-        const parsed = JSON.parse(replyToRaw)
-        if (parsed && typeof parsed === 'object') {
-          if (parsed.text) {
-            replyTo = parsed.text
-          } else if (Array.isArray(parsed.value)) {
-            replyTo = parsed.value
-              .map((v: { name?: string; address?: string }) =>
-                v.name ? `${v.name} <${v.address}>` : v.address
-              )
-              .filter(Boolean)
-              .join(', ')
-          }
-        }
-      } catch {
-        replyTo = replyToRaw
-      }
-    }
-
-    return {
-      id: email.id,
-      threadId: email.threadId,
-      subject: email.subject,
-      content,
-      sentAt: email.sentAt,
-      receivedAt: email.receivedAt,
-      isRead: !!email.readAt,
-      sender: sender ? { id: sender.id, name: sender.name, email: sender.email, isMe: sender.isMe } : null,
-      recipients,
-      attachments: emailAttachments,
-      replyTo,
-      headers,
-    }
-  })
-
-  const unreadCount = emailsWithDetails.filter(e => !e.isRead).length
-
-  return c.json({
-    emails: emailsWithDetails,
-    hasMore,
-    unreadCount,
-  })
-})
 
 // GET /api/set-aside
 miscRoutes.get('/set-aside', async (c) => {
@@ -255,69 +127,6 @@ miscRoutes.get('/set-aside', async (c) => {
   return c.json({ emails: emailsWithDetails, hasMore })
 })
 
-// GET /api/screener
-miscRoutes.get('/screener', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100)
-  const offset = parseInt(c.req.query('offset') || '0')
-
-  const unscreenedContacts = db
-    .select({
-      id: contacts.id,
-      name: contacts.name,
-      email: contacts.email,
-      createdAt: contacts.createdAt,
-      lastEmailAt: sql<number>`MAX(${emails.sentAt})`.as('last_email_at'),
-      emailCount: sql<number>`COUNT(DISTINCT ${emails.id})`.as('email_count'),
-    })
-    .from(contacts)
-    .leftJoin(emailContacts, eq(contacts.id, emailContacts.contactId))
-    .leftJoin(emails, eq(emailContacts.emailId, emails.id))
-    .where(and(isNull(contacts.bucket), eq(contacts.isMe, false)))
-    .groupBy(contacts.id)
-    .orderBy(sql`last_email_at DESC`)
-    .limit(limit + 1)
-    .offset(offset)
-    .all()
-
-  const hasMore = unscreenedContacts.length > limit
-  const items = hasMore ? unscreenedContacts.slice(0, limit) : unscreenedContacts
-
-  return c.json({
-    contacts: items.map(item => ({
-      id: item.id,
-      name: item.name,
-      email: item.email,
-      createdAt: item.createdAt,
-      lastEmailAt: item.lastEmailAt ? new Date(item.lastEmailAt * 1000) : null,
-      emailCount: item.emailCount || 0,
-    })),
-    hasMore,
-  })
-})
-
-// PATCH /api/screener/:id
-miscRoutes.patch('/screener/:id', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  if (isNaN(id)) {
-    return c.json({ error: 'Invalid contact ID' }, 400)
-  }
-
-  const body = await c.req.json()
-  const bucket = body?.bucket
-
-  const validBuckets = ['approved', 'feed', 'paper_trail', 'blocked', 'quarantine']
-  if (!validBuckets.includes(bucket)) {
-    return c.json({ error: `Invalid bucket. Must be one of: ${validBuckets.join(', ')}` }, 400)
-  }
-
-  db.update(contacts)
-    .set({ bucket })
-    .where(eq(contacts.id, id))
-    .run()
-
-  return c.json({ success: true, id, bucket })
-})
-
 // POST /api/emails/mark-read
 miscRoutes.post('/emails/mark-read', async (c) => {
   const body = await c.req.json()
@@ -342,9 +151,9 @@ miscRoutes.post('/emails/mark-read', async (c) => {
 })
 
 // GET /api/notifications/pending
-// Returns unread emails from approved senders for notifications
+// Returns unread emails from Inbox folder for notifications
 miscRoutes.get('/notifications/pending', async (c) => {
-  // Get unread emails from approved threads (thread creator is approved or isMe)
+  // Get unread emails from Inbox folder (folderId = 1)
   const unreadEmails = db
     .select({
       id: emails.id,
@@ -358,35 +167,14 @@ miscRoutes.get('/notifications/pending', async (c) => {
     .from(emails)
     .innerJoin(emailThreads, eq(emails.threadId, emailThreads.id))
     .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .innerJoin(
-      db.select({ id: contacts.id, bucket: contacts.bucket, isMe: contacts.isMe })
-        .from(contacts)
-        .as('creator'),
-      sql`creator.id = ${emailThreads.creatorId}`
-    )
     .where(and(
       isNull(emails.readAt),
       eq(contacts.isMe, false), // Don't notify for own emails
-      sql`(creator.bucket = 'approved' OR creator.is_me = 1)`
+      eq(emailThreads.folderId, 1) // Inbox folder
     ))
     .orderBy(desc(emails.sentAt))
     .limit(50)
     .all()
-
-  // Get unread counts for digest
-  const feedUnread = db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(emails)
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(and(eq(contacts.bucket, 'feed'), isNull(emails.readAt)))
-    .get()
-
-  const paperTrailUnread = db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(emails)
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(and(eq(contacts.bucket, 'paper_trail'), isNull(emails.readAt)))
-    .get()
 
   return c.json({
     emails: unreadEmails.map(e => ({
@@ -398,42 +186,24 @@ miscRoutes.get('/notifications/pending', async (c) => {
       senderName: e.senderName,
       senderEmail: e.senderEmail,
     })),
-    feedUnread: feedUnread?.count || 0,
-    paperTrailUnread: paperTrailUnread?.count || 0,
   })
 })
 
 // GET /api/unread-counts
 miscRoutes.get('/unread-counts', async (c) => {
-  const inboxUnread = db
-    .select({ count: sql<number>`COUNT(DISTINCT ${emailThreads.id})` })
-    .from(emailThreads)
-    .innerJoin(emails, eq(emails.threadId, emailThreads.id))
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(and(eq(contacts.bucket, 'approved'), isNull(emails.readAt)))
-    .get()
+  // Get all folders with their unread counts
+  const folderList = db.select().from(folders).orderBy(folders.position).all()
 
-  const feedUnread = db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(emails)
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(and(eq(contacts.bucket, 'feed'), isNull(emails.readAt)))
-    .get()
-
-  const paperTrailUnread = db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(emails)
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(and(eq(contacts.bucket, 'paper_trail'), isNull(emails.readAt)))
-    .get()
-
-  const quarantineUnread = db
-    .select({ count: sql<number>`COUNT(DISTINCT ${emailThreads.id})` })
-    .from(emailThreads)
-    .innerJoin(emails, eq(emails.threadId, emailThreads.id))
-    .innerJoin(contacts, eq(contacts.id, emails.senderId))
-    .where(and(eq(contacts.bucket, 'quarantine'), isNull(emails.readAt)))
-    .get()
+  const folderCounts: Record<number, number> = {}
+  for (const folder of folderList) {
+    const unread = db
+      .select({ count: sql<number>`COUNT(DISTINCT ${emailThreads.id})` })
+      .from(emailThreads)
+      .innerJoin(emails, eq(emails.threadId, emailThreads.id))
+      .where(and(eq(emailThreads.folderId, folder.id), isNull(emails.readAt)))
+      .get()
+    folderCounts[folder.id] = unread?.count || 0
+  }
 
   const replyLaterCount = db
     .select({ count: sql<number>`COUNT(DISTINCT ${emailThreads.id})` })
@@ -449,10 +219,7 @@ miscRoutes.get('/unread-counts', async (c) => {
     .get()
 
   return c.json({
-    inbox: inboxUnread?.count || 0,
-    feed: feedUnread?.count || 0,
-    paper_trail: paperTrailUnread?.count || 0,
-    quarantine: quarantineUnread?.count || 0,
+    folders: folderCounts,
     reply_later: replyLaterCount?.count || 0,
     set_aside: setAsideCount?.count || 0,
   })

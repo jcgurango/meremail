@@ -3,14 +3,18 @@ import Dexie, { type EntityTable } from 'dexie'
 // ============== Type Definitions ==============
 // These closely match the server API response shapes
 
-export type Bucket = 'approved' | 'feed' | 'paper_trail' | 'blocked' | 'quarantine' | 'reply_later'
-export type SyncBucketType = Bucket | 'set_aside'
+export interface SyncFolder {
+  id: number
+  name: string
+  imapFolder: string | null
+  position: number
+  cachedAt: number
+}
 
 export interface SyncContact {
   id: number
   name: string | null
   email: string
-  bucket: Bucket | null
   isMe: boolean
   lastEmailAt: number | null
   emailCount: number
@@ -74,15 +78,7 @@ export interface SyncThread {
   defaultFromId: number | null
   cachedAt: number
   hasFullContent: boolean
-}
-
-// Bucket membership - a thread can belong to multiple buckets
-export interface SyncBucketMembership {
-  id?: number  // Auto-increment
-  bucket: SyncBucketType
-  threadId: number
-  // For sorting within bucket
-  sortKey: number  // latestEmailAt for inbox, replyLaterAt for reply_later, etc.
+  folderId: number | null  // 1=Inbox, 2=Junk
 }
 
 export interface SyncAttachmentBlob {
@@ -112,10 +108,10 @@ export interface PendingSync {
 // ============== Database Class ==============
 
 class SyncDatabase extends Dexie {
+  folders!: EntityTable<SyncFolder, 'id'>
   contacts!: EntityTable<SyncContact, 'id'>
   threads!: EntityTable<SyncThread, 'id'>
   emails!: EntityTable<SyncEmail, 'id'>
-  bucketMembership!: EntityTable<SyncBucketMembership, 'id'>
   attachmentBlobs!: EntityTable<SyncAttachmentBlob, 'id'>
   syncMeta!: EntityTable<SyncMeta, 'key'>
   pendingSync!: EntityTable<PendingSync, 'id'>
@@ -123,18 +119,21 @@ class SyncDatabase extends Dexie {
   constructor() {
     super('MereMail')
 
-    this.version(4).stores({
-      // Contacts: index by bucket for filtering
-      contacts: 'id, email, bucket, isMe, cachedAt',
+    this.version(6).stores({
+      // Folders: basic metadata
+      folders: 'id, position',
 
-      // Threads: no bucket field, just core data
-      threads: 'id, type, latestEmailAt, replyLaterAt, setAsideAt, cachedAt',
+      // Contacts: simplified, no bucket
+      contacts: 'id, email, isMe, cachedAt',
+
+      // Threads: index by folderId for folder filtering
+      threads: 'id, type, folderId, latestEmailAt, replyLaterAt, setAsideAt, cachedAt',
 
       // Emails: index by threadId (null for standalone drafts)
       emails: 'id, threadId, sentAt, status, cachedAt',
 
-      // Bucket membership: auto-increment id, unique constraint on [bucket+threadId]
-      bucketMembership: '++id, [bucket+threadId], bucket, threadId',
+      // Bucket membership: removed (no longer needed)
+      bucketMembership: null,
 
       // Attachment binary data
       attachmentBlobs: 'id, cachedAt, size',
@@ -144,11 +143,6 @@ class SyncDatabase extends Dexie {
 
       // Pending sync actions (replaces pendingDrafts)
       pendingSync: '++id, entityType, entityId, action',
-    }).upgrade(tx => {
-      // Drop the old pendingDrafts table data (schema change handles table)
-      return tx.table('pendingDrafts').clear().catch(() => {
-        // Table might not exist, that's fine
-      })
     })
   }
 }
@@ -167,8 +161,8 @@ export function getSyncDb(): SyncDatabase {
 // ============== Constants ==============
 
 export const SYNC_LIMITS = {
-  // Thread limits per bucket
-  threadsPerBucket: 25,
+  // Thread limits per folder
+  threadsPerFolder: 25,
   // Max attachment size to cache (10 MB)
   maxAttachmentSize: 10 * 1024 * 1024,
   // Total attachment cache limit (100 MB)

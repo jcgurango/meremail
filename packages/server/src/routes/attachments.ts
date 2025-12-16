@@ -51,8 +51,7 @@ attachmentsRoutes.get('/', async (c) => {
       JOIN email_threads t ON e.thread_id = t.id
       LEFT JOIN contacts c ON e.sender_id = c.id
       WHERE attachments_fts MATCH ?
-        AND a.is_inline = 0
-        AND (c.bucket IS NULL OR c.bucket != 'quarantine')`
+        AND a.is_inline = 0`
 
     const ftsParams: any[] = [searchTerm]
 
@@ -82,10 +81,6 @@ attachmentsRoutes.get('/', async (c) => {
   } else {
     const conditions = [
       eq(attachments.isInline, false),
-      or(
-        sql`${contacts.bucket} IS NULL`,
-        sql`${contacts.bucket} != 'quarantine'`
-      )!
     ]
 
     if (fileType && FILE_CATEGORIES[fileType]) {
@@ -130,7 +125,6 @@ attachmentsRoutes.get('/', async (c) => {
   const categories: Record<string, number> = {}
   const countConditions = [
     eq(attachments.isInline, false),
-    or(sql`${contacts.bucket} IS NULL`, sql`${contacts.bucket} != 'quarantine'`)!
   ]
   if (contactId) {
     countConditions.push(eq(emails.senderId, contactId))
@@ -167,7 +161,6 @@ attachmentsRoutes.get('/', async (c) => {
   // Get sender contacts
   const senderConditions = [
     eq(attachments.isInline, false),
-    or(sql`${contacts.bucket} IS NULL`, sql`${contacts.bucket} != 'quarantine'`)!
   ]
   if (contactSearch) {
     const searchPattern = `%${contactSearch}%`

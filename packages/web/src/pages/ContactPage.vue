@@ -40,7 +40,6 @@ interface Contact {
   id: number
   name: string | null
   email: string
-  bucket: string | null
   isMe: boolean
 }
 
@@ -68,36 +67,10 @@ const hasMore = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const buckets = [
-  { value: 'approved', label: 'Approved', color: '#22c55e' },
-  { value: 'feed', label: 'Feed', color: '#3b82f6' },
-  { value: 'paper_trail', label: 'Paper Trail', color: '#a855f7' },
-  { value: 'blocked', label: 'Blocked', color: '#ef4444' },
-  { value: 'quarantine', label: 'Quarantine', color: '#f59e0b' },
-]
-
 onMounted(() => {
   document.title = pageTitle.value
   loadThreads(true)
 })
-
-async function setBucket(bucket: string) {
-  if (!contact.value) return
-
-  const previousBucket = contact.value.bucket
-  contact.value.bucket = bucket
-
-  try {
-    await fetch(`/api/screener/${contact.value.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bucket }),
-    })
-  } catch (e) {
-    contact.value.bucket = previousBucket
-    console.error('Failed to update bucket:', e)
-  }
-}
 
 async function loadThreads(reset = false) {
   if (loading.value) return
@@ -150,25 +123,8 @@ function goBack() {
           <span class="thread-count">{{ totalThreads }} conversation{{ totalThreads !== 1 ? 's' : '' }}</span>
           <span v-if="contact.isMe" class="me-badge">You</span>
         </div>
-        <div v-if="!contact.isMe" class="bucket-buttons">
-          <button
-            v-for="bucket in buckets"
-            :key="bucket.value"
-            class="bucket-btn"
-            :class="{ active: contact.bucket === bucket.value }"
-            :style="{ '--btn-color': bucket.color }"
-            @click="setBucket(bucket.value)"
-          >
-            {{ bucket.label }}
-          </button>
-        </div>
       </div>
     </header>
-
-    <div v-if="contact && contact.bucket === 'quarantine'" class="quarantine-warning">
-      This contact is in quarantine. Their emails will be automatically deleted after 30 days.
-      Move them to another bucket to keep their emails.
-    </div>
 
     <div v-if="error" class="error">{{ error }}</div>
 
@@ -258,45 +214,6 @@ function goBack() {
   font-size: 11px;
   font-weight: 500;
   color: #666;
-}
-
-.bucket-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.bucket-btn {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid var(--btn-color);
-  background: #fff;
-  color: var(--btn-color);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.bucket-btn:hover {
-  background: var(--btn-color);
-  color: #fff;
-}
-
-.bucket-btn.active {
-  background: var(--btn-color);
-  color: #fff;
-}
-
-.quarantine-warning {
-  margin-bottom: 24px;
-  padding: 12px 16px;
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #92400e;
-  line-height: 1.5;
 }
 
 .loading,

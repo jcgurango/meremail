@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, sql, asc, isNull, and, gt, desc, inArray } from 'drizzle-orm'
+import { eq, sql, asc, and, gt, desc, inArray } from 'drizzle-orm'
 import { db, sqlite, contacts, emails, emailContacts, emailThreads, attachments } from '@meremail/shared'
 import { proxyImagesInHtml } from '../utils/proxy-images'
 import { replaceCidReferences } from '../utils/replace-cid'
@@ -10,10 +10,8 @@ export const contactsRoutes = new Hono()
 contactsRoutes.get('/', async (c) => {
   const limit = Math.min(Number(c.req.query('limit')) || 50, 5000)
   const offset = Number(c.req.query('offset')) || 0
-  const view = c.req.query('view') || 'approved'
   const q = (c.req.query('q') || '').trim()
   const isMe = c.req.query('isMe') === 'true'
-  const includeCounts = c.req.query('counts') === 'true'
   const exportAll = c.req.query('all') === 'true'
   const createdSince = c.req.query('createdSince') ? Number(c.req.query('createdSince')) : null
 
@@ -30,7 +28,6 @@ contactsRoutes.get('/', async (c) => {
         id: contacts.id,
         name: contacts.name,
         email: contacts.email,
-        bucket: contacts.bucket,
         isMe: contacts.isMe,
         createdAt: contacts.createdAt,
       })
@@ -56,7 +53,6 @@ contactsRoutes.get('/', async (c) => {
         id: r.id,
         name: r.name,
         email: r.email,
-        bucket: r.bucket,
         isMe: !!r.isMe,
         createdAt: r.createdAt.getTime(),
       })),
@@ -72,7 +68,6 @@ contactsRoutes.get('/', async (c) => {
         id: contacts.id,
         name: contacts.name,
         email: contacts.email,
-        bucket: contacts.bucket,
         isMe: contacts.isMe,
       })
       .from(contacts)
@@ -87,7 +82,6 @@ contactsRoutes.get('/', async (c) => {
         id: r.id,
         name: r.name,
         email: r.email,
-        bucket: r.bucket,
         isMe: !!r.isMe,
       })),
       hasMore: false,
@@ -95,74 +89,27 @@ contactsRoutes.get('/', async (c) => {
   }
 
   if (hasSearchTerm) {
-    let contactSql = `
+    const contactSql = `
       SELECT
         c.id,
         c.name,
         c.email,
-        c.bucket,
         c.is_me as isMe,
         (SELECT COUNT(DISTINCT ec.email_id) FROM email_contacts ec WHERE ec.contact_id = c.id) as emailCount,
         (SELECT MAX(e.sent_at) FROM emails e JOIN email_contacts ec ON e.id = ec.email_id WHERE ec.contact_id = c.id) as lastEmailAt
       FROM contacts_fts
       JOIN contacts c ON contacts_fts.rowid = c.id
-      WHERE contacts_fts MATCH ?`
-
-    if (view === 'screener') {
-      contactSql += ` AND c.bucket IS NULL AND c.is_me = 0`
-    } else if (view === 'all') {
-      contactSql += ` AND c.is_me = 0`
-    } else {
-      contactSql += ` AND c.bucket = '${view}' AND c.is_me = 0`
-    }
-
-    contactSql += ` ORDER BY rank, c.name COLLATE NOCASE ASC, c.email COLLATE NOCASE ASC
+      WHERE contacts_fts MATCH ? AND c.is_me = 0
+      ORDER BY rank, c.name COLLATE NOCASE ASC, c.email COLLATE NOCASE ASC
       LIMIT ? OFFSET ?`
 
     contactsResult = sqlite.prepare(contactSql).all(searchTerm, limit + 1, offset) as any[]
-  } else if (view === 'screener') {
-    const results = db
-      .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        bucket: contacts.bucket,
-        isMe: contacts.isMe,
-        lastEmailAt: sql<number>`MAX(${emails.sentAt})`.as('last_email_at'),
-        emailCount: sql<number>`COUNT(DISTINCT ${emails.id})`.as('email_count'),
-      })
-      .from(contacts)
-      .leftJoin(emailContacts, eq(contacts.id, emailContacts.contactId))
-      .leftJoin(emails, eq(emailContacts.emailId, emails.id))
-      .where(and(
-        isNull(contacts.bucket),
-        eq(contacts.isMe, false)
-      ))
-      .groupBy(contacts.id)
-      .orderBy(sql`last_email_at DESC`)
-      .limit(limit + 1)
-      .offset(offset)
-      .all()
-
-    contactsResult = results.map(r => ({
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      bucket: r.bucket,
-      isMe: r.isMe,
-      emailCount: r.emailCount,
-      lastEmailAt: r.lastEmailAt,
-    }))
   } else {
-    const bucketToFilter = (view === 'contacts' ? 'approved' : view) as 'approved' | 'feed' | 'paper_trail' | 'quarantine' | 'blocked'
-    const bucketFilter = and(eq(contacts.isMe, false), eq(contacts.bucket, bucketToFilter))
-
     const results = db
       .select({
         id: contacts.id,
         name: contacts.name,
         email: contacts.email,
-        bucket: contacts.bucket,
         isMe: contacts.isMe,
         lastEmailAt: sql<number>`MAX(${emails.sentAt})`.as('last_email_at'),
         emailCount: sql<number>`COUNT(DISTINCT ${emails.id})`.as('email_count'),
@@ -170,7 +117,7 @@ contactsRoutes.get('/', async (c) => {
       .from(contacts)
       .leftJoin(emailContacts, eq(contacts.id, emailContacts.contactId))
       .leftJoin(emails, eq(emailContacts.emailId, emails.id))
-      .where(bucketFilter)
+      .where(eq(contacts.isMe, false))
       .groupBy(contacts.id)
       .orderBy(sql`COALESCE(${contacts.name}, ${contacts.email}) COLLATE NOCASE ASC`)
       .limit(limit + 1)
@@ -181,7 +128,6 @@ contactsRoutes.get('/', async (c) => {
       id: r.id,
       name: r.name,
       email: r.email,
-      bucket: r.bucket,
       isMe: r.isMe,
       emailCount: r.emailCount,
       lastEmailAt: r.lastEmailAt,
@@ -191,55 +137,17 @@ contactsRoutes.get('/', async (c) => {
   const hasMore = contactsResult.length > limit
   const items = contactsResult.slice(0, limit)
 
-  const response: {
-    contacts: any[]
-    hasMore: boolean
-    counts?: Record<string, number>
-  } = {
+  return c.json({
     contacts: items.map(item => ({
       id: item.id,
       name: item.name,
       email: item.email,
-      bucket: item.bucket,
       isMe: !!item.isMe,
       lastEmailAt: item.lastEmailAt ? new Date(item.lastEmailAt * 1000) : null,
       emailCount: item.emailCount || 0,
     })),
     hasMore,
-  }
-
-  if (includeCounts) {
-    const bucketCounts = db
-      .select({
-        bucket: contacts.bucket,
-        count: sql<number>`COUNT(*)`.as('count'),
-      })
-      .from(contacts)
-      .where(eq(contacts.isMe, false))
-      .groupBy(contacts.bucket)
-      .all()
-
-    const counts: Record<string, number> = {
-      unsorted: 0,
-      approved: 0,
-      feed: 0,
-      paper_trail: 0,
-      blocked: 0,
-      quarantine: 0,
-    }
-
-    for (const { bucket, count } of bucketCounts) {
-      if (bucket === null) {
-        counts.unsorted = count
-      } else {
-        counts[bucket] = count
-      }
-    }
-
-    response.counts = counts
-  }
-
-  return c.json(response)
+  })
 })
 
 // GET /api/contacts/me
@@ -285,7 +193,6 @@ contactsRoutes.get('/:id', async (c) => {
         id: contact.id,
         name: contact.name,
         email: contact.email,
-        bucket: contact.bucket,
         isMe: contact.isMe,
       },
       threads: [],
@@ -332,7 +239,6 @@ contactsRoutes.get('/:id', async (c) => {
         id: contact.id,
         name: contact.name,
         email: contact.email,
-        bucket: contact.bucket,
         isMe: contact.isMe,
       },
       threads: [],
@@ -484,7 +390,6 @@ contactsRoutes.get('/:id', async (c) => {
       id: contact.id,
       name: contact.name,
       email: contact.email,
-      bucket: contact.bucket,
       isMe: contact.isMe,
     },
     threads: threadData,

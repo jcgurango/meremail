@@ -9,6 +9,7 @@ import {
   emailContacts,
   emailThreadContacts,
   attachments,
+  folders,
 } from '../db/schema'
 import type { ImportableEmail, EmailAddress, EmailAttachment } from '../types/email'
 import { resolvePath } from '../config'
@@ -58,9 +59,8 @@ function cleanContactName(name: string | undefined, email: string): string | und
 
 /**
  * Find or create a contact by email
- * If fromJunkFolder is true and this is a NEW contact, set bucket to 'quarantine'
  */
-function findOrCreateContact(email: string, name?: string, isMe: boolean = false, fromJunkFolder: boolean = false): number {
+function findOrCreateContact(email: string, name?: string, isMe: boolean = false): number {
   // Clean the name before use
   const cleanedName = cleanContactName(name, email)
 
@@ -85,13 +85,9 @@ function findOrCreateContact(email: string, name?: string, isMe: boolean = false
     return existing.id
   }
 
-  // New contact - set bucket to quarantine if their first email is from Junk folder
-  const bucket = (fromJunkFolder && !isMe) ? 'quarantine' : null
-  const result = db.insert(contacts).values({ email, name: cleanedName, isMe, bucket }).returning({ id: contacts.id }).get()
+  const result = db.insert(contacts).values({ email, name: cleanedName, isMe }).returning({ id: contacts.id }).get()
   if (isMe) {
     console.log(`  Auto-created my contact: ${cleanedName || email} <${email}>`)
-  } else if (bucket === 'quarantine') {
-    console.log(`  Auto-quarantined contact from Junk folder: ${cleanedName || email} <${email}>`)
   }
   return result.id
 }
@@ -162,12 +158,12 @@ function findThread(
 }
 
 /**
- * Create a new thread with creator
+ * Create a new thread with creator and folder
  */
-function createThread(subject: string, creatorId: number): number {
+function createThread(subject: string, creatorId: number, folderId: number): number {
   const result = db
     .insert(emailThreads)
-    .values({ subject, creatorId })
+    .values({ subject, creatorId, folderId })
     .returning({ id: emailThreads.id })
     .get()
   return result.id
@@ -276,54 +272,29 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
 
     // Junk mail claiming to be "from me" is an impostor - don't trust the From address
     if (email.isJunk && existingMe?.isMe) {
-      senderId = findOrCreateContact('impostor@impostor', 'Impostor', false, true)
+      senderId = findOrCreateContact('impostor@impostor', 'Impostor', false)
       senderIsMe = false
       console.log(`  Junk mail claiming to be from me (${email.from.email}) - attributed to Impostor`)
     } else {
       senderIsMe = existingMe?.isMe || email.isSent
-      senderId = findOrCreateContact(email.from.email, email.from.name, senderIsMe, email.isJunk)
+      senderId = findOrCreateContact(email.from.email, email.from.name, senderIsMe)
     }
   } else {
     // No from address - create unknown sender
-    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false, email.isJunk)
+    senderId = findOrCreateContact('unknown@unknown', 'Unknown Sender', false)
   }
+
+  // Determine folder: Junk emails go to Junk folder (id=2), others go to Inbox (id=1)
+  const folderId = email.isJunk ? 2 : 1
 
   // Find or create thread
   let threadId: number | null = findThread(messageId, inReplyTo, references, normalizedSubject, isReply, senderIsMe)
   const isNewThread = !threadId
   if (isNewThread) {
-    threadId = createThread(normalizedSubject, senderId)
+    threadId = createThread(normalizedSubject, senderId, folderId)
   } else {
     // Check if this email is older than the current first email - update creator if so
     maybeUpdateThreadCreator(threadId!, email.sentAt, senderId)
-
-    // Auto-approve sender if they're replying to a thread from an approved contact
-    // and they don't have a bucket yet
-    if (!senderIsMe && !email.isJunk) {
-      const sender = db.select({ bucket: contacts.bucket }).from(contacts).where(eq(contacts.id, senderId)).get()
-      if (sender && sender.bucket === null) {
-        // Check if thread creator is approved
-        const thread = db
-          .select({ creatorId: emailThreads.creatorId })
-          .from(emailThreads)
-          .where(eq(emailThreads.id, threadId!))
-          .get()
-        if (thread?.creatorId) {
-          const creator = db
-            .select({ bucket: contacts.bucket, isMe: contacts.isMe })
-            .from(contacts)
-            .where(eq(contacts.id, thread.creatorId))
-            .get()
-          if (creator && (creator.bucket === 'approved' || creator.isMe)) {
-            db.update(contacts)
-              .set({ bucket: 'approved' })
-              .where(eq(contacts.id, senderId))
-              .run()
-            console.log(`  Auto-approved contact (replying to approved thread): ${email.from?.name || email.from?.email}`)
-          }
-        }
-      }
-    }
   }
   const finalThreadId = threadId!
 
@@ -369,18 +340,7 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
         .get()
       const isMe = existingContact?.isMe || false
 
-      // Auto-approve contacts that I send email TO (if not already bucketed)
-      const shouldAutoApprove = email.isSent && !isMe && (!existingContact || existingContact.bucket === null)
-
       const contactId = findOrCreateContact(addr.email, addr.name, isMe)
-
-      if (shouldAutoApprove) {
-        db.update(contacts)
-          .set({ bucket: 'approved' })
-          .where(eq(contacts.id, contactId))
-          .run()
-        console.log(`  Auto-approved contact (I sent them email): ${addr.name || addr.email}`)
-      }
 
       db.insert(emailContacts).values({ emailId, contactId, role }).onConflictDoNothing().run()
       db.insert(emailThreadContacts).values({ threadId: finalThreadId, contactId, role: 'recipient' }).onConflictDoNothing().run()

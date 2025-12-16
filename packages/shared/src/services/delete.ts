@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql, lt } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { unlinkSync, existsSync } from 'fs'
 import { db } from '../db'
 import {
@@ -217,75 +217,3 @@ export function deleteContact(contactId: number): {
   return { success: true, ...result }
 }
 
-/**
- * Delete emails from quarantined contacts that are older than the specified number of days
- * Returns stats about what was deleted
- */
-export function deleteQuarantinedEmailsOlderThan(days: number): {
-  emailsDeleted: number
-  attachmentsDeleted: number
-  threadsDeleted: number
-  contactsDeleted: number
-} {
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - days)
-  const cutoffTimestamp = Math.floor(cutoffDate.getTime() / 1000)
-
-  // Find quarantined contacts
-  const quarantinedContacts = db
-    .select({ id: contacts.id })
-    .from(contacts)
-    .where(eq(contacts.bucket, 'quarantine'))
-    .all()
-
-  if (quarantinedContacts.length === 0) {
-    return { emailsDeleted: 0, attachmentsDeleted: 0, threadsDeleted: 0, contactsDeleted: 0 }
-  }
-
-  const contactIds = quarantinedContacts.map(c => c.id)
-
-  // Find old emails from quarantined senders
-  const oldEmails = db
-    .select({ id: emails.id, threadId: emails.threadId })
-    .from(emails)
-    .where(and(
-      inArray(emails.senderId, contactIds),
-      lt(emails.sentAt, new Date(cutoffTimestamp * 1000))
-    ))
-    .all()
-
-  const emailIds = oldEmails.map(e => e.id)
-  const affectedThreadIds = [...new Set(oldEmails.map(e => e.threadId))]
-
-  // Delete the old emails
-  const deleteResult = deleteEmails(emailIds)
-
-  // Clean up empty threads
-  const threadCleanup = cleanupEmptyThreads()
-
-  // Find and delete quarantined contacts with no remaining emails
-  const contactsWithNoEmails = db
-    .select({ id: contacts.id })
-    .from(contacts)
-    .leftJoin(emails, eq(emails.senderId, contacts.id))
-    .where(eq(contacts.bucket, 'quarantine'))
-    .groupBy(contacts.id)
-    .having(sql`COUNT(${emails.id}) = 0`)
-    .all()
-
-  let contactsDeleted = 0
-  for (const contact of contactsWithNoEmails) {
-    // Clean up any remaining junction table entries
-    db.delete(emailContacts).where(eq(emailContacts.contactId, contact.id)).run()
-    db.delete(emailThreadContacts).where(eq(emailThreadContacts.contactId, contact.id)).run()
-    db.delete(contacts).where(eq(contacts.id, contact.id)).run()
-    contactsDeleted++
-  }
-
-  return {
-    emailsDeleted: deleteResult.emailsDeleted,
-    attachmentsDeleted: deleteResult.attachmentsDeleted,
-    threadsDeleted: threadCleanup.threadsDeleted,
-    contactsDeleted,
-  }
-}

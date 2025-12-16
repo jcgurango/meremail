@@ -9,7 +9,10 @@ const route = useRoute()
 const router = useRouter()
 
 const showBottomNav = computed(() => {
-  return ['/', '/reply-later', '/set-aside', '/feed', '/paper-trail', '/quarantine'].includes(route.path)
+  // Show on main pages and any folder route
+  if (['/', '/reply-later', '/set-aside'].includes(route.path)) return true
+  if (route.path.startsWith('/folder/')) return true
+  return false
 })
 
 onMounted(async () => {

@@ -32,8 +32,6 @@ interface PendingEmail {
 
 interface NotificationResponse {
   emails: PendingEmail[]
-  feedUnread: number
-  paperTrailUnread: number
 }
 
 // IndexedDB helpers for notification state
@@ -137,9 +135,6 @@ async function checkForNewEmails(): Promise<void> {
     const idsArray = Array.from(notifiedIds).slice(-500)
     await setState('notifiedIds', idsArray)
 
-    // Check if we should show daily digest
-    await checkDailyDigest(data.feedUnread, data.paperTrailUnread)
-
     console.log('[SW] Notification check complete')
   } catch (err) {
     console.error('[SW] Error checking for new emails:', err)
@@ -167,55 +162,6 @@ async function showEmailNotification(email: PendingEmail): Promise<void> {
   await self.registration.showNotification(senderDisplay, options)
 }
 
-async function checkDailyDigest(feedUnread: number, paperTrailUnread: number): Promise<void> {
-  // Skip if no unread emails
-  if (feedUnread === 0 && paperTrailUnread === 0) {
-    return
-  }
-
-  const now = new Date()
-  const hour = now.getHours()
-
-  // Only show digest at 9 PM (21:00) or later
-  if (hour < 21) {
-    return
-  }
-
-  // Check if at least 23 hours since last digest
-  const lastDigestAt = await getState<number>('lastDigestAt')
-  const minInterval = 23 * 60 * 60 * 1000 // 23 hours in ms
-
-  if (lastDigestAt && (now.getTime() - lastDigestAt) < minInterval) {
-    return
-  }
-
-  // Build digest message
-  const parts: string[] = []
-  if (paperTrailUnread > 0) {
-    parts.push(`${paperTrailUnread} new in paper trail`)
-  }
-  if (feedUnread > 0) {
-    parts.push(`${feedUnread} new in feed`)
-  }
-
-  const body = parts.join(', ')
-  const destination = paperTrailUnread > 0 ? 'paper_trail' : 'feed'
-
-  await self.registration.showNotification('MereMail Daily Digest', {
-    body,
-    tag: 'daily-digest',
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
-    data: {
-      type: 'digest',
-      destination,
-    },
-  })
-
-  await setState('lastDigestAt', now.getTime())
-  console.log('[SW] Daily digest notification shown')
-}
-
 // Handle notification clicks
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
@@ -225,8 +171,6 @@ self.addEventListener('notificationclick', (event) => {
 
   if (data?.type === 'email' && data.threadId) {
     url = `/thread/${data.threadId}`
-  } else if (data?.type === 'digest' && data.destination) {
-    url = `/${data.destination}`
   }
 
   // Handle action buttons

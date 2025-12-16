@@ -3,13 +3,11 @@ import {
   getSyncDb,
   SYNC_LIMITS,
   isLocalId,
+  type SyncFolder,
   type SyncThread,
   type SyncEmail,
   type SyncContact,
   type SyncParticipant,
-  type SyncBucketMembership,
-  type Bucket,
-  type SyncBucketType,
 } from '@/utils/sync-db'
 
 // ============== API Response Types ==============
@@ -34,6 +32,7 @@ interface ApiThreadListItem {
     role: string
   }>
   snippet: string
+  folderId?: number
 }
 
 interface ApiEmail {
@@ -81,6 +80,7 @@ interface ApiThreadDetail {
   createdAt: string
   replyLaterAt: number | null
   setAsideAt: number | null
+  folderId: number | null
   emails: ApiEmail[]
   defaultFromId: number | null
 }
@@ -100,7 +100,6 @@ interface ApiContact {
   id: number
   name: string | null
   email: string
-  bucket: string | null
   isMe: boolean
   lastEmailAt: string | null
   emailCount: number
@@ -137,12 +136,20 @@ interface ApiSetAsideEmail {
 
 // ============== Sync State ==============
 
+interface ApiFolder {
+  id: number
+  name: string
+  imapFolder: string | null
+  position: number
+  unreadCount: number
+}
+
 type SyncStatus = 'idle' | 'syncing' | 'error'
 
 const syncStatus = ref<Record<string, SyncStatus>>({
-  approved: 'idle',
-  feed: 'idle',
-  paper_trail: 'idle',
+  folders: 'idle',
+  inbox: 'idle',
+  junk: 'idle',
   reply_later: 'idle',
   set_aside: 'idle',
   contacts: 'idle',
@@ -151,9 +158,6 @@ const syncStatus = ref<Record<string, SyncStatus>>({
 
 const lastSyncError = ref<string | null>(null)
 const isSyncing = ref(false)
-
-// Track which thread IDs are referenced in the current sync
-let referencedThreadIds = new Set<number>()
 
 // ============== Helper Functions ==============
 
@@ -173,11 +177,56 @@ function toSyncParticipant(p: { id: number; name: string | null; email: string; 
   }
 }
 
+// ============== Folder Syncing ==============
+
+async function syncFolders(): Promise<SyncFolder[]> {
+  const db = getSyncDb()
+  const now = Date.now()
+
+  syncStatus.value['folders'] = 'syncing'
+
+  try {
+    const response = await fetch('/api/folders')
+    if (!response.ok) throw new Error(`Failed to fetch folders: ${response.status}`)
+
+    const data = await response.json() as { folders: ApiFolder[] }
+
+    // Clear and re-populate
+    await db.folders.clear()
+
+    const folders: SyncFolder[] = data.folders.map(f => ({
+      id: f.id,
+      name: f.name,
+      imapFolder: f.imapFolder,
+      position: f.position,
+      cachedAt: now,
+    }))
+
+    if (folders.length > 0) {
+      await db.folders.bulkPut(folders)
+    }
+
+    await db.syncMeta.put({
+      key: 'folders',
+      lastSyncedAt: now,
+      itemCount: folders.length,
+    })
+
+    syncStatus.value['folders'] = 'idle'
+    console.log(`[Sync] Synced ${folders.length} folders`)
+    return folders
+  } catch (e) {
+    console.error('[Sync] Failed to sync folders:', e)
+    syncStatus.value['folders'] = 'error'
+    throw e
+  }
+}
+
 // ============== Thread Syncing ==============
 
 async function syncThreadOrDraft(
   item: ApiThreadListItem,
-  bucket: SyncBucketType,
+  folderId: number,
   now: number
 ): Promise<void> {
   const db = getSyncDb()
@@ -214,10 +263,10 @@ async function syncThreadOrDraft(
         defaultFromId: draft.sender.id,
         cachedAt: now,
         hasFullContent: true,
+        folderId,
       }
 
       await db.threads.put(syncThread)
-      referencedThreadIds.add(item.id)
 
       // Store draft as an email
       const syncEmail: SyncEmail = {
@@ -297,10 +346,10 @@ async function syncThreadOrDraft(
         defaultFromId: detail.defaultFromId,
         cachedAt: now,
         hasFullContent: true,
+        folderId: detail.folderId ?? folderId,
       }
 
       await db.threads.put(syncThread)
-      referencedThreadIds.add(item.id)
 
       // Store emails
       for (const email of detail.emails) {
@@ -358,56 +407,71 @@ async function syncThreadOrDraft(
       console.error(`[Sync] Failed to fetch thread ${item.id} details:`, e)
     }
   }
-
-  // Add bucket membership
-  const sortKey = bucket === 'reply_later'
-    ? (parseDate(item.replyLaterAt) ?? now)
-    : bucket === 'set_aside'
-      ? (parseDate(item.setAsideAt) ?? now)
-      : (parseDate(item.latestEmailAt) ?? now)
-
-  const membership: SyncBucketMembership = {
-    bucket,
-    threadId: item.id,
-    sortKey,
-  }
-
-  await db.bucketMembership.put(membership)
 }
 
-async function syncBucketThreads(bucket: Bucket): Promise<void> {
+async function syncFolderThreads(folderId: number): Promise<void> {
   const db = getSyncDb()
   const now = Date.now()
+  const folderName = folderId === 1 ? 'inbox' : 'junk'
 
-  syncStatus.value[bucket] = 'syncing'
+  syncStatus.value[folderName] = 'syncing'
 
   try {
-    // Clear existing bucket memberships for this bucket
-    await db.bucketMembership.where('bucket').equals(bucket).delete()
-
-    // Fetch thread list
-    const response = await fetch(`/api/threads?bucket=${bucket}&limit=${SYNC_LIMITS.threadsPerBucket}`)
-    if (!response.ok) throw new Error(`Failed to fetch ${bucket} threads: ${response.status}`)
+    // Fetch thread list for this folder
+    const response = await fetch(`/api/threads?folderId=${folderId}&limit=${SYNC_LIMITS.threadsPerFolder}`)
+    if (!response.ok) throw new Error(`Failed to fetch folder ${folderId} threads: ${response.status}`)
 
     const data = await response.json() as { threads: ApiThreadListItem[]; hasMore: boolean }
 
     // Process each thread/draft
     for (const item of data.threads) {
-      await syncThreadOrDraft(item, bucket, now)
+      await syncThreadOrDraft(item, folderId, now)
     }
 
     // Update sync metadata
     await db.syncMeta.put({
-      key: bucket,
+      key: folderName,
       lastSyncedAt: now,
       itemCount: data.threads.length,
     })
 
-    syncStatus.value[bucket] = 'idle'
-    console.log(`[Sync] Synced ${data.threads.length} ${bucket} threads/drafts`)
+    syncStatus.value[folderName] = 'idle'
+    console.log(`[Sync] Synced ${data.threads.length} ${folderName} threads/drafts`)
   } catch (e) {
-    console.error(`[Sync] Failed to sync ${bucket}:`, e)
-    syncStatus.value[bucket] = 'error'
+    console.error(`[Sync] Failed to sync folder ${folderId}:`, e)
+    syncStatus.value[folderName] = 'error'
+    throw e
+  }
+}
+
+async function syncReplyLaterThreads(): Promise<void> {
+  const db = getSyncDb()
+  const now = Date.now()
+
+  syncStatus.value['reply_later'] = 'syncing'
+
+  try {
+    const response = await fetch(`/api/threads?queue=reply_later&limit=${SYNC_LIMITS.threadsPerFolder}`)
+    if (!response.ok) throw new Error(`Failed to fetch reply later threads: ${response.status}`)
+
+    const data = await response.json() as { threads: ApiThreadListItem[]; hasMore: boolean }
+
+    for (const item of data.threads) {
+      // Reply later threads keep their original folder
+      await syncThreadOrDraft(item, item.folderId ?? 1, now)
+    }
+
+    await db.syncMeta.put({
+      key: 'reply_later',
+      lastSyncedAt: now,
+      itemCount: data.threads.length,
+    })
+
+    syncStatus.value['reply_later'] = 'idle'
+    console.log(`[Sync] Synced ${data.threads.length} reply later threads`)
+  } catch (e) {
+    console.error('[Sync] Failed to sync reply later:', e)
+    syncStatus.value['reply_later'] = 'error'
     throw e
   }
 }
@@ -419,9 +483,6 @@ async function syncSetAsideEmails(): Promise<void> {
   syncStatus.value['set_aside'] = 'syncing'
 
   try {
-    // Clear existing set_aside memberships
-    await db.bucketMembership.where('bucket').equals('set_aside').delete()
-
     const response = await fetch('/api/set-aside?limit=100')
     if (!response.ok) throw new Error(`Failed to fetch Set Aside: ${response.status}`)
 
@@ -460,10 +521,10 @@ async function syncSetAsideEmails(): Promise<void> {
         defaultFromId: null,
         cachedAt: now,
         hasFullContent: true,
+        folderId: 1, // Set aside threads default to Inbox folder
       }
 
       await db.threads.put(syncThread)
-      referencedThreadIds.add(threadId)
 
       for (const email of emails) {
         const syncEmail: SyncEmail = {
@@ -515,14 +576,6 @@ async function syncSetAsideEmails(): Promise<void> {
           }
         }
       }
-
-      // Add bucket membership
-      const membership: SyncBucketMembership = {
-        bucket: 'set_aside',
-        threadId,
-        sortKey: parseDate(latestEmail.sentAt) ?? now,
-      }
-      await db.bucketMembership.put(membership)
     }
 
     await db.syncMeta.put({
@@ -549,8 +602,8 @@ async function syncContacts(): Promise<void> {
   syncStatus.value['contacts'] = 'syncing'
 
   try {
-    // Only fetch approved contacts
-    const response = await fetch('/api/contacts?view=approved&all=true&limit=5000')
+    // Fetch all contacts
+    const response = await fetch('/api/contacts?all=true&limit=5000')
     if (!response.ok) throw new Error(`Failed to fetch contacts: ${response.status}`)
 
     const data = await response.json() as {
@@ -572,7 +625,6 @@ async function syncContacts(): Promise<void> {
       id: c.id,
       name: c.name,
       email: c.email,
-      bucket: c.bucket as Bucket | null,
       isMe: c.isMe,
       lastEmailAt: parseDate(c.lastEmailAt),
       emailCount: c.emailCount,
@@ -586,7 +638,6 @@ async function syncContacts(): Promise<void> {
           id: me.id,
           name: me.name,
           email: me.email,
-          bucket: null,
           isMe: true,
           lastEmailAt: null,
           emailCount: 0,
@@ -606,7 +657,7 @@ async function syncContacts(): Promise<void> {
     })
 
     syncStatus.value['contacts'] = 'idle'
-    console.log(`[Sync] Synced ${contacts.length} approved contacts + identities`)
+    console.log(`[Sync] Synced ${contacts.length} contacts + identities`)
   } catch (e) {
     console.error('[Sync] Failed to sync contacts:', e)
     syncStatus.value['contacts'] = 'error'
@@ -666,42 +717,22 @@ export async function getCachedAttachmentBlob(attachmentId: number): Promise<Blo
 async function cleanupUnreferencedData(): Promise<void> {
   const db = getSyncDb()
 
-  // Get all thread IDs that have bucket memberships
-  const memberships = await db.bucketMembership.toArray()
-  const activeThreadIds = new Set(memberships.map(m => m.threadId))
-
-  // Get all threads and find unreferenced ones
+  // Get all threads
   const allThreads = await db.threads.toArray()
-  const unreferencedThreadIds = allThreads
-    .filter(t => !activeThreadIds.has(t.id))
-    .map(t => t.id)
+  const activeThreadIds = new Set(allThreads.map(t => t.id))
 
-  if (unreferencedThreadIds.length > 0) {
-    console.log(`[Sync] Cleaning up ${unreferencedThreadIds.length} unreferenced threads`)
-
-    // Delete unreferenced threads
-    await db.threads.bulkDelete(unreferencedThreadIds)
-
-    // Delete emails belonging to unreferenced threads
-    for (const threadId of unreferencedThreadIds) {
-      await db.emails.where('threadId').equals(threadId).delete()
-    }
-
-    // Also delete standalone draft emails (threadId = null) if their "thread" entry is gone
-    const standaloneDraftEmails = await db.emails.where('threadId').equals(null as unknown as number).toArray()
-    const orphanedDraftIds = standaloneDraftEmails
-      .filter(e => !activeThreadIds.has(e.id)) // For standalone drafts, email.id === thread.id
-      .map(e => e.id)
-
-    if (orphanedDraftIds.length > 0) {
-      await db.emails.bulkDelete(orphanedDraftIds)
+  // Delete emails belonging to deleted threads
+  const allEmails = await db.emails.toArray()
+  for (const email of allEmails) {
+    if (email.threadId && !activeThreadIds.has(email.threadId)) {
+      await db.emails.delete(email.id)
     }
   }
 
   // Clean up orphaned attachment blobs
-  const allEmails = await db.emails.toArray()
+  const remainingEmails = await db.emails.toArray()
   const activeAttachmentIds = new Set<number>()
-  for (const email of allEmails) {
+  for (const email of remainingEmails) {
     for (const att of email.attachments) {
       activeAttachmentIds.add(att.id)
     }
@@ -779,19 +810,13 @@ async function syncPendingChanges(): Promise<void> {
             await db.emails.put({ ...email, id: result.id })
 
             if (!isReplyDraft) {
-              // Standalone draft - update the fake thread entry and bucket membership
+              // Standalone draft - update the fake thread entry
               const thread = await db.threads.get(oldId)
               await db.threads.delete(oldId)
-              await db.bucketMembership.where('threadId').equals(oldId).delete()
 
               if (thread) {
                 await db.threads.put({ ...thread, id: result.id })
               }
-              await db.bucketMembership.put({
-                bucket: 'approved',
-                threadId: result.id,
-                sortKey: email.cachedAt,
-              })
             }
 
             // Update any pending send entries that reference the old ID
@@ -895,19 +920,13 @@ async function syncPendingChanges(): Promise<void> {
             await db.emails.put({ ...email, id: serverId })
 
             if (!isReplyDraft) {
-              // Standalone draft - update the fake thread entry and bucket membership
+              // Standalone draft - update the fake thread entry
               const thread = await db.threads.get(oldId)
               await db.threads.delete(oldId)
-              await db.bucketMembership.where('threadId').equals(oldId).delete()
 
               if (thread) {
                 await db.threads.put({ ...thread, id: serverId })
               }
-              await db.bucketMembership.put({
-                bucket: 'approved',
-                threadId: serverId,
-                sortKey: email.cachedAt,
-              })
             }
 
             // Remove the create pending entry if there was one
@@ -933,7 +952,6 @@ async function syncPendingChanges(): Promise<void> {
 
               // Remove the standalone draft entry from threads table
               await db.threads.delete(serverId)
-              await db.bucketMembership.where('threadId').equals(serverId).delete()
 
               // Create a proper thread entry for the new thread
               await db.threads.put({
@@ -953,13 +971,7 @@ async function syncPendingChanges(): Promise<void> {
                 cachedAt: Date.now(),
                 defaultFromId: email.sender?.id || null,
                 hasFullContent: false,
-              })
-
-              // Add bucket membership for the new thread
-              await db.bucketMembership.put({
-                bucket: 'approved',
-                threadId: sendResult.threadId,
-                sortKey: Date.now(),
+                folderId: 1, // New threads go to Inbox
               })
 
               console.log(`[Sync] Created thread ${sendResult.threadId} for standalone draft ${serverId}`)
@@ -1022,11 +1034,10 @@ async function cleanupOrphanedDrafts(): Promise<void> {
 
     let deletedCount = 0
 
-    // Delete orphaned draft threads and their bucket memberships
+    // Delete orphaned draft threads
     for (const thread of draftThreads) {
       if (!existingSet.has(thread.id)) {
         await db.threads.delete(thread.id)
-        await db.bucketMembership.where('threadId').equals(thread.id).delete()
         deletedCount++
       }
     }
@@ -1057,7 +1068,6 @@ export async function syncAll(): Promise<void> {
 
   isSyncing.value = true
   lastSyncError.value = null
-  referencedThreadIds = new Set<number>()
 
   console.log('[Sync] Starting full sync...')
 
@@ -1068,15 +1078,19 @@ export async function syncAll(): Promise<void> {
     // Sync pending changes first (push local changes before pulling)
     await syncPendingChanges()
 
+    // Sync folders first (we need folder info for thread syncing)
+    const folders = await syncFolders()
+
     // Sync contacts
     await syncContacts()
 
-    // Sync all buckets in parallel
+    // Sync each folder's threads dynamically
+    const folderSyncPromises = folders.map(f => syncFolderThreads(f.id))
+
+    // Sync all folders and queues in parallel
     await Promise.allSettled([
-      syncBucketThreads('approved'),
-      syncBucketThreads('feed'),
-      syncBucketThreads('paper_trail'),
-      syncBucketThreads('reply_later'),
+      ...folderSyncPromises,
+      syncReplyLaterThreads(),
       syncSetAsideEmails(),
     ])
 
@@ -1094,26 +1108,14 @@ export async function syncAll(): Promise<void> {
 
 // ============== Data Retrieval Functions ==============
 
-export async function getThreadsForBucket(bucket: SyncBucketType): Promise<SyncThread[]> {
+export async function getFolders(): Promise<SyncFolder[]> {
   const db = getSyncDb()
+  return db.folders.orderBy('position').toArray()
+}
 
-  // Get thread IDs for this bucket, sorted by sortKey descending
-  const memberships = await db.bucketMembership
-    .where('bucket')
-    .equals(bucket)
-    .toArray()
-
-  // Sort by sortKey descending (most recent first)
-  memberships.sort((a, b) => b.sortKey - a.sortKey)
-
-  // Fetch threads
-  const threads: SyncThread[] = []
-  for (const m of memberships) {
-    const thread = await db.threads.get(m.threadId)
-    if (thread) threads.push(thread)
-  }
-
-  return threads
+export async function getThreadsForFolder(folderId: number): Promise<SyncThread[]> {
+  const db = getSyncDb()
+  return db.threads.filter(t => t.folderId === folderId).toArray()
 }
 
 export async function getThread(threadId: number): Promise<SyncThread | undefined> {
@@ -1177,9 +1179,9 @@ export async function getSyncMeta(key: string): Promise<{ lastSyncedAt: number; 
 
 export async function clearSyncData(): Promise<void> {
   const db = getSyncDb()
+  await db.folders.clear()
   await db.threads.clear()
   await db.emails.clear()
-  await db.bucketMembership.clear()
   await db.attachmentBlobs.clear()
   await db.contacts.clear()
   await db.syncMeta.clear()
@@ -1197,14 +1199,16 @@ export function useSync() {
 
     // Actions
     syncAll,
+    syncFolders,
     syncContacts,
-    syncBucketThreads,
+    syncFolderThreads,
     syncSetAsideEmails,
     syncPendingChanges,
     clearSyncData,
 
     // Retrieval
-    getThreadsForBucket,
+    getFolders,
+    getThreadsForFolder,
     getThread,
     getThreadEmails,
     getStandaloneDraftEmail,

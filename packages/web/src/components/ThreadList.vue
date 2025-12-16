@@ -18,7 +18,8 @@ interface Thread {
 }
 
 const props = defineProps<{
-  bucket?: string
+  folderId?: number
+  queue?: 'reply_later' | 'set_aside'
   emptyMessage?: string
 }>()
 
@@ -38,7 +39,8 @@ async function loadThreads() {
 
   try {
     const result = await getThreads({
-      bucket: props.bucket,
+      folderId: props.folderId,
+      queue: props.queue,
       offset: 0,
     })
     threads.value = result.data.threads
@@ -61,7 +63,8 @@ async function loadMore() {
   loadingMore.value = true
   try {
     const result = await getThreads({
-      bucket: props.bucket,
+      folderId: props.folderId,
+      queue: props.queue,
       offset: threads.value.length,
     })
     threads.value = [...threads.value, ...result.data.threads]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import SearchModal from '@/components/SearchModal.vue'
 import { getMeContacts, createDraft } from '@/utils/api'
@@ -7,19 +7,6 @@ import { getMeContacts, createDraft } from '@/utils/api'
 const router = useRouter()
 const searchOpen = ref(false)
 const composing = ref(false)
-const unscreenedCount = ref(0)
-
-async function loadUnscreenedCount() {
-  try {
-    const response = await fetch('/api/contacts?view=screener&limit=1&counts=true')
-    if (response.ok) {
-      const data = await response.json()
-      unscreenedCount.value = data.counts?.unsorted || 0
-    }
-  } catch (e) {
-    console.error('Failed to load unscreened count:', e)
-  }
-}
 
 async function compose() {
   if (composing.value) return
@@ -46,10 +33,6 @@ async function compose() {
     composing.value = false
   }
 }
-
-onMounted(() => {
-  loadUnscreenedCount()
-})
 </script>
 
 <template>
@@ -65,7 +48,6 @@ onMounted(() => {
     <RouterLink to="/contacts" class="nav-pill contacts">
       <span class="nav-icon">👤</span>
       <span class="nav-label">Contacts</span>
-      <span v-if="unscreenedCount > 0" class="nav-badge">{{ unscreenedCount }}</span>
     </RouterLink>
     <RouterLink to="/attachments" class="nav-pill attachments">
       <span class="nav-icon">📎</span>

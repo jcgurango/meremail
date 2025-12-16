@@ -15,7 +15,6 @@ import {
   type SyncThread,
   type SyncEmail,
   type SyncContact,
-  type SyncBucketType,
   type SyncParticipant,
 } from './sync-db'
 import { registerBackgroundSync } from '@/composables/useOffline'
@@ -23,10 +22,7 @@ import { registerBackgroundSync } from '@/composables/useOffline'
 // ============== Types ==============
 
 interface UnreadCounts {
-  inbox: number
-  feed: number
-  paper_trail: number
-  quarantine: number
+  folders: { [folderId: number]: number }
   reply_later: number
   set_aside: number
 }
@@ -105,7 +101,6 @@ interface Contact {
   id: number
   name: string | null
   email: string
-  bucket?: string | null
   isMe?: boolean
 }
 
@@ -141,57 +136,97 @@ export async function getUnreadCounts(): Promise<{ data: UnreadCounts; fromCache
   // Fallback to sync cache - compute from synced threads
   const db = getSyncDb()
   const threads = await db.threads.toArray()
-  const memberships = await db.bucketMembership.toArray()
-
-  // Build a map of threadId -> buckets
-  const threadBuckets = new Map<number, Set<string>>()
-  for (const m of memberships) {
-    if (!threadBuckets.has(m.threadId)) {
-      threadBuckets.set(m.threadId, new Set())
-    }
-    threadBuckets.get(m.threadId)!.add(m.bucket)
-  }
 
   const counts: UnreadCounts = {
-    inbox: 0,
-    feed: 0,
-    paper_trail: 0,
-    quarantine: 0,
+    folders: {},
     reply_later: 0,
     set_aside: 0,
   }
 
   for (const thread of threads) {
-    const buckets = threadBuckets.get(thread.id)
-    if (!buckets) continue
-
-    if (buckets.has('approved')) counts.inbox += thread.unreadCount
-    if (buckets.has('feed')) counts.feed += thread.unreadCount
-    if (buckets.has('paper_trail')) counts.paper_trail += thread.unreadCount
-    if (buckets.has('quarantine')) counts.quarantine += thread.unreadCount
-    if (buckets.has('reply_later')) counts.reply_later += thread.unreadCount
-    if (buckets.has('set_aside')) counts.set_aside += thread.unreadCount
+    // Count by folder
+    if (thread.folderId) {
+      counts.folders[thread.folderId] = (counts.folders[thread.folderId] || 0) + thread.unreadCount
+    }
+    // Count reply later (threads with replyLaterAt set)
+    if (thread.replyLaterAt) {
+      counts.reply_later += thread.unreadCount
+    }
+    // Count set aside (threads with setAsideAt set)
+    if (thread.setAsideAt) {
+      counts.set_aside += thread.unreadCount
+    }
   }
 
   return { data: counts, fromCache: true }
 }
 
+interface Folder {
+  id: number
+  name: string
+  imapFolder: string | null
+  position: number
+  unreadCount: number
+}
+
 /**
- * GET /api/threads?bucket=X&offset=0
- * GET /api/threads?replyLater=true&offset=0
+ * GET /api/folders
+ */
+export async function getFolders(): Promise<{ data: { folders: Folder[] }; fromCache: boolean }> {
+  // Try network first
+  const networkResult = await tryFetch<{ folders: Folder[] }>('/api/folders')
+  if (networkResult) return networkResult
+
+  // Fallback to sync cache - use synced folder metadata
+  const db = getSyncDb()
+  const syncedFolders = await db.folders.orderBy('position').toArray()
+  const threads = await db.threads.toArray()
+
+  // Count unreads per folder
+  const folderCounts: Record<number, number> = {}
+  for (const thread of threads) {
+    if (thread.folderId) {
+      folderCounts[thread.folderId] = (folderCounts[thread.folderId] || 0) + thread.unreadCount
+    }
+  }
+
+  // Use synced folders if available, otherwise fallback to defaults
+  let folders: Folder[]
+  if (syncedFolders.length > 0) {
+    folders = syncedFolders.map(f => ({
+      id: f.id,
+      name: f.name,
+      imapFolder: f.imapFolder,
+      position: f.position,
+      unreadCount: folderCounts[f.id] || 0,
+    }))
+  } else {
+    // Default folders if nothing synced yet
+    folders = [
+      { id: 1, name: 'Inbox', imapFolder: 'INBOX', position: 0, unreadCount: folderCounts[1] || 0 },
+      { id: 2, name: 'Junk', imapFolder: 'Junk', position: 1, unreadCount: folderCounts[2] || 0 },
+    ]
+  }
+
+  return { data: { folders }, fromCache: true }
+}
+
+/**
+ * GET /api/threads?folderId=X&offset=0
+ * GET /api/threads?queue=reply_later&offset=0
  *
  * Only supports offset=0 (first page) from cache.
  */
 export async function getThreads(params: {
-  bucket?: string
-  replyLater?: boolean
+  folderId?: number
+  queue?: 'reply_later' | 'set_aside'
   offset?: number
   limit?: number
 }): Promise<{ data: { threads: ThreadListItem[]; hasMore: boolean }; fromCache: boolean }> {
   // Build URL
   const searchParams = new URLSearchParams()
-  if (params.bucket) searchParams.set('bucket', params.bucket)
-  if (params.replyLater) searchParams.set('replyLater', 'true')
+  if (params.folderId !== undefined) searchParams.set('folderId', String(params.folderId))
+  if (params.queue) searchParams.set('queue', params.queue)
   if (params.offset !== undefined) searchParams.set('offset', String(params.offset))
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit))
 
@@ -206,35 +241,39 @@ export async function getThreads(params: {
     return { data: { threads: [], hasMore: false }, fromCache: true }
   }
 
-  // Determine which bucket to query
-  let syncBucket: SyncBucketType
-  if (params.replyLater) {
-    syncBucket = 'reply_later'
-  } else if (params.bucket) {
-    syncBucket = params.bucket as SyncBucketType
-  } else {
-    syncBucket = 'approved'
-  }
-
   // Get from sync cache
   const db = getSyncDb()
-  const memberships = await db.bucketMembership
-    .where('bucket')
-    .equals(syncBucket)
-    .toArray()
+  let allThreads = await db.threads.toArray()
 
-  // Load all threads first
-  const threads: ThreadListItem[] = []
-  for (const m of memberships) {
-    const thread = await db.threads.get(m.threadId)
-    if (thread) {
-      threads.push(syncThreadToListItem(thread))
-    }
+  // Filter threads based on params
+  let filteredThreads: typeof allThreads
+  if (params.queue === 'reply_later') {
+    filteredThreads = allThreads.filter(t => t.replyLaterAt !== null)
+  } else if (params.queue === 'set_aside') {
+    filteredThreads = allThreads.filter(t => t.setAsideAt !== null)
+  } else if (params.folderId !== undefined) {
+    filteredThreads = allThreads.filter(t => t.folderId === params.folderId)
+  } else {
+    // Default to Inbox (folderId=1)
+    filteredThreads = allThreads.filter(t => t.folderId === 1)
   }
 
-  // Sort based on bucket type (matching server sorting logic)
-  if (syncBucket === 'approved') {
-    // Approved bucket: drafts-only first, then unread, then by date
+  const threads = filteredThreads.map(syncThreadToListItem)
+
+  // Sort based on query type (matching server sorting logic)
+  if (params.queue === 'reply_later') {
+    // Reply later: sort by replyLaterAt, then by date
+    threads.sort((a, b) => {
+      const aReplyLater = a.replyLaterAt ? new Date(a.replyLaterAt).getTime() : Infinity
+      const bReplyLater = b.replyLaterAt ? new Date(b.replyLaterAt).getTime() : Infinity
+      if (aReplyLater !== bReplyLater) return aReplyLater - bReplyLater
+
+      const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
+      const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
+      return bDate - aDate
+    })
+  } else {
+    // Default: drafts-only first, then unread, then by date
     threads.sort((a, b) => {
       // Drafts-only threads first (draftCount > 0 && draftCount === totalCount)
       const aIsDraftOnly = a.draftCount > 0 && a.draftCount === a.totalCount ? 1 : 0
@@ -247,28 +286,6 @@ export async function getThreads(params: {
       if (aHasUnread !== bHasUnread) return bHasUnread - aHasUnread
 
       // Then by date (newest first)
-      const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
-      const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
-      return bDate - aDate
-    })
-  } else if (syncBucket === 'reply_later') {
-    // Reply later: sort by replyLaterAt, then by date
-    threads.sort((a, b) => {
-      const aReplyLater = a.replyLaterAt ? new Date(a.replyLaterAt).getTime() : Infinity
-      const bReplyLater = b.replyLaterAt ? new Date(b.replyLaterAt).getTime() : Infinity
-      if (aReplyLater !== bReplyLater) return aReplyLater - bReplyLater
-
-      const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
-      const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
-      return bDate - aDate
-    })
-  } else {
-    // Other buckets: unread first, then by date
-    threads.sort((a, b) => {
-      const aHasUnread = a.unreadCount > 0 ? 1 : 0
-      const bHasUnread = b.unreadCount > 0 ? 1 : 0
-      if (aHasUnread !== bHasUnread) return bHasUnread - aHasUnread
-
       const aDate = a.latestEmailAt ? new Date(a.latestEmailAt).getTime() : 0
       const bDate = b.latestEmailAt ? new Date(b.latestEmailAt).getTime() : 0
       return bDate - aDate
@@ -513,7 +530,6 @@ export async function searchContacts(query: string, limit = 20): Promise<{ data:
         id: c.id,
         name: c.name,
         email: c.email,
-        bucket: c.bucket,
         isMe: c.isMe,
       })),
       hasMore: false,
@@ -642,24 +658,18 @@ export async function getSetAsideEmails(exclude: number[] = []): Promise<{
   const db = getSyncDb()
 
   // Get threads that have setAsideAt set
-  const memberships = await db.bucketMembership
-    .where('bucket')
-    .equals('set_aside')
-    .toArray()
+  const setAsideThreads = await db.threads.filter(t => t.setAsideAt !== null).toArray()
 
   const emails: SetAsideEmail[] = []
 
-  for (const m of memberships) {
-    const thread = await db.threads.get(m.threadId)
-    if (!thread) continue
-
+  for (const thread of setAsideThreads) {
     // Get all emails for this thread
-    const threadEmails = await db.emails.where('threadId').equals(m.threadId).toArray()
+    const threadEmails = await db.emails.where('threadId').equals(thread.id).toArray()
 
     for (const e of threadEmails) {
       emails.push({
         id: e.id,
-        threadId: m.threadId,
+        threadId: thread.id,
         subject: e.subject,
         content: e.contentHtml || e.contentText,
         sentAt: e.sentAt ? new Date(e.sentAt).toISOString() : null,
@@ -952,7 +962,6 @@ export async function deleteDraft(draftId: number): Promise<{ pending: boolean }
   // Remove from sync cache immediately
   await db.emails.delete(draftId)
   await db.threads.delete(draftId)
-  await db.bucketMembership.where('threadId').equals(draftId).delete()
 
   // Remove any pending create/update syncs for this draft
   const pendingToDelete = await db.pendingSync
@@ -1086,6 +1095,7 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
             cachedAt: now,
             defaultFromId: email.sender?.id || null,
             hasFullContent: false,
+            folderId: 1, // New threads go to Inbox
           })
         }
 
@@ -1188,6 +1198,7 @@ async function storeDraftInCache(
       defaultFromId: draft.sender?.id ?? null,
       cachedAt: draft.cachedAt,
       hasFullContent: true,
+      folderId: 1, // Standalone drafts go to Inbox
     }
     await db.threads.put(thread)
 
@@ -1215,13 +1226,6 @@ async function storeDraftInCache(
       lastSendError: null,
     }
     await db.emails.put(email)
-
-    // Add to approved bucket (standalone drafts show in inbox)
-    await db.bucketMembership.put({
-      bucket: 'approved',
-      threadId: draft.id,
-      sortKey: draft.cachedAt,
-    })
   }
 }
 

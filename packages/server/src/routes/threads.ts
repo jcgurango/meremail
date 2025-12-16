@@ -8,6 +8,7 @@ import {
   emailContacts,
   emailThreadContacts,
   attachments,
+  folders,
 } from '@meremail/shared'
 import { proxyImagesInHtml } from '../utils/proxy-images'
 import { replaceCidReferences } from '../utils/replace-cid'
@@ -35,12 +36,14 @@ function stripHtml(html: string): string {
 threadsRoutes.get('/', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '25'), 100)
   const offset = parseInt(c.req.query('offset') || '0')
-  const bucket = c.req.query('bucket') || 'approved'
+  const folderIdParam = c.req.query('folderId')
+  const queue = c.req.query('queue') // 'reply_later' or 'set_aside'
 
   let whereClause
   let orderByClause
+  let needsContactJoin = false
 
-  if (bucket === 'reply_later') {
+  if (queue === 'reply_later') {
     whereClause = sql`${emailThreads.replyLaterAt} IS NOT NULL OR EXISTS (
       SELECT 1 FROM ${emails} WHERE ${emails.threadId} = ${emailThreads.id} AND ${emails.status} = 'draft'
     )`
@@ -48,16 +51,18 @@ threadsRoutes.get('/', async (c) => {
       asc(sql`COALESCE(${emailThreads.replyLaterAt}, sort_date)`),
       desc(sql`sort_date`)
     ]
-  } else if (bucket === 'approved') {
-    whereClause = sql`${contacts.bucket} = 'approved' OR ${contacts.isMe} = 1`
+  } else if (queue === 'set_aside') {
+    whereClause = sql`${emailThreads.setAsideAt} IS NOT NULL`
     orderByClause = [
-      desc(sql`CASE WHEN draft_count > 0 AND draft_count = total_count THEN 1 ELSE 0 END`),
-      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),
+      desc(emailThreads.setAsideAt),
       desc(sql`sort_date`)
     ]
   } else {
-    whereClause = sql`${contacts.bucket} = ${bucket}`
+    // Filter by folder
+    const folderId = folderIdParam ? parseInt(folderIdParam) : 1 // Default to Inbox (id=1)
+    whereClause = eq(emailThreads.folderId, folderId)
     orderByClause = [
+      desc(sql`CASE WHEN draft_count > 0 AND draft_count = total_count THEN 1 ELSE 0 END`),
       desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),
       desc(sql`sort_date`)
     ]
@@ -70,6 +75,7 @@ threadsRoutes.get('/', async (c) => {
       createdAt: emailThreads.createdAt,
       replyLaterAt: emailThreads.replyLaterAt,
       setAsideAt: emailThreads.setAsideAt,
+      folderId: emailThreads.folderId,
       latestEmailAt: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}, ${emails.createdAt}))`.as('latest_email_at'),
       sortDate: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}, ${emails.createdAt}))`.as('sort_date'),
       unreadCount: sql<number>`SUM(CASE WHEN ${emails.readAt} IS NULL THEN 1 ELSE 0 END)`.as('unread_count'),
@@ -79,7 +85,6 @@ threadsRoutes.get('/', async (c) => {
     })
     .from(emailThreads)
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
-    .innerJoin(contacts, eq(contacts.id, emailThreads.creatorId))
     .where(whereClause)
     .groupBy(emailThreads.id)
     .orderBy(...orderByClause)
@@ -146,9 +151,10 @@ threadsRoutes.get('/', async (c) => {
     }
   })
 
-  // For approved bucket, include standalone drafts
+  // For Inbox folder, include standalone drafts
   let standaloneDrafts: any[] = []
-  if (bucket === 'approved' && offset === 0) {
+  const isInboxFolder = !queue && (!folderIdParam || parseInt(folderIdParam) === 1)
+  if (isInboxFolder && offset === 0) {
     const draftsRaw = db
       .select({
         id: emails.id,

@@ -14,6 +14,7 @@ import { attachmentsRoutes } from './routes/attachments'
 import { uploadsRoutes } from './routes/uploads'
 import { searchRoutes } from './routes/search'
 import { miscRoutes } from './routes/misc'
+import { foldersRoutes } from './routes/folders'
 import { authRoutes, requireAuth } from './routes/auth'
 import { startSendQueueProcessor } from './services/send-queue'
 import { startDailyScheduler } from './services/daily-scheduler'
@@ -41,6 +42,7 @@ app.route('/api/drafts', draftsRoutes)
 app.route('/api/attachments', attachmentsRoutes)
 app.route('/api/uploads', uploadsRoutes)
 app.route('/api/search', searchRoutes)
+app.route('/api/folders', foldersRoutes)
 app.route('/api', miscRoutes)
 
 // In production, serve the Vue app from packages/web/dist
@@ -75,7 +77,7 @@ serve({ fetch: app.fetch, port }, (info) => {
   // Start background send queue processor
   startSendQueueProcessor()
 
-  // Start daily scheduler (backups and quarantine cleanup)
+  // Start daily scheduler (backups)
   startDailyScheduler()
 
   // Start IMAP sync (fetch new emails periodically)
