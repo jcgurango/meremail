@@ -9,8 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
     "@tiptap/core": "^2.11.7",
     "@tiptap/extension-image": "^2.11.7",
     "@tiptap/extension-link": "^2.11.7",
@@ -19,14 +17,18 @@
     "@tiptap/starter-kit": "^2.11.7",
     "@tiptap/vue-3": "^2.11.7",
     "dexie": "^4.0.10",
-    "dompurify": "^3.2.3"
+    "dompurify": "^3.2.3",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.3",
     "@types/dompurify": "^3.2.0",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "typescript": "^5.9.3",
     "vite": "^6.0.5",
     "vite-plugin-pwa": "^0.21.1",
     "vue-tsc": "^2.2.0",
-    "typescript": "^5.9.3"
+    "workbox-core": "^7.4.0",
+    "workbox-precaching": "^7.4.0"
   }
 }

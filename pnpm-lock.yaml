@@ -134,6 +134,12 @@ importers:
       vue-tsc:
         specifier: ^2.2.0
         version: 2.2.12(typescript@5.9.3)
+      workbox-core:
+        specifier: ^7.4.0
+        version: 7.4.0
+      workbox-precaching:
+        specifier: ^7.4.0
+        version: 7.4.0
 
 packages:
 

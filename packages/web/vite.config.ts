@@ -8,6 +8,9 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       manifest: {
         name: 'MereMail',
         short_name: 'MereMail',
@@ -26,8 +29,7 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Only precache static assets - API data is handled by IndexedDB sync
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
       },
       devOptions: {

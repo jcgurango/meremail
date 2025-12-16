@@ -18,6 +18,7 @@ import {
   type SyncBucketType,
   type SyncParticipant,
 } from './sync-db'
+import { registerBackgroundSync } from '@/composables/useOffline'
 
 // ============== Types ==============
 
@@ -780,6 +781,7 @@ export async function createDraft(data: DraftData): Promise<DraftResult> {
     action: 'create',
     createdAt: now,
   })
+  registerBackgroundSync()
 
   return { draftId: localId, pending: true }
 }
@@ -884,6 +886,7 @@ export async function updateDraft(
       action: isLocalId(draftId) ? 'create' : 'update',
       createdAt: now,
     })
+    registerBackgroundSync()
   }
 
   return { pending: true }
@@ -933,6 +936,7 @@ export async function deleteDraft(draftId: number): Promise<{ pending: boolean }
       action: 'delete',
       createdAt: now,
     })
+    registerBackgroundSync()
 
     return { pending: true }
   }
@@ -996,6 +1000,7 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
       action: 'send',
       createdAt: now,
     })
+    registerBackgroundSync()
     return { pending: true }
   }
 
@@ -1028,6 +1033,7 @@ export async function sendDraft(draftId: number): Promise<{ pending: boolean }> 
     action: 'send',
     createdAt: now,
   })
+  registerBackgroundSync()
 
   return { pending: true }
 }
