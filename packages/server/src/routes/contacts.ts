@@ -452,8 +452,8 @@ contactsRoutes.get('/:id', async (c) => {
           id: email.id,
           subject: email.subject,
           content,
-          sentAt: email.sentAt,
-          receivedAt: email.receivedAt,
+          sentAt: new Date(email.sentAt * 1000),
+          receivedAt: new Date(email.receivedAt * 1000),
           isRead: !!email.readAt,
           sender: sender ? {
             id: sender.id,
