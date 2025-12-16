@@ -1,0 +1,46 @@
+# Dependencies (will be installed fresh in container)
+node_modules/
+**/node_modules/
+
+# Build outputs (web will be built in container)
+dist/
+**/dist/
+*.tsbuildinfo
+
+# Data (should be mounted as volume)
+data/
+
+# Environment (should be passed to container)
+.env
+.env.local
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+*.md
+
+# Development
+dev-dist/
+.nuxt/
+.output/

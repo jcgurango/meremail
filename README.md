@@ -97,6 +97,10 @@ pnpm start
 
 In production, the server serves both the API and the built frontend on port 3000.
 
+### Docker
+
+You can just pull the `jcgurango/meremail:latest` image from dockerhub.
+
 ## Configuration
 
 Edit `.env` with your settings:
