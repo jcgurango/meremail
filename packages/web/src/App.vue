@@ -1,22 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import OfflineIndicator from '@/components/OfflineIndicator.vue'
 import BottomNav from '@/components/BottomNav.vue'
+import { setNavigationHandler, initializeNotifications } from '@/composables/useOffline'
 
 const route = useRoute()
+const router = useRouter()
 
 const showBottomNav = computed(() => {
   return ['/', '/reply-later', '/set-aside', '/feed', '/paper-trail', '/quarantine'].includes(route.path)
 })
 
 onMounted(async () => {
+  // Set up navigation handler for service worker notifications
+  setNavigationHandler((url: string) => {
+    router.push(url)
+  })
+
   // Initialize new sync system (proactively fetches all data)
   try {
     const { initializeSync } = await import('@/composables/useSyncInit')
     initializeSync()
   } catch (e) {
     console.error('Failed to initialize sync:', e)
+  }
+
+  // Initialize notifications (request permission and register periodic sync)
+  try {
+    await initializeNotifications()
+  } catch (e) {
+    console.error('Failed to initialize notifications:', e)
   }
 })
 </script>

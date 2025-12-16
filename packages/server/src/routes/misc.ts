@@ -341,6 +341,68 @@ miscRoutes.post('/emails/mark-read', async (c) => {
   return c.json({ success: true, count: ids.length })
 })
 
+// GET /api/notifications/pending
+// Returns unread emails from approved senders for notifications
+miscRoutes.get('/notifications/pending', async (c) => {
+  // Get unread emails from approved threads (thread creator is approved or isMe)
+  const unreadEmails = db
+    .select({
+      id: emails.id,
+      threadId: emails.threadId,
+      subject: emails.subject,
+      contentText: emails.contentText,
+      sentAt: emails.sentAt,
+      senderName: contacts.name,
+      senderEmail: contacts.email,
+    })
+    .from(emails)
+    .innerJoin(emailThreads, eq(emails.threadId, emailThreads.id))
+    .innerJoin(contacts, eq(contacts.id, emails.senderId))
+    .innerJoin(
+      db.select({ id: contacts.id, bucket: contacts.bucket, isMe: contacts.isMe })
+        .from(contacts)
+        .as('creator'),
+      sql`creator.id = ${emailThreads.creatorId}`
+    )
+    .where(and(
+      isNull(emails.readAt),
+      eq(contacts.isMe, false), // Don't notify for own emails
+      sql`(creator.bucket = 'approved' OR creator.is_me = 1)`
+    ))
+    .orderBy(desc(emails.sentAt))
+    .limit(50)
+    .all()
+
+  // Get unread counts for digest
+  const feedUnread = db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(emails)
+    .innerJoin(contacts, eq(contacts.id, emails.senderId))
+    .where(and(eq(contacts.bucket, 'feed'), isNull(emails.readAt)))
+    .get()
+
+  const paperTrailUnread = db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(emails)
+    .innerJoin(contacts, eq(contacts.id, emails.senderId))
+    .where(and(eq(contacts.bucket, 'paper_trail'), isNull(emails.readAt)))
+    .get()
+
+  return c.json({
+    emails: unreadEmails.map(e => ({
+      id: e.id,
+      threadId: e.threadId,
+      subject: e.subject || '(No subject)',
+      snippet: (e.contentText || '').substring(0, 100),
+      sentAt: e.sentAt,
+      senderName: e.senderName,
+      senderEmail: e.senderEmail,
+    })),
+    feedUnread: feedUnread?.count || 0,
+    paperTrailUnread: paperTrailUnread?.count || 0,
+  })
+})
+
 // GET /api/unread-counts
 miscRoutes.get('/unread-counts', async (c) => {
   const inboxUnread = db

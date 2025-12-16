@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
 import EmailComposer from '@/components/EmailComposer.vue'
 import { getThread as apiGetThread } from '@/utils/api'
+import { retractNotification } from '@/composables/useOffline'
 
 interface Participant {
   id: number
@@ -85,6 +86,11 @@ async function loadThread() {
     if (result) {
       thread.value = result.data
       isFromCache.value = result.fromCache
+
+      // Retract notifications for all emails in this thread (they're now marked as read)
+      for (const email of result.data.emails) {
+        retractNotification(`email-${email.id}`)
+      }
     } else {
       throw new Error('Thread not found')
     }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import FeedEmailItem from '@/components/FeedEmailItem.vue'
+import { retractNotification } from '@/composables/useOffline'
 
 interface Participant {
   id: number
@@ -189,6 +190,11 @@ async function flushMarkRead() {
 
   const ids = Array.from(pendingMarkRead.value)
   pendingMarkRead.value.clear()
+
+  // Retract notifications for these emails
+  for (const id of ids) {
+    retractNotification(`email-${id}`)
+  }
 
   try {
     await fetch('/api/emails/mark-read', {
