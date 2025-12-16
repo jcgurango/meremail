@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import DOMPurify from 'dompurify'
+import {
+  parseIcs,
+  isIcsAttachment,
+  formatEventDateRange,
+  generateGoogleCalendarUrl,
+  generateOutlookCalendarUrl,
+  type IcsEvent,
+} from '../utils/ics'
 
 interface Participant {
   id: number
@@ -46,6 +54,66 @@ const emit = defineEmits<{
 
 const showQuoted = ref(false)
 const showHeaders = ref(false)
+
+// ICS event parsing
+const icsEvents = ref<Map<number, IcsEvent[]>>(new Map())
+const icsLoading = ref<Set<number>>(new Set())
+const icsError = ref<Map<number, string>>(new Map())
+const showCalendarMenu = ref<number | null>(null)
+
+// Find ICS attachments
+const icsAttachments = computed(() => {
+  return props.email.attachments.filter(
+    (a) => isIcsAttachment(a.mimeType, a.filename)
+  )
+})
+
+// Fetch and parse ICS content
+async function fetchIcsContent(attachment: Attachment) {
+  if (icsLoading.value.has(attachment.id) || icsEvents.value.has(attachment.id)) {
+    return
+  }
+
+  icsLoading.value.add(attachment.id)
+  icsError.value.delete(attachment.id)
+
+  try {
+    const response = await fetch(`/api/attachments/${attachment.id}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch ICS file')
+    }
+    const content = await response.text()
+    const events = parseIcs(content)
+    icsEvents.value.set(attachment.id, events)
+  } catch (err) {
+    icsError.value.set(attachment.id, err instanceof Error ? err.message : 'Unknown error')
+  } finally {
+    icsLoading.value.delete(attachment.id)
+  }
+}
+
+// Auto-fetch ICS content for detected attachments
+watch(
+  () => icsAttachments.value,
+  (attachments) => {
+    for (const attachment of attachments) {
+      fetchIcsContent(attachment)
+    }
+  },
+  { immediate: true }
+)
+
+function toggleCalendarMenu(attachmentId: number) {
+  if (showCalendarMenu.value === attachmentId) {
+    showCalendarMenu.value = null
+  } else {
+    showCalendarMenu.value = attachmentId
+  }
+}
+
+function closeCalendarMenu() {
+  showCalendarMenu.value = null
+}
 
 function sanitizeHtml(html: string): string {
   return DOMPurify.sanitize(html, {
@@ -310,6 +378,71 @@ function formatFileSize(bytes: number | null): string {
           Hide quoted text
         </button>
       </template>
+      <!-- ICS Calendar Events -->
+      <div v-for="attachment in icsAttachments" :key="`ics-${attachment.id}`" class="ics-event-container">
+        <div v-if="icsLoading.has(attachment.id)" class="ics-loading">
+          Loading calendar event...
+        </div>
+        <div v-else-if="icsError.get(attachment.id)" class="ics-error">
+          Failed to load calendar event: {{ icsError.get(attachment.id) }}
+        </div>
+        <div v-else-if="icsEvents.get(attachment.id)?.length" class="ics-events">
+          <div v-for="(event, idx) in icsEvents.get(attachment.id)" :key="idx" class="ics-event-card">
+            <div class="ics-event-icon">📅</div>
+            <div class="ics-event-details">
+              <div class="ics-event-title">{{ event.summary || 'Untitled Event' }}</div>
+              <div v-if="event.startDate" class="ics-event-time">
+                {{ formatEventDateRange(event.startDate, event.endDate) }}
+              </div>
+              <div v-if="event.location" class="ics-event-location">
+                📍 {{ event.location }}
+              </div>
+              <div v-if="event.description" class="ics-event-description">
+                {{ event.description.length > 150 ? event.description.slice(0, 150) + '...' : event.description }}
+              </div>
+              <div v-if="event.organizer" class="ics-event-organizer">
+                Organized by {{ event.organizer }}
+              </div>
+            </div>
+            <div class="ics-event-actions">
+              <div class="calendar-menu-container">
+                <button class="add-to-calendar-btn" @click="toggleCalendarMenu(attachment.id)">
+                  Add to Calendar
+                </button>
+                <div v-if="showCalendarMenu === attachment.id" class="calendar-menu" @click.stop>
+                  <a
+                    :href="generateGoogleCalendarUrl(event)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="calendar-menu-item"
+                    @click="closeCalendarMenu"
+                  >
+                    Google Calendar
+                  </a>
+                  <a
+                    :href="generateOutlookCalendarUrl(event)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="calendar-menu-item"
+                    @click="closeCalendarMenu"
+                  >
+                    Outlook.com
+                  </a>
+                  <a
+                    :href="`/api/attachments/${attachment.id}`"
+                    download
+                    class="calendar-menu-item"
+                    @click="closeCalendarMenu"
+                  >
+                    Download .ics
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="email.attachments.length > 0" class="attachments">
         <div class="attachments-header">
           {{ email.attachments.length }} attachment{{ email.attachments.length > 1 ? 's' : '' }}
@@ -619,5 +752,134 @@ function formatFileSize(bytes: number | null): string {
 .attachment-size {
   color: #999;
   font-size: 11px;
+}
+
+/* ICS Calendar Event Styles */
+.ics-event-container {
+  margin-top: 16px;
+}
+
+.ics-loading {
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 6px;
+  color: #666;
+  font-size: 13px;
+}
+
+.ics-error {
+  padding: 12px;
+  background: #fef2f2;
+  border-radius: 6px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.ics-event-card {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  align-items: flex-start;
+}
+
+.ics-event-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.ics-event-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.ics-event-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #1e40af;
+  margin-bottom: 4px;
+}
+
+.ics-event-time {
+  font-size: 14px;
+  color: #1e3a8a;
+  margin-bottom: 6px;
+}
+
+.ics-event-location {
+  font-size: 13px;
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.ics-event-description {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.ics-event-organizer {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 6px;
+}
+
+.ics-event-actions {
+  flex-shrink: 0;
+}
+
+.calendar-menu-container {
+  position: relative;
+}
+
+.add-to-calendar-btn {
+  padding: 8px 16px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.add-to-calendar-btn:hover {
+  background: #1d4ed8;
+}
+
+.calendar-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.calendar-menu-item {
+  display: block;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #374151;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.calendar-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.calendar-menu-item:not(:last-child) {
+  border-bottom: 1px solid #e5e7eb;
 }
 </style>

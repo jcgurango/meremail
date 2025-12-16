@@ -18,7 +18,7 @@ const STATE_FILE = resolvePath('data/.imap-sync-state.json')
 const SYNC_INTERVAL = 5 * 60 * 1000
 
 // Folders to sync (common inbox/sent folders)
-const DEFAULT_FOLDERS = ['INBOX', 'Sent', 'Sent Items', 'Sent Mail', '[Gmail]/Sent Mail']
+const DEFAULT_FOLDERS = ['INBOX', 'Sent', 'Sent Items', 'Sent Mail', '[Gmail]/Sent Mail', 'Junk']
 
 interface SyncState {
   lastSyncPerFolder: Record<string, string> // ISO date strings
