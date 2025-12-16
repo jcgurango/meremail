@@ -18,7 +18,8 @@ contactsRoutes.get('/', async (c) => {
   const createdSince = c.req.query('createdSince') ? Number(c.req.query('createdSince')) : null
 
   const hasSearchTerm = q.length >= 2
-  const searchTerm = hasSearchTerm ? q.replace(/['"*()]/g, ' ').trim() + '*' : ''
+  // Escape FTS5 special characters: quotes, wildcards, parens, @ (column filter), - (NOT), + (required)
+  const searchTerm = hasSearchTerm ? q.replace(/['"*()@\-+]/g, ' ').trim() + '*' : ''
 
   let contactsResult: any[]
 
