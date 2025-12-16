@@ -324,7 +324,7 @@ async function syncThreadOrDraft(
   } else {
     // Regular thread - fetch full details
     try {
-      const detailResponse = await fetch(`/api/threads/${item.id}`)
+      const detailResponse = await fetch(`/api/threads/${item.id}?markRead=false`)
       if (!detailResponse.ok) return
 
       const detail = await detailResponse.json() as ApiThreadDetail

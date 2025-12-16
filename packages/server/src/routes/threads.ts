@@ -61,10 +61,11 @@ threadsRoutes.get('/', async (c) => {
     // Filter by folder
     const folderId = folderIdParam ? parseInt(folderIdParam) : 1 // Default to Inbox (id=1)
     whereClause = eq(emailThreads.folderId, folderId)
+    // Sort: drafts first, then unread, then by most recent read time (for read threads) or email date
     orderByClause = [
       desc(sql`CASE WHEN draft_count > 0 AND draft_count = total_count THEN 1 ELSE 0 END`),
       desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),
-      desc(sql`sort_date`)
+      desc(sql`COALESCE(last_read_at, sort_date)`)
     ]
   }
 
@@ -78,6 +79,7 @@ threadsRoutes.get('/', async (c) => {
       folderId: emailThreads.folderId,
       latestEmailAt: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}, ${emails.createdAt}))`.as('latest_email_at'),
       sortDate: sql<number>`MAX(COALESCE(${emails.sentAt}, ${emails.queuedAt}, ${emails.createdAt}))`.as('sort_date'),
+      lastReadAt: sql<number>`MAX(${emails.readAt})`.as('last_read_at'),
       unreadCount: sql<number>`SUM(CASE WHEN ${emails.readAt} IS NULL THEN 1 ELSE 0 END)`.as('unread_count'),
       totalCount: sql<number>`COUNT(${emails.id})`.as('total_count'),
       draftCount: sql<number>`SUM(CASE WHEN ${emails.status} = 'draft' THEN 1 ELSE 0 END)`.as('draft_count'),
@@ -216,11 +218,15 @@ threadsRoutes.get('/', async (c) => {
 })
 
 // GET /api/threads/:id
+// Query params:
+//   markRead: 'true' (default) or 'false' - whether to mark emails as read
 threadsRoutes.get('/:id', async (c) => {
   const id = parseInt(c.req.param('id'))
   if (isNaN(id)) {
     return c.json({ error: 'Invalid thread ID' }, 400)
   }
+
+  const markRead = c.req.query('markRead') !== 'false'
 
   const thread = db
     .select()
@@ -381,11 +387,13 @@ threadsRoutes.get('/:id', async (c) => {
     }
   })
 
-  // Mark unread emails as read
-  db.update(emails)
-    .set({ readAt: new Date() })
-    .where(and(eq(emails.threadId, id), isNull(emails.readAt)))
-    .run()
+  // Mark unread emails as read (unless markRead=false)
+  if (markRead) {
+    db.update(emails)
+      .set({ readAt: new Date() })
+      .where(and(eq(emails.threadId, id), isNull(emails.readAt)))
+      .run()
+  }
 
   // Find default "from" identity
   let defaultFromId: number | null = null

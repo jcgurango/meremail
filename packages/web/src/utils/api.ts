@@ -301,11 +301,12 @@ export async function getThreads(params: {
 /**
  * GET /api/threads/:id
  */
-export async function getThread(threadId: number): Promise<{ data: ThreadDetail; fromCache: boolean } | null> {
+export async function getThread(threadId: number, markRead = true): Promise<{ data: ThreadDetail; fromCache: boolean } | null> {
   const db = getSyncDb()
 
   // Try network first
-  const networkResult = await tryFetch<ThreadDetail>(`/api/threads/${threadId}`)
+  const url = markRead ? `/api/threads/${threadId}` : `/api/threads/${threadId}?markRead=false`
+  const networkResult = await tryFetch<ThreadDetail>(url)
   if (networkResult) {
     // Merge any pending local drafts and filter out pending deletes
     const pendingItems = await db.pendingSync.filter(p => p.entityType === 'draft').toArray()
