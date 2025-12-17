@@ -231,6 +231,7 @@ export async function getThreads(params: {
   queue?: 'reply_later' | 'set_aside'
   offset?: number
   limit?: number
+  unreadOnly?: boolean
 }): Promise<{ data: { threads: ThreadListItem[]; hasMore: boolean }; fromCache: boolean }> {
   // Build URL
   const searchParams = new URLSearchParams()
@@ -238,6 +239,7 @@ export async function getThreads(params: {
   if (params.queue) searchParams.set('queue', params.queue)
   if (params.offset !== undefined) searchParams.set('offset', String(params.offset))
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit))
+  if (params.unreadOnly) searchParams.set('unreadOnly', 'true')
 
   const url = `/api/threads?${searchParams}`
 

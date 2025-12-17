@@ -13,7 +13,6 @@ export interface SearchFilters {
   senderName: string | null
   dateFrom: string
   dateTo: string
-  unreadOnly: boolean
   sortBy: 'relevance' | 'date'
 }
 
@@ -30,7 +29,6 @@ const emit = defineEmits<{
 const searchQuery = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
-const unreadOnly = ref(false)
 const sortBy = ref<'relevance' | 'date'>('relevance')
 
 // Sender filter state
@@ -46,8 +44,7 @@ const hasActiveFilters = computed(() => {
   return searchQuery.value.length >= 2 ||
     selectedSender.value !== null ||
     dateFrom.value !== '' ||
-    dateTo.value !== '' ||
-    unreadOnly.value
+    dateTo.value !== ''
 })
 
 // Emit search when filters change
@@ -63,7 +60,6 @@ function emitSearch() {
     senderName: selectedSender.value?.name ?? selectedSender.value?.email ?? null,
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
-    unreadOnly: unreadOnly.value,
     sortBy: sortBy.value,
   })
 }
@@ -78,7 +74,7 @@ function onSearchInput() {
 }
 
 // Watch filter changes (immediate, no debounce)
-watch([dateFrom, dateTo, unreadOnly, sortBy], () => {
+watch([dateFrom, dateTo, sortBy], () => {
   emitSearch()
 })
 
@@ -125,7 +121,6 @@ function clearAllFilters() {
   selectedSender.value = null
   dateFrom.value = ''
   dateTo.value = ''
-  unreadOnly.value = false
   sortBy.value = 'relevance'
   emit('clear')
 }
@@ -209,14 +204,6 @@ function onBlur(e: FocusEvent) {
           <span class="date-sep">–</span>
           <input type="date" v-model="dateTo" class="filter-input date-input" />
         </div>
-      </div>
-
-      <!-- Unread toggle -->
-      <div class="filter-group">
-        <label class="toggle-label">
-          <input type="checkbox" v-model="unreadOnly" />
-          <span>Unread only</span>
-        </label>
       </div>
 
       <!-- Sort by -->
@@ -410,19 +397,6 @@ function onBlur(e: FocusEvent) {
 
 .clear-btn:hover {
   color: #000;
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: #333;
-  cursor: pointer;
-}
-
-.toggle-label input {
-  margin: 0;
 }
 
 .filter-select {

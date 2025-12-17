@@ -21,6 +21,7 @@ const props = defineProps<{
   folderId?: number
   queue?: 'reply_later' | 'set_aside'
   emptyMessage?: string
+  unreadOnly?: boolean
 }>()
 
 const { isInitialSyncInProgress } = useSyncInit()
@@ -42,6 +43,7 @@ async function loadThreads() {
       folderId: props.folderId,
       queue: props.queue,
       offset: 0,
+      unreadOnly: props.unreadOnly,
     })
     threads.value = result.data.threads
     hasMore.value = result.data.hasMore
@@ -61,6 +63,7 @@ async function loadMore() {
       folderId: props.folderId,
       queue: props.queue,
       offset: threads.value.length,
+      unreadOnly: props.unreadOnly,
     })
     threads.value = [...threads.value, ...result.data.threads]
     hasMore.value = result.data.hasMore

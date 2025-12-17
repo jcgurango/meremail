@@ -41,6 +41,7 @@ const searchLoading = ref(false)
 const searchHasMore = ref(false)
 const searchOffset = ref(0)
 const SEARCH_LIMIT = 25
+const unreadOnly = ref(false)
 
 // Determine current folder ID from props or route param
 const currentFolderId = computed(() => {
@@ -116,7 +117,7 @@ async function performSearch(reset = true) {
     if (searchFilters.value.senderId) params.set('senderId', String(searchFilters.value.senderId))
     if (searchFilters.value.dateFrom) params.set('dateFrom', searchFilters.value.dateFrom)
     if (searchFilters.value.dateTo) params.set('dateTo', searchFilters.value.dateTo)
-    if (searchFilters.value.unreadOnly) params.set('unreadOnly', 'true')
+    if (unreadOnly.value) params.set('unreadOnly', 'true')
     if (searchFilters.value.sortBy) params.set('sortBy', searchFilters.value.sortBy)
 
     const response = await fetch(`/api/search?${params}`)
@@ -192,6 +193,11 @@ watch(() => props.name, () => {
         <span class="search-icon">🔍</span>
         <span>{{ showSearchToolbar ? 'Hide Search' : 'Search & Filter' }}</span>
       </button>
+      <label class="unread-toggle">
+        <input type="checkbox" v-model="unreadOnly" />
+        <span class="check-icon">{{ unreadOnly ? '✓' : '' }}</span>
+        <span>Unread only</span>
+      </label>
     </div>
 
     <SearchToolbar
@@ -244,8 +250,9 @@ watch(() => props.name, () => {
       <!-- Regular thread list -->
       <ThreadList
         v-else-if="foldersLoaded"
-        :key="currentFolderId"
+        :key="`${currentFolderId}-${unreadOnly}`"
         :folder-id="currentFolderId"
+        :unread-only="unreadOnly"
         empty-message="No threads yet"
       />
     </main>
@@ -275,6 +282,9 @@ watch(() => props.name, () => {
 }
 
 .search-toggle-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 20px;
   border-bottom: 1px solid #e5e5e5;
 }
@@ -300,6 +310,46 @@ watch(() => props.name, () => {
 
 .search-toggle-btn .search-icon {
   font-size: 12px;
+}
+
+.unread-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.unread-toggle:hover {
+  background: #e5e5e5;
+  color: #333;
+}
+
+.unread-toggle:has(input:checked) {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.unread-toggle input {
+  display: none;
+}
+
+.unread-toggle .check-icon {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .loading,

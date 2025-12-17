@@ -38,6 +38,7 @@ threadsRoutes.get('/', async (c) => {
   const offset = parseInt(c.req.query('offset') || '0')
   const folderIdParam = c.req.query('folderId')
   const queue = c.req.query('queue') // 'reply_later' or 'set_aside'
+  const unreadOnly = c.req.query('unreadOnly') === 'true'
 
   let whereClause
   let orderByClause
@@ -65,6 +66,9 @@ threadsRoutes.get('/', async (c) => {
     orderByClause = [desc(sql`sort_date`)]
   }
 
+  // Build having clause for unread filter
+  const havingClause = unreadOnly ? sql`unread_count > 0` : sql`1=1`
+
   const threadsWithUnread = db
     .select({
       id: emailThreads.id,
@@ -85,6 +89,7 @@ threadsRoutes.get('/', async (c) => {
     .innerJoin(emails, eq(emails.threadId, emailThreads.id))
     .where(whereClause)
     .groupBy(emailThreads.id)
+    .having(havingClause)
     .orderBy(...orderByClause)
     .limit(limit + 1)
     .offset(offset)
@@ -678,4 +683,27 @@ threadsRoutes.delete('/:id', async (c) => {
   db.delete(emailThreads).where(eq(emailThreads.id, id)).run()
 
   return c.json({ success: true })
+})
+
+// POST /api/threads/mark-all-read
+// Mark all emails as read in a folder
+threadsRoutes.post('/mark-all-read', async (c) => {
+  const body = await c.req.json()
+  const folderId = body.folderId
+
+  if (typeof folderId !== 'number') {
+    return c.json({ error: 'folderId is required' }, 400)
+  }
+
+  // Update all unread emails in threads belonging to this folder
+  const result = db.run(sql`
+    UPDATE ${emails}
+    SET read_at = ${new Date().toISOString()}
+    WHERE read_at IS NULL
+    AND thread_id IN (
+      SELECT id FROM ${emailThreads} WHERE folder_id = ${folderId}
+    )
+  `)
+
+  return c.json({ success: true, count: result.changes })
 })
