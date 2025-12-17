@@ -35,11 +35,6 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/AttachmentsPage.vue'),
   },
   {
-    path: '/search',
-    name: 'search',
-    component: () => import('@/pages/SearchPage.vue'),
-  },
-  {
     path: '/contacts',
     name: 'contacts',
     component: () => import('@/pages/ContactsPage.vue'),

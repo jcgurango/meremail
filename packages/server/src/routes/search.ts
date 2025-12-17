@@ -12,6 +12,7 @@ interface EmailResult {
   senderName: string | null
   senderEmail: string
   sentAt: Date | null
+  isRead: boolean
 }
 
 interface ContactResult {
@@ -47,6 +48,9 @@ searchRoutes.get('/', async (c) => {
   const dateTo = c.req.query('dateTo')
   const senderId = c.req.query('senderId') ? parseInt(c.req.query('senderId')!) : null
   const fileType = c.req.query('fileType')
+  const folderId = c.req.query('folderId') ? parseInt(c.req.query('folderId')!) : null
+  const unreadOnly = c.req.query('unreadOnly') === 'true'
+  const sortBy = c.req.query('sortBy') || 'relevance' // 'relevance' or 'date'
 
   const dateFromUnix = dateFrom ? Math.floor(new Date(dateFrom).getTime() / 1000) : null
   const dateToUnix = dateTo ? Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000) : null
@@ -69,7 +73,7 @@ searchRoutes.get('/', async (c) => {
   const searchTerm = hasSearchTerm ? q.replace(/['"*()@\-+.:^]/g, ' ').trim() + '*' : ''
 
   // Search emails
-  const hasEmailFilters = senderId || dateFromUnix || dateToUnix
+  const hasEmailFilters = senderId || dateFromUnix || dateToUnix || folderId || unreadOnly
   if ((hasSearchTerm || (type === 'email' && hasEmailFilters)) && (!type || type === 'email')) {
     let emailSql: string
     const emailParams: any[] = []
@@ -82,10 +86,12 @@ searchRoutes.get('/', async (c) => {
           e.subject,
           SUBSTR(e.content_text, 1, 150) as snippet,
           e.sent_at as sentAt,
+          e.read_at as readAt,
           c.name as senderName,
           c.email as senderEmail
         FROM emails_fts
         JOIN emails e ON emails_fts.rowid = e.id
+        JOIN email_threads t ON e.thread_id = t.id
         LEFT JOIN contacts c ON e.sender_id = c.id
         WHERE emails_fts MATCH ?`
       emailParams.push(searchTerm)
@@ -97,9 +103,11 @@ searchRoutes.get('/', async (c) => {
           e.subject,
           SUBSTR(e.content_text, 1, 150) as snippet,
           e.sent_at as sentAt,
+          e.read_at as readAt,
           c.name as senderName,
           c.email as senderEmail
         FROM emails e
+        JOIN email_threads t ON e.thread_id = t.id
         LEFT JOIN contacts c ON e.sender_id = c.id
         WHERE 1=1`
     }
@@ -107,6 +115,13 @@ searchRoutes.get('/', async (c) => {
     if (senderId) {
       emailSql += ` AND e.sender_id = ?`
       emailParams.push(senderId)
+    }
+    if (folderId) {
+      emailSql += ` AND t.folder_id = ?`
+      emailParams.push(folderId)
+    }
+    if (unreadOnly) {
+      emailSql += ` AND e.read_at IS NULL`
     }
     if (dateFromUnix) {
       emailSql += ` AND e.sent_at >= ?`
@@ -117,9 +132,12 @@ searchRoutes.get('/', async (c) => {
       emailParams.push(dateToUnix)
     }
 
-    emailSql += hasSearchTerm
-      ? ` ORDER BY rank, e.sent_at DESC LIMIT ? OFFSET ?`
-      : ` ORDER BY e.sent_at DESC LIMIT ? OFFSET ?`
+    // Sort order: relevance (rank) or date
+    if (hasSearchTerm && sortBy === 'relevance') {
+      emailSql += ` ORDER BY rank, e.sent_at DESC LIMIT ? OFFSET ?`
+    } else {
+      emailSql += ` ORDER BY e.sent_at DESC LIMIT ? OFFSET ?`
+    }
     emailParams.push(limit + 1, type ? offset : 0)
 
     const emailRows = sqlite.prepare(emailSql).all(...emailParams) as any[]
@@ -139,6 +157,7 @@ searchRoutes.get('/', async (c) => {
         senderName: row.senderName,
         senderEmail: row.senderEmail,
         sentAt: row.sentAt ? new Date(row.sentAt * 1000) : null,
+        isRead: !!row.readAt,
       })
     }
   }

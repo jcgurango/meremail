@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import SearchModal from '@/components/SearchModal.vue'
 import { getMeContacts, createDraft } from '@/utils/api'
 
 const router = useRouter()
-const searchOpen = ref(false)
 const composing = ref(false)
 
 async function compose() {
@@ -41,10 +39,6 @@ async function compose() {
       <span class="nav-icon">✏️</span>
       <span class="nav-label">{{ composing ? 'Creating...' : 'Compose' }}</span>
     </button>
-    <button class="nav-pill search" @click="searchOpen = true">
-      <span class="nav-icon">🔍</span>
-      <span class="nav-label">Search</span>
-    </button>
     <RouterLink to="/contacts" class="nav-pill contacts">
       <span class="nav-icon">👤</span>
       <span class="nav-label">Contacts</span>
@@ -62,8 +56,6 @@ async function compose() {
       <span class="nav-label">Folders</span>
     </RouterLink>
   </nav>
-
-  <SearchModal :open="searchOpen" @close="searchOpen = false" />
 </template>
 
 <style scoped>
@@ -108,13 +100,6 @@ async function compose() {
 .nav-pill.compose:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.nav-pill.search {
-  background: #f3e8ff;
-  color: #7c3aed;
-  border: none;
-  cursor: pointer;
 }
 
 .nav-pill.contacts {
