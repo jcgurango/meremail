@@ -162,6 +162,7 @@ function formatDate(dateStr: string | null): string {
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
+  padding-bottom: 120px;
 }
 
 .page-header {
