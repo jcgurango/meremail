@@ -112,6 +112,7 @@ rulesRoutes.get('/applications', async (c) => {
       totalCount: ruleApplications.totalCount,
       processedCount: ruleApplications.processedCount,
       matchedCount: ruleApplications.matchedCount,
+      matchBreakdown: ruleApplications.matchBreakdown,
       error: ruleApplications.error,
       startedAt: ruleApplications.startedAt,
       completedAt: ruleApplications.completedAt,
@@ -123,7 +124,13 @@ rulesRoutes.get('/applications', async (c) => {
     .limit(50)
     .all()
 
-  return c.json({ applications })
+  // For "apply all" jobs (null ruleId), set a descriptive name
+  return c.json({
+    applications: applications.map(app => ({
+      ...app,
+      ruleName: app.ruleId === null ? 'All Rules' : app.ruleName,
+    })),
+  })
 })
 
 // GET /api/rules/applications/:id - Get application status
@@ -142,6 +149,7 @@ rulesRoutes.get('/applications/:id', async (c) => {
       totalCount: ruleApplications.totalCount,
       processedCount: ruleApplications.processedCount,
       matchedCount: ruleApplications.matchedCount,
+      matchBreakdown: ruleApplications.matchBreakdown,
       error: ruleApplications.error,
       startedAt: ruleApplications.startedAt,
       completedAt: ruleApplications.completedAt,
@@ -156,7 +164,12 @@ rulesRoutes.get('/applications/:id', async (c) => {
     return c.json({ error: 'Application not found' }, 404)
   }
 
-  return c.json({ application })
+  return c.json({
+    application: {
+      ...application,
+      ruleName: application.ruleId === null ? 'All Rules' : application.ruleName,
+    },
+  })
 })
 
 // GET /api/rules/:id - Get single rule
@@ -560,6 +573,132 @@ async function processRuleApplication(
       status: 'completed',
       processedCount: offset,
       matchedCount,
+      completedAt: new Date(),
+    })
+    .where(eq(ruleApplications.id, applicationId))
+    .run()
+}
+
+// POST /api/rules/apply-all - Run all rules against all threads
+rulesRoutes.post('/apply-all', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+
+  // Optional folder IDs filter (default: all folders)
+  const folderIds: number[] = Array.isArray(body.folderIds) ? body.folderIds : []
+
+  // Count total threads to process
+  const whereClause = folderIds.length > 0
+    ? inArray(emailThreads.folderId, folderIds)
+    : undefined
+
+  const totalCount = db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(emailThreads)
+    .where(whereClause)
+    .get()?.count || 0
+
+  const now = new Date()
+
+  // Create application record with null ruleId (indicates "apply all")
+  const application = db
+    .insert(ruleApplications)
+    .values({
+      ruleId: null,
+      status: 'running',
+      totalCount,
+      processedCount: 0,
+      matchedCount: 0,
+      matchBreakdown: {},
+      startedAt: now,
+      createdAt: now,
+    })
+    .returning()
+    .get()
+
+  // Process in background
+  processAllRulesApplication(application.id, folderIds.length > 0 ? folderIds : undefined).catch(err => {
+    console.error(`Apply all rules job ${application.id} failed:`, err)
+    db.update(ruleApplications)
+      .set({
+        status: 'failed',
+        error: err.message || 'Unknown error',
+        completedAt: new Date(),
+      })
+      .where(eq(ruleApplications.id, application.id))
+      .run()
+  })
+
+  return c.json({ application: { id: application.id, status: 'running', totalCount } })
+})
+
+// Background processing for apply-all
+async function processAllRulesApplication(
+  applicationId: number,
+  folderIds?: number[]
+): Promise<void> {
+  const BATCH_SIZE = 50
+  let offset = 0
+  let matchedCount = 0
+  const matchBreakdown: Record<number, number> = {}
+
+  while (true) {
+    await yieldToEventLoop()
+
+    // Get batch of threads
+    const whereClause = folderIds
+      ? inArray(emailThreads.folderId, folderIds)
+      : undefined
+
+    const threads = db
+      .select({ id: emailThreads.id, folderId: emailThreads.folderId })
+      .from(emailThreads)
+      .where(whereClause)
+      .limit(BATCH_SIZE)
+      .offset(offset)
+      .all()
+
+    if (threads.length === 0) break
+
+    for (const thread of threads) {
+      // Build context from thread
+      const context = buildContextFromThread(thread.id)
+      if (!context) continue
+
+      // Evaluate all rules (pass folderId so rules respect their folder settings)
+      const result = evaluateRules(context, thread.folderId ?? undefined)
+
+      if (result) {
+        // Apply the matching rule
+        await applyRuleToThread(thread.id, result)
+        matchedCount++
+
+        // Track per-rule breakdown
+        matchBreakdown[result.ruleId] = (matchBreakdown[result.ruleId] || 0) + 1
+      }
+    }
+
+    offset += threads.length
+
+    // Update progress
+    db.update(ruleApplications)
+      .set({
+        processedCount: offset,
+        matchedCount,
+        matchBreakdown,
+      })
+      .where(eq(ruleApplications.id, applicationId))
+      .run()
+
+    await yieldToEventLoop()
+  }
+
+  // Mark as completed
+  db.update(ruleApplications)
+    .set({
+      status: 'completed',
+      processedCount: offset,
+      matchedCount,
+      matchBreakdown,
       completedAt: new Date(),
     })
     .where(eq(ruleApplications.id, applicationId))

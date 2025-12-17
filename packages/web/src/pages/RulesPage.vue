@@ -9,6 +9,7 @@ import {
   deleteRule,
   reorderRules,
   applyRule,
+  applyAllRules,
   getRuleApplications,
   type Rule,
   type RuleApplicationWithName,
@@ -174,6 +175,28 @@ async function handleApply(rule: Rule) {
   }
 }
 
+const applyingAll = ref(false)
+
+async function handleApplyAll() {
+  if (!confirm('Run all rules against all threads? This will re-evaluate every thread against all enabled rules. This may take a while.')) return
+
+  applyingAll.value = true
+  try {
+    await applyAllRules()
+    await loadApplications()
+  } catch (e) {
+    console.error('Failed to apply all rules:', e)
+    alert('Failed to start apply all rules')
+  } finally {
+    applyingAll.value = false
+  }
+}
+
+function getRuleName(ruleId: number): string {
+  const rule = rules.value.find(r => r.id === ruleId)
+  return rule?.name || `Rule #${ruleId}`
+}
+
 function formatAppTime(app: RuleApplicationWithName): string {
   if (app.status === 'running' || app.status === 'pending') {
     if (app.startedAt) {
@@ -208,6 +231,13 @@ function formatAppTime(app: RuleApplicationWithName): string {
     <div class="actions-bar">
       <button class="btn btn-primary" @click="openEditor()">
         + Create Rule
+      </button>
+      <button
+        class="btn btn-secondary"
+        @click="handleApplyAll"
+        :disabled="applyingAll || rules.length === 0"
+      >
+        {{ applyingAll ? 'Starting...' : 'Run All Rules' }}
       </button>
     </div>
 
@@ -323,6 +353,15 @@ function formatAppTime(app: RuleApplicationWithName): string {
               <span class="result-text">
                 {{ app.matchedCount }} matches out of {{ app.totalCount }} threads
               </span>
+              <div v-if="app.matchBreakdown && Object.keys(app.matchBreakdown).length > 0" class="match-breakdown">
+                <span
+                  v-for="(count, ruleId) in app.matchBreakdown"
+                  :key="ruleId"
+                  class="breakdown-item"
+                >
+                  {{ getRuleName(Number(ruleId)) }}: {{ count }}
+                </span>
+              </div>
             </template>
             <template v-else-if="app.status === 'failed'">
               <span class="error-text">{{ app.error || 'Unknown error' }}</span>
@@ -381,6 +420,8 @@ h1 {
 }
 
 .actions-bar {
+  display: flex;
+  gap: 12px;
   margin-bottom: 20px;
 }
 
@@ -401,6 +442,20 @@ h1 {
 
 .btn-primary:hover {
   background: #4f46e5;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .loading-state,
@@ -703,6 +758,21 @@ h1 {
 .result-text {
   font-size: 13px;
   color: #059669;
+}
+
+.match-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.breakdown-item {
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .error-text {

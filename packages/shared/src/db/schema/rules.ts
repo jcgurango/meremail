@@ -21,12 +21,15 @@ export const emailRules = sqliteTable('email_rules', {
 
 export const ruleApplications = sqliteTable('rule_applications', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  ruleId: integer('rule_id').notNull().references(() => emailRules.id),
+  // Null ruleId indicates "apply all rules" job
+  ruleId: integer('rule_id').references(() => emailRules.id),
   // Job status
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed'>().notNull().default('pending'),
   totalCount: integer('total_count').notNull().default(0),
   processedCount: integer('processed_count').notNull().default(0),
   matchedCount: integer('matched_count').notNull().default(0),
+  // Breakdown of matches per rule (for "apply all" jobs): { [ruleId]: count }
+  matchBreakdown: text('match_breakdown', { mode: 'json' }).$type<Record<number, number>>(),
   error: text('error'),
   startedAt: integer('started_at', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),

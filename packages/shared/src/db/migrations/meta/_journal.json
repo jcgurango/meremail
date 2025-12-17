@@ -71,6 +71,13 @@
       "when": 1765997533404,
       "tag": "0009_happy_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1766002940531,
+      "tag": "0010_many_chimera",
+      "breakpoints": true
     }
   ]
 }

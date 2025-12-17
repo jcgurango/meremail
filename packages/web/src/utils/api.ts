@@ -1306,11 +1306,12 @@ export interface Rule {
 
 export interface RuleApplication {
   id: number
-  ruleId: number
+  ruleId: number | null
   status: 'pending' | 'running' | 'completed' | 'failed'
   totalCount: number
   processedCount: number
   matchedCount: number
+  matchBreakdown: Record<number, number> | null
   error: string | null
   startedAt: string | null
   completedAt: string | null
@@ -1382,6 +1383,16 @@ export async function reorderRules(positions: { id: number; position: number }[]
 export async function applyRule(id: number): Promise<{ application: { id: number; status: string; totalCount: number } }> {
   const response = await fetch(`/api/rules/${id}/apply`, { method: 'POST' })
   if (!response.ok) throw new Error('Failed to apply rule')
+  return response.json()
+}
+
+export async function applyAllRules(folderIds?: number[]): Promise<{ application: { id: number; status: string; totalCount: number } }> {
+  const response = await fetch('/api/rules/apply-all', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(folderIds ? { folderIds } : {}),
+  })
+  if (!response.ok) throw new Error('Failed to apply all rules')
   return response.json()
 }
 
