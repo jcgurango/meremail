@@ -10,6 +10,7 @@ import {
   generateOutlookCalendarUrl,
   type IcsEvent,
 } from '../utils/ics'
+import { getRules, addSenderToRule, type Rule } from '../utils/api'
 
 interface Participant {
   id: number
@@ -113,6 +114,61 @@ function toggleCalendarMenu(attachmentId: number) {
 
 function closeCalendarMenu() {
   showCalendarMenu.value = null
+}
+
+// Add sender to rule feature
+const showAddToRuleMenu = ref(false)
+const rules = ref<Rule[]>([])
+const rulesLoaded = ref(false)
+const addingToRule = ref(false)
+
+async function toggleAddToRuleMenu() {
+  if (showAddToRuleMenu.value) {
+    showAddToRuleMenu.value = false
+    return
+  }
+
+  // Load rules if not loaded
+  if (!rulesLoaded.value) {
+    try {
+      const result = await getRules()
+      rules.value = result.rules
+      rulesLoaded.value = true
+    } catch (e) {
+      console.error('Failed to load rules:', e)
+      alert('Failed to load rules')
+      return
+    }
+  }
+
+  showAddToRuleMenu.value = true
+}
+
+function closeAddToRuleMenu() {
+  showAddToRuleMenu.value = false
+}
+
+async function handleAddToRule(rule: Rule) {
+  if (!props.email.sender) {
+    alert('No sender found')
+    return
+  }
+
+  addingToRule.value = true
+  try {
+    const result = await addSenderToRule(rule.id, props.email.sender.email)
+    if (result.success) {
+      alert(`Added ${props.email.sender.email} to "${rule.name}"`)
+      showAddToRuleMenu.value = false
+    } else {
+      alert(result.error || 'Failed to add sender to rule')
+    }
+  } catch (e) {
+    console.error('Failed to add sender to rule:', e)
+    alert('Failed to add sender to rule')
+  } finally {
+    addingToRule.value = false
+  }
 }
 
 function sanitizeHtml(html: string): string {
@@ -339,6 +395,35 @@ function formatFileSize(bytes: number | null): string {
               <path d="M22 18v-2a4 4 0 0 0-4-4H7"></path>
             </svg>
           </button>
+          <div v-if="email.sender && !email.sender.isMe" class="add-to-rule-wrapper">
+            <button
+              class="reply-icon-btn"
+              title="Add sender to rule"
+              @click="toggleAddToRuleMenu"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <line x1="9" y1="15" x2="15" y2="15"></line>
+              </svg>
+            </button>
+            <div v-if="showAddToRuleMenu" class="add-to-rule-menu" @click.stop>
+              <div class="add-to-rule-header">Add sender to rule</div>
+              <div v-if="rules.length === 0" class="add-to-rule-empty">
+                No rules available
+              </div>
+              <button
+                v-for="rule in rules"
+                :key="rule.id"
+                class="add-to-rule-item"
+                :disabled="addingToRule"
+                @click="handleAddToRule(rule)"
+              >
+                {{ rule.name }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -575,6 +660,62 @@ function formatFileSize(bytes: number | null): string {
 .reply-icon-btn:hover {
   color: #000;
   background: #f0f0f0;
+}
+
+.add-to-rule-wrapper {
+  position: relative;
+}
+
+.add-to-rule-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.add-to-rule-header {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.add-to-rule-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: #999;
+  text-align: center;
+}
+
+.add-to-rule-item {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.add-to-rule-item:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.add-to-rule-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .headers-panel {

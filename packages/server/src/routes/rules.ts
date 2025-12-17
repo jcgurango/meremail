@@ -14,7 +14,7 @@ import {
   applyRuleToThread,
   buildContextFromThread,
 } from '@meremail/shared'
-import type { ConditionGroup, ActionType, ActionConfig, RuleEvaluationContext } from '@meremail/shared'
+import type { ConditionGroup, Condition, ActionType, ActionConfig, RuleEvaluationContext } from '@meremail/shared'
 
 export const rulesRoutes = new Hono()
 
@@ -565,3 +565,90 @@ async function processRuleApplication(
     .where(eq(ruleApplications.id, applicationId))
     .run()
 }
+
+// POST /api/rules/:id/add-sender - Add a sender email to a rule's sender_in_contacts condition
+rulesRoutes.post('/:id/add-sender', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid rule ID' }, 400)
+  }
+
+  const body = await c.req.json()
+  const senderEmail = body.email?.toLowerCase()?.trim()
+
+  if (!senderEmail) {
+    return c.json({ error: 'email is required' }, 400)
+  }
+
+  const rule = db
+    .select()
+    .from(emailRules)
+    .where(eq(emailRules.id, id))
+    .get()
+
+  if (!rule) {
+    return c.json({ error: 'Rule not found' }, 404)
+  }
+
+  const conditions = rule.conditions as ConditionGroup
+
+  // Find a top-level sender_in_contacts condition
+  let foundCondition: Condition | null = null
+  let conditionIndex = -1
+
+  for (let i = 0; i < conditions.conditions.length; i++) {
+    const cond = conditions.conditions[i]
+    // Check if it's a leaf condition (not a group) with sender_in_contacts field
+    if (cond && !('operator' in cond) && cond.field === 'sender_in_contacts') {
+      foundCondition = cond as Condition
+      conditionIndex = i
+      break
+    }
+  }
+
+  if (!foundCondition) {
+    return c.json({ error: 'This rule does not have a top-level "Sender In List" condition' }, 400)
+  }
+
+  // Parse the existing email list
+  let emailList: string[]
+  try {
+    emailList = JSON.parse(foundCondition.value) as string[]
+  } catch {
+    emailList = []
+  }
+
+  // Check if email is already in the list
+  if (emailList.some(e => e.toLowerCase() === senderEmail)) {
+    return c.json({ error: 'Sender is already in this rule' }, 400)
+  }
+
+  // Add the email to the list
+  emailList.push(senderEmail)
+
+  // Update the condition
+  const updatedCondition: Condition = {
+    field: foundCondition.field,
+    matchType: foundCondition.matchType,
+    value: JSON.stringify(emailList),
+    negate: foundCondition.negate,
+  }
+
+  const updatedConditions: ConditionGroup = {
+    operator: conditions.operator,
+    conditions: conditions.conditions.map((c, i) =>
+      i === conditionIndex ? updatedCondition : c
+    ),
+  }
+
+  // Save the updated rule
+  db.update(emailRules)
+    .set({
+      conditions: updatedConditions,
+      updatedAt: new Date(),
+    })
+    .where(eq(emailRules.id, id))
+    .run()
+
+  return c.json({ success: true, emailCount: emailList.length })
+})

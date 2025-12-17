@@ -1424,6 +1424,19 @@ export async function previewRule(conditions: RuleConditionGroup, folderIds: num
   return response.json()
 }
 
+export async function addSenderToRule(ruleId: number, email: string): Promise<{ success: boolean; emailCount: number; error?: string }> {
+  const response = await fetch(`/api/rules/${ruleId}/add-sender`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  const data = await response.json()
+  if (!response.ok) {
+    return { success: false, emailCount: 0, error: data.error || 'Failed to add sender' }
+  }
+  return data
+}
+
 // ============== Folders API (extended) ==============
 
 export async function createFolder(name: string): Promise<{ folder: Folder }> {
