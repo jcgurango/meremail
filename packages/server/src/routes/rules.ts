@@ -25,7 +25,6 @@ rulesRoutes.get('/', async (c) => {
     rules: rules.map(rule => ({
       id: rule.id,
       name: rule.name,
-      description: rule.description,
       conditions: rule.conditions,
       actionType: rule.actionType,
       actionConfig: rule.actionConfig,
@@ -64,7 +63,6 @@ rulesRoutes.post('/', async (c) => {
     .insert(emailRules)
     .values({
       name: body.name,
-      description: body.description || null,
       conditions: body.conditions as ConditionGroup,
       actionType: body.actionType as ActionType,
       actionConfig: body.actionConfig as ActionConfig || null,
@@ -76,7 +74,19 @@ rulesRoutes.post('/', async (c) => {
     .returning()
     .get()
 
-  return c.json({ rule: result }, 201)
+  return c.json({
+    rule: {
+      id: result.id,
+      name: result.name,
+      conditions: result.conditions,
+      actionType: result.actionType,
+      actionConfig: result.actionConfig,
+      position: result.position,
+      enabled: result.enabled,
+      createdAt: result.createdAt,
+      updatedAt: result.updatedAt,
+    },
+  }, 201)
 })
 
 // GET /api/rules/:id - Get single rule
@@ -96,7 +106,19 @@ rulesRoutes.get('/:id', async (c) => {
     return c.json({ error: 'Rule not found' }, 404)
   }
 
-  return c.json({ rule })
+  return c.json({
+    rule: {
+      id: rule.id,
+      name: rule.name,
+      conditions: rule.conditions,
+      actionType: rule.actionType,
+      actionConfig: rule.actionConfig,
+      position: rule.position,
+      enabled: rule.enabled,
+      createdAt: rule.createdAt,
+      updatedAt: rule.updatedAt,
+    },
+  })
 })
 
 // PATCH /api/rules/:id - Update rule
@@ -122,7 +144,6 @@ rulesRoutes.patch('/:id', async (c) => {
   }
 
   if (body.name !== undefined) updates.name = body.name
-  if (body.description !== undefined) updates.description = body.description
   if (body.conditions !== undefined) updates.conditions = body.conditions
   if (body.actionType !== undefined) updates.actionType = body.actionType
   if (body.actionConfig !== undefined) updates.actionConfig = body.actionConfig
@@ -139,7 +160,19 @@ rulesRoutes.patch('/:id', async (c) => {
     .where(eq(emailRules.id, id))
     .get()
 
-  return c.json({ rule: updatedRule })
+  return c.json({
+    rule: updatedRule ? {
+      id: updatedRule.id,
+      name: updatedRule.name,
+      conditions: updatedRule.conditions,
+      actionType: updatedRule.actionType,
+      actionConfig: updatedRule.actionConfig,
+      position: updatedRule.position,
+      enabled: updatedRule.enabled,
+      createdAt: updatedRule.createdAt,
+      updatedAt: updatedRule.updatedAt,
+    } : null,
+  })
 })
 
 // DELETE /api/rules/:id - Delete rule

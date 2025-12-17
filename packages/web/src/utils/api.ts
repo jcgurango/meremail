@@ -1274,7 +1274,6 @@ export interface RuleConditionGroup {
 export interface Rule {
   id: number
   name: string
-  description: string | null
   conditions: RuleConditionGroup
   actionType: string
   actionConfig: { folderId?: number } | null
@@ -1311,7 +1310,6 @@ export async function getRule(id: number): Promise<{ rule: Rule }> {
 
 export async function createRule(data: {
   name: string
-  description?: string
   conditions: RuleConditionGroup
   actionType: string
   actionConfig?: { folderId?: number }
@@ -1328,7 +1326,6 @@ export async function createRule(data: {
 
 export async function updateRule(id: number, data: Partial<{
   name: string
-  description: string
   conditions: RuleConditionGroup
   actionType: string
   actionConfig: { folderId?: number }

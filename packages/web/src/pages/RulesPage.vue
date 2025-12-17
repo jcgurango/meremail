@@ -48,7 +48,6 @@ function openEditor(rule?: Rule) {
     editingRule.value = {
       id: rule.id,
       name: rule.name,
-      description: rule.description || undefined,
       conditions: rule.conditions as unknown as RuleData['conditions'],
       actionType: rule.actionType as ActionType,
       actionConfig: rule.actionConfig || undefined,
@@ -70,7 +69,6 @@ async function handleSave(ruleData: RuleData) {
     if (ruleData.id) {
       await updateRule(ruleData.id, {
         name: ruleData.name,
-        description: ruleData.description,
         conditions: ruleData.conditions,
         actionType: ruleData.actionType,
         actionConfig: ruleData.actionConfig,
@@ -79,7 +77,6 @@ async function handleSave(ruleData: RuleData) {
     } else {
       await createRule({
         name: ruleData.name,
-        description: ruleData.description,
         conditions: ruleData.conditions,
         actionType: ruleData.actionType,
         actionConfig: ruleData.actionConfig,
@@ -180,17 +177,6 @@ async function handleApply(rule: RuleWithApplication) {
   }
 }
 
-function getActionLabel(actionType: string): string {
-  const labels: Record<string, string> = {
-    delete_thread: 'Delete Thread',
-    delete_email: 'Delete Email',
-    move_to_folder: 'Move to Folder',
-    mark_read: 'Mark Read',
-    add_to_reply_later: 'Reply Later',
-    add_to_set_aside: 'Set Aside',
-  }
-  return labels[actionType] || actionType
-}
 </script>
 
 <template>
@@ -249,16 +235,7 @@ function getActionLabel(actionType: string): string {
         </div>
 
         <div class="rule-info">
-          <div class="rule-name">{{ rule.name }}</div>
-          <div v-if="rule.description" class="rule-description">{{ rule.description }}</div>
-          <div class="rule-meta">
-            <span class="action-badge" :class="rule.actionType">
-              {{ getActionLabel(rule.actionType) }}
-            </span>
-            <span class="condition-count">
-              {{ rule.conditions.conditions.length }} condition{{ rule.conditions.conditions.length !== 1 ? 's' : '' }}
-            </span>
-          </div>
+          <div class="rule-summary">{{ rule.name }}</div>
         </div>
 
         <div class="rule-actions">
@@ -457,55 +434,9 @@ h1 {
   min-width: 0;
 }
 
-.rule-name {
-  font-weight: 500;
-  font-size: 15px;
-  margin-bottom: 2px;
-}
-
-.rule-description {
-  font-size: 13px;
-  color: #6b7280;
-  margin-bottom: 6px;
-}
-
-.rule-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-}
-
-.action-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-.action-badge.delete_thread,
-.action-badge.delete_email {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.action-badge.move_to_folder {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.action-badge.mark_read {
-  background: #d1fae5;
-  color: #059669;
-}
-
-.action-badge.add_to_reply_later,
-.action-badge.add_to_set_aside {
-  background: #fef3c7;
-  color: #b45309;
-}
-
-.condition-count {
-  color: #9ca3af;
+.rule-summary {
+  font-size: 14px;
+  color: #374151;
 }
 
 .rule-actions {

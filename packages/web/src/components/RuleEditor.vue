@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import ConditionBuilder, { type ConditionGroup } from './ConditionBuilder.vue'
+import ConditionBuilder, { type ConditionGroup, type Condition } from './ConditionBuilder.vue'
 import { getFolders, type Folder } from '@/utils/api'
 
 export type ActionType = 'delete_thread' | 'delete_email' | 'move_to_folder' | 'mark_read' |
@@ -13,7 +13,6 @@ export interface ActionConfig {
 export interface RuleData {
   id?: number
   name: string
-  description?: string
   conditions: ConditionGroup
   actionType: ActionType
   actionConfig?: ActionConfig
@@ -37,8 +36,6 @@ const defaultConditions: ConditionGroup = {
   ],
 }
 
-const name = ref('')
-const description = ref('')
 const conditions = ref<ConditionGroup>({ ...defaultConditions })
 const actionType = ref<ActionType>('move_to_folder')
 const actionFolderId = ref<number | null>(null)
@@ -46,13 +43,13 @@ const enabled = ref(true)
 const folders = ref<Folder[]>([])
 const saving = ref(false)
 
-const actionOptions: { value: ActionType; label: string; description: string }[] = [
-  { value: 'move_to_folder', label: 'Move to Folder', description: 'Move the thread to a specific folder' },
-  { value: 'delete_thread', label: 'Delete Thread', description: 'Move entire thread to Trash' },
-  { value: 'delete_email', label: 'Delete Email', description: 'Move only the matching email to Trash' },
-  { value: 'mark_read', label: 'Mark as Read', description: 'Automatically mark as read' },
-  { value: 'add_to_reply_later', label: 'Add to Reply Later', description: 'Add to Reply Later queue' },
-  { value: 'add_to_set_aside', label: 'Add to Set Aside', description: 'Add to Set Aside queue' },
+const actionOptions: { value: ActionType; label: string; shortLabel: string }[] = [
+  { value: 'move_to_folder', label: 'Move to Folder', shortLabel: 'Move' },
+  { value: 'delete_thread', label: 'Delete Thread', shortLabel: 'Delete' },
+  { value: 'delete_email', label: 'Delete Email', shortLabel: 'Delete email' },
+  { value: 'mark_read', label: 'Mark as Read', shortLabel: 'Mark read' },
+  { value: 'add_to_reply_later', label: 'Add to Reply Later', shortLabel: 'Reply Later' },
+  { value: 'add_to_set_aside', label: 'Add to Set Aside', shortLabel: 'Set Aside' },
 ]
 
 const needsFolderSelection = computed(() => actionType.value === 'move_to_folder')
@@ -60,24 +57,102 @@ const needsFolderSelection = computed(() => actionType.value === 'move_to_folder
 const nonSystemFolders = computed(() => folders.value.filter(f => !f.isSystem))
 
 const isValid = computed(() => {
-  if (!name.value.trim()) return false
   if (needsFolderSelection.value && !actionFolderId.value) return false
   if (conditions.value.conditions.length === 0) return false
-  return true
+  // Check at least one condition has a value
+  const hasValidCondition = conditions.value.conditions.some(c => {
+    if ('operator' in c) return true // groups count
+    return c.value.trim() !== ''
+  })
+  return hasValidCondition
 })
+
+// Field labels for summary
+const fieldLabels: Record<string, string> = {
+  thread_subject: 'subject',
+  email_subject: 'subject',
+  sender_name: 'sender',
+  sender_email: 'sender',
+  sender_in_contacts: 'sender',
+  to_name: 'to',
+  to_email: 'to',
+  cc_name: 'cc',
+  cc_email: 'cc',
+  content: 'content',
+  attachment_filename: 'attachment',
+}
+
+function getFieldLabel(field: string): string {
+  if (field.startsWith('header:')) {
+    return field.slice(7)
+  }
+  return fieldLabels[field] || field
+}
+
+function generateSummary(): string {
+  const parts: string[] = []
+
+  // Collect condition field names (max 3)
+  const collectFields = (group: ConditionGroup): string[] => {
+    const fields: string[] = []
+    for (const item of group.conditions) {
+      if ('operator' in item) {
+        fields.push(...collectFields(item))
+      } else {
+        const label = getFieldLabel(item.field)
+        if (!fields.includes(label)) {
+          fields.push(label)
+        }
+      }
+      if (fields.length >= 3) break
+    }
+    return fields
+  }
+
+  const fields = collectFields(conditions.value)
+  if (fields.length > 0) {
+    parts.push(fields.slice(0, 3).join(', '))
+    if (fields.length < countConditions(conditions.value)) {
+      parts[0] += '...'
+    }
+  }
+
+  // Add action
+  const action = actionOptions.find(o => o.value === actionType.value)
+  let actionLabel = action?.shortLabel || actionType.value
+  if (actionType.value === 'move_to_folder' && actionFolderId.value) {
+    const folder = folders.value.find(f => f.id === actionFolderId.value)
+    if (folder) {
+      actionLabel = `→ ${folder.name}`
+    }
+  } else {
+    actionLabel = `→ ${actionLabel}`
+  }
+  parts.push(actionLabel)
+
+  return parts.join(' ')
+}
+
+function countConditions(group: ConditionGroup): number {
+  let count = 0
+  for (const item of group.conditions) {
+    if ('operator' in item) {
+      count += countConditions(item)
+    } else {
+      count++
+    }
+  }
+  return count
+}
 
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
     if (props.rule) {
-      name.value = props.rule.name
-      description.value = props.rule.description || ''
       conditions.value = JSON.parse(JSON.stringify(props.rule.conditions))
       actionType.value = props.rule.actionType
       actionFolderId.value = props.rule.actionConfig?.folderId || null
       enabled.value = props.rule.enabled
     } else {
-      name.value = ''
-      description.value = ''
       conditions.value = JSON.parse(JSON.stringify(defaultConditions))
       actionType.value = 'move_to_folder'
       actionFolderId.value = null
@@ -106,8 +181,7 @@ async function handleSave() {
   try {
     const ruleData: RuleData = {
       id: props.rule?.id,
-      name: name.value.trim(),
-      description: description.value.trim() || undefined,
+      name: generateSummary(),
       conditions: conditions.value,
       actionType: actionType.value,
       actionConfig: needsFolderSelection.value && actionFolderId.value
@@ -133,45 +207,21 @@ async function handleSave() {
 
         <form @submit.prevent="handleSave" class="modal-body">
           <div class="form-group">
-            <label for="rule-name">Rule Name *</label>
-            <input
-              id="rule-name"
-              v-model="name"
-              type="text"
-              placeholder="e.g., Archive Newsletters"
-              required
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="rule-description">Description</label>
-            <input
-              id="rule-description"
-              v-model="description"
-              type="text"
-              placeholder="Describe this rule..."
-            />
-          </div>
-
-          <div class="form-group">
-            <label>Conditions *</label>
+            <label>When</label>
             <ConditionBuilder v-model="conditions" />
           </div>
 
           <div class="form-group">
-            <label for="rule-action">Action *</label>
+            <label for="rule-action">Then</label>
             <select id="rule-action" v-model="actionType">
               <option v-for="opt in actionOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>
             </select>
-            <p class="action-description">
-              {{ actionOptions.find(o => o.value === actionType)?.description }}
-            </p>
           </div>
 
           <div v-if="needsFolderSelection" class="form-group">
-            <label for="rule-folder">Target Folder *</label>
+            <label for="rule-folder">To folder</label>
             <select id="rule-folder" v-model="actionFolderId" required>
               <option :value="null" disabled>Select a folder...</option>
               <option v-for="folder in nonSystemFolders" :key="folder.id" :value="folder.id">
@@ -199,7 +249,7 @@ async function handleSave() {
               class="btn btn-primary"
               :disabled="!isValid || saving"
             >
-              {{ saving ? 'Saving...' : (rule?.id ? 'Save Changes' : 'Create Rule') }}
+              {{ saving ? 'Saving...' : (rule?.id ? 'Save' : 'Create') }}
             </button>
           </div>
         </form>
@@ -281,7 +331,6 @@ async function handleSave() {
   margin-bottom: 6px;
 }
 
-.form-group input[type="text"],
 .form-group select {
   width: 100%;
   padding: 10px 12px;
@@ -291,17 +340,10 @@ async function handleSave() {
   background: #fff;
 }
 
-.form-group input[type="text"]:focus,
 .form-group select:focus {
   outline: none;
   border-color: #6366f1;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.action-description {
-  margin-top: 6px;
-  font-size: 13px;
-  color: #6b7280;
 }
 
 .hint {
