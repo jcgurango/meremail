@@ -167,6 +167,9 @@ export interface Folder {
   imapFolder: string | null
   position: number
   isSystem?: boolean
+  notificationsEnabled: boolean
+  showUnreadCount: boolean
+  syncOffline: boolean
   unreadCount: number
 }
 
@@ -1403,11 +1406,16 @@ export async function createFolder(name: string): Promise<{ folder: Folder }> {
   return response.json()
 }
 
-export async function updateFolder(id: number, name: string): Promise<{ folder: Folder }> {
+export async function updateFolder(id: number, updates: {
+  name?: string
+  notificationsEnabled?: boolean
+  showUnreadCount?: boolean
+  syncOffline?: boolean
+}): Promise<{ folder: Folder }> {
   const response = await fetch(`/api/folders/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(updates),
   })
   if (!response.ok) throw new Error('Failed to update folder')
   return response.json()

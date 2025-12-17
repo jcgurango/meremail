@@ -151,9 +151,21 @@ miscRoutes.post('/emails/mark-read', async (c) => {
 })
 
 // GET /api/notifications/pending
-// Returns unread emails from Inbox folder for notifications
+// Returns unread emails from folders with notifications enabled
 miscRoutes.get('/notifications/pending', async (c) => {
-  // Get unread emails from Inbox folder (folderId = 1)
+  // Get folder IDs that have notifications enabled
+  const notificationFolders = db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(eq(folders.notificationsEnabled, true))
+    .all()
+    .map(f => f.id)
+
+  if (notificationFolders.length === 0) {
+    return c.json({ emails: [] })
+  }
+
+  // Get unread emails from folders with notifications enabled
   const unreadEmails = db
     .select({
       id: emails.id,
@@ -170,7 +182,7 @@ miscRoutes.get('/notifications/pending', async (c) => {
     .where(and(
       isNull(emails.readAt),
       eq(contacts.isMe, false), // Don't notify for own emails
-      eq(emailThreads.folderId, 1) // Inbox folder
+      inArray(emailThreads.folderId, notificationFolders)
     ))
     .orderBy(desc(emails.sentAt))
     .limit(50)

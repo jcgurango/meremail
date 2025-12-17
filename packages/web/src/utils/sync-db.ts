@@ -8,6 +8,7 @@ export interface SyncFolder {
   name: string
   imapFolder: string | null
   position: number
+  syncOffline: boolean
   cachedAt: number
 }
 

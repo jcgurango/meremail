@@ -14,6 +14,7 @@ interface Folder {
   imapFolder: string | null
   position: number
   unreadCount: number
+  showUnreadCount: boolean
 }
 
 interface QueueCounts {
@@ -80,7 +81,7 @@ watch([() => props.activeFolderId, () => props.activeQueue], () => {
     >
       <span class="nav-icon">{{ getFolderIcon(folder) }}</span>
       <span class="nav-label">{{ folder.name }}</span>
-      <span v-if="folder.unreadCount" class="nav-count">{{ folder.unreadCount }}</span>
+      <span v-if="folder.showUnreadCount && folder.unreadCount" class="nav-count">{{ folder.unreadCount }}</span>
     </RouterLink>
 
     <!-- Separator -->

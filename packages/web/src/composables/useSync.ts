@@ -142,6 +142,7 @@ interface ApiFolder {
   imapFolder: string | null
   position: number
   unreadCount: number
+  syncOffline: boolean
 }
 
 type SyncStatus = 'idle' | 'syncing' | 'error'
@@ -199,6 +200,7 @@ async function syncFolders(): Promise<SyncFolder[]> {
       name: f.name,
       imapFolder: f.imapFolder,
       position: f.position,
+      syncOffline: f.syncOffline,
       cachedAt: now,
     }))
 
@@ -1084,8 +1086,10 @@ export async function syncAll(): Promise<void> {
     // Sync contacts
     await syncContacts()
 
-    // Sync each folder's threads dynamically
-    const folderSyncPromises = folders.map(f => syncFolderThreads(f.id))
+    // Sync each folder's threads dynamically (only folders with syncOffline enabled)
+    const offlineFolders = folders.filter(f => f.syncOffline)
+    const folderSyncPromises = offlineFolders.map(f => syncFolderThreads(f.id))
+    console.log(`[Sync] Syncing ${offlineFolders.length} of ${folders.length} folders for offline`)
 
     // Sync all folders and queues in parallel
     await Promise.allSettled([

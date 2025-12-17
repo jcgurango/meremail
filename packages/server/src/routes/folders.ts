@@ -13,6 +13,9 @@ foldersRoutes.get('/', async (c) => {
       imapFolder: folders.imapFolder,
       position: folders.position,
       isSystem: folders.isSystem,
+      notificationsEnabled: folders.notificationsEnabled,
+      showUnreadCount: folders.showUnreadCount,
+      syncOffline: folders.syncOffline,
     })
     .from(folders)
     .orderBy(folders.position)
@@ -92,6 +95,10 @@ foldersRoutes.post('/', async (c) => {
       imapFolder: null,
       position: maxPosition + 1,
       isSystem: false,
+      // Sensible defaults for custom folders
+      notificationsEnabled: false,
+      showUnreadCount: true,
+      syncOffline: true,
       createdAt: now,
     })
     .returning()
@@ -117,11 +124,12 @@ foldersRoutes.patch('/:id', async (c) => {
     return c.json({ error: 'Folder not found' }, 404)
   }
 
-  if (existingFolder.isSystem) {
-    return c.json({ error: 'Cannot modify system folders' }, 400)
-  }
-
   const body = await c.req.json()
+
+  // System folders cannot have their name changed
+  if (existingFolder.isSystem && body.name !== undefined) {
+    return c.json({ error: 'Cannot rename system folders' }, 400)
+  }
 
   if (body.name !== undefined && typeof body.name !== 'string') {
     return c.json({ error: 'name must be a string' }, 400)
@@ -129,6 +137,9 @@ foldersRoutes.patch('/:id', async (c) => {
 
   const updates: Partial<typeof folders.$inferInsert> = {}
   if (body.name !== undefined) updates.name = body.name.trim()
+  if (body.notificationsEnabled !== undefined) updates.notificationsEnabled = body.notificationsEnabled
+  if (body.showUnreadCount !== undefined) updates.showUnreadCount = body.showUnreadCount
+  if (body.syncOffline !== undefined) updates.syncOffline = body.syncOffline
 
   db.update(folders)
     .set(updates)

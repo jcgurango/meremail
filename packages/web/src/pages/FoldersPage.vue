@@ -22,10 +22,16 @@ const error = ref('')
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+const showSettingsModal = ref(false)
 const editingFolder = ref<Folder | null>(null)
 const newFolderName = ref('')
 const editFolderName = ref('')
 const saving = ref(false)
+
+// Settings form state
+const settingsNotifications = ref(false)
+const settingsUnreadCount = ref(true)
+const settingsSyncOffline = ref(true)
 
 const systemFolders = computed(() => folders.value.filter(f => f.isSystem))
 const customFolders = computed(() => folders.value.filter(f => !f.isSystem))
@@ -60,10 +66,19 @@ function openDeleteModal(folder: Folder) {
   showDeleteModal.value = true
 }
 
+function openSettingsModal(folder: Folder) {
+  editingFolder.value = folder
+  settingsNotifications.value = folder.notificationsEnabled
+  settingsUnreadCount.value = folder.showUnreadCount
+  settingsSyncOffline.value = folder.syncOffline
+  showSettingsModal.value = true
+}
+
 function closeModals() {
   showCreateModal.value = false
   showEditModal.value = false
   showDeleteModal.value = false
+  showSettingsModal.value = false
   editingFolder.value = null
 }
 
@@ -88,12 +103,32 @@ async function handleEdit() {
   saving.value = true
 
   try {
-    await updateFolder(editingFolder.value.id, editFolderName.value.trim())
+    await updateFolder(editingFolder.value.id, { name: editFolderName.value.trim() })
     closeModals()
     await loadFolders()
   } catch (e) {
     console.error('Failed to update folder:', e)
     alert('Failed to update folder')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleSettings() {
+  if (!editingFolder.value || saving.value) return
+  saving.value = true
+
+  try {
+    await updateFolder(editingFolder.value.id, {
+      notificationsEnabled: settingsNotifications.value,
+      showUnreadCount: settingsUnreadCount.value,
+      syncOffline: settingsSyncOffline.value,
+    })
+    closeModals()
+    await loadFolders()
+  } catch (e) {
+    console.error('Failed to update folder settings:', e)
+    alert('Failed to update folder settings')
   } finally {
     saving.value = false
   }
@@ -186,6 +221,15 @@ async function moveFolder(folder: Folder, direction: 'up' | 'down') {
                 <span class="system-badge">System folder</span>
               </div>
             </div>
+            <div class="folder-actions">
+              <button
+                class="action-btn settings"
+                @click="openSettingsModal(folder)"
+                title="Folder settings"
+              >
+                Settings
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -232,6 +276,13 @@ async function moveFolder(folder: Folder, direction: 'up' | 'down') {
             </div>
 
             <div class="folder-actions">
+              <button
+                class="action-btn settings"
+                @click="openSettingsModal(folder)"
+                title="Folder settings"
+              >
+                Settings
+              </button>
               <button
                 class="action-btn edit"
                 @click="openEditModal(folder)"
@@ -354,6 +405,62 @@ async function moveFolder(folder: Folder, direction: 'up' | 'down') {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Settings Modal -->
+    <Teleport to="body">
+      <div v-if="showSettingsModal" class="modal-overlay" @click.self="closeModals">
+        <div class="modal-content small">
+          <div class="modal-header">
+            <h2>{{ editingFolder?.name }} Settings</h2>
+            <button type="button" class="close-btn" @click="closeModals">&times;</button>
+          </div>
+          <form @submit.prevent="handleSettings" class="modal-body">
+            <div class="settings-group">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="settingsNotifications" />
+                <span class="toggle-text">
+                  <strong>Notifications</strong>
+                  <span class="toggle-desc">Get notified when new emails arrive in this folder</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="settings-group">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="settingsUnreadCount" />
+                <span class="toggle-text">
+                  <strong>Show unread count</strong>
+                  <span class="toggle-desc">Display unread email count in the sidebar</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="settings-group">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="settingsSyncOffline" />
+                <span class="toggle-text">
+                  <strong>Sync offline</strong>
+                  <span class="toggle-desc">Cache emails from this folder for offline access</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeModals">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="btn btn-primary"
+                :disabled="saving"
+              >
+                {{ saving ? 'Saving...' : 'Save Settings' }}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </Teleport>
@@ -591,6 +698,59 @@ h1 {
 
 .action-btn.delete:hover {
   background: #fecaca;
+}
+
+.action-btn.settings {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.action-btn.settings:hover {
+  background: #e5e7eb;
+}
+
+/* Settings modal */
+.settings-group {
+  padding: 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.settings-group:first-child {
+  padding-top: 0;
+}
+
+.settings-group:last-of-type {
+  border-bottom: none;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-text strong {
+  font-size: 14px;
+  color: #374151;
+}
+
+.toggle-desc {
+  font-size: 13px;
+  color: #6b7280;
 }
 
 /* Modal styles */
