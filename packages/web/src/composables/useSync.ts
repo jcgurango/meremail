@@ -142,6 +142,8 @@ interface ApiFolder {
   imapFolder: string | null
   position: number
   unreadCount: number
+  notificationsEnabled: boolean
+  showUnreadCount: boolean
   syncOffline: boolean
 }
 
@@ -200,6 +202,8 @@ async function syncFolders(): Promise<SyncFolder[]> {
       name: f.name,
       imapFolder: f.imapFolder,
       position: f.position,
+      notificationsEnabled: f.notificationsEnabled,
+      showUnreadCount: f.showUnreadCount,
       syncOffline: f.syncOffline,
       cachedAt: now,
     }))

@@ -202,13 +202,16 @@ export async function getFolders(): Promise<{ data: { folders: Folder[] }; fromC
       name: f.name,
       imapFolder: f.imapFolder,
       position: f.position,
+      notificationsEnabled: f.notificationsEnabled,
+      showUnreadCount: f.showUnreadCount,
+      syncOffline: f.syncOffline,
       unreadCount: folderCounts[f.id] || 0,
     }))
   } else {
     // Default folders if nothing synced yet
     folders = [
-      { id: 1, name: 'Inbox', imapFolder: 'INBOX', position: 0, unreadCount: folderCounts[1] || 0 },
-      { id: 2, name: 'Junk', imapFolder: 'Junk', position: 1, unreadCount: folderCounts[2] || 0 },
+      { id: 1, name: 'Inbox', imapFolder: 'INBOX', position: 0, notificationsEnabled: true, showUnreadCount: true, syncOffline: true, unreadCount: folderCounts[1] || 0 },
+      { id: 2, name: 'Junk', imapFolder: 'Junk', position: 1, notificationsEnabled: false, showUnreadCount: false, syncOffline: false, unreadCount: folderCounts[2] || 0 },
     ]
   }
 
