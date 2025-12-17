@@ -227,8 +227,14 @@ export function evaluateConditions(conditions: ConditionGroup, ctx: RuleEvaluati
 /**
  * Evaluate all enabled rules against the context
  * Returns the first matching rule (first match wins based on position)
+ *
+ * @param ctx - The rule evaluation context
+ * @param targetFolderId - Optional folder ID to filter rules by their folderIds setting.
+ *                         If provided, only rules that include this folder in their folderIds
+ *                         will be evaluated. This is used during import to respect the rule's
+ *                         "apply to folders" setting.
  */
-export function evaluateRules(ctx: RuleEvaluationContext): RuleEvaluationResult | null {
+export function evaluateRules(ctx: RuleEvaluationContext, targetFolderId?: number): RuleEvaluationResult | null {
   const rules = db
     .select()
     .from(emailRules)
@@ -237,6 +243,14 @@ export function evaluateRules(ctx: RuleEvaluationContext): RuleEvaluationResult 
     .all()
 
   for (const rule of rules) {
+    // If targetFolderId is provided, skip rules that don't apply to this folder
+    if (targetFolderId !== undefined) {
+      const ruleFolderIds = rule.folderIds as number[]
+      if (!ruleFolderIds.includes(targetFolderId)) {
+        continue
+      }
+    }
+
     const conditions = rule.conditions as ConditionGroup
     if (evaluateGroup(conditions, ctx)) {
       return {

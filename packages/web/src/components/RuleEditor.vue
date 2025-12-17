@@ -16,6 +16,7 @@ export interface RuleData {
   conditions: ConditionGroup
   actionType: ActionType
   actionConfig?: ActionConfig
+  folderIds?: number[]
   enabled: boolean
 }
 
@@ -39,6 +40,7 @@ const defaultConditions: ConditionGroup = {
 const conditions = ref<ConditionGroup>({ ...defaultConditions })
 const actionType = ref<ActionType>('move_to_folder')
 const actionFolderId = ref<number | null>(null)
+const applyToFolderIds = ref<number[]>([1]) // Default to Inbox
 const enabled = ref(true)
 const folders = ref<Folder[]>([])
 const saving = ref(false)
@@ -159,11 +161,13 @@ watch(() => props.open, (isOpen) => {
       conditions.value = JSON.parse(JSON.stringify(props.rule.conditions))
       actionType.value = props.rule.actionType
       actionFolderId.value = props.rule.actionConfig?.folderId || null
+      applyToFolderIds.value = props.rule.folderIds?.length ? [...props.rule.folderIds] : [1]
       enabled.value = props.rule.enabled
     } else {
       conditions.value = JSON.parse(JSON.stringify(defaultConditions))
       actionType.value = 'move_to_folder'
       actionFolderId.value = null
+      applyToFolderIds.value = [1]
       enabled.value = true
     }
   }
@@ -200,6 +204,7 @@ async function handleSave() {
       actionConfig: needsFolderSelection.value && actionFolderId.value
         ? { folderId: actionFolderId.value }
         : undefined,
+      folderIds: applyToFolderIds.value,
       enabled: enabled.value,
     }
     emit('save', ruleData)
@@ -215,7 +220,7 @@ async function handlePreview() {
   previewResults.value = null
 
   try {
-    const result = await previewRule(conditions.value)
+    const result = await previewRule(conditions.value, applyToFolderIds.value)
     previewResults.value = result.matches
     previewScanned.value = result.scannedCount
   } catch (e) {
@@ -224,6 +229,17 @@ async function handlePreview() {
   } finally {
     previewing.value = false
   }
+}
+
+function toggleApplyFolder(folderId: number) {
+  const idx = applyToFolderIds.value.indexOf(folderId)
+  if (idx >= 0) {
+    applyToFolderIds.value.splice(idx, 1)
+  } else {
+    applyToFolderIds.value.push(folderId)
+  }
+  // Clear preview when folders change
+  clearPreview()
 }
 
 function clearPreview() {
@@ -281,6 +297,24 @@ function formatDate(dateStr: string | null): string {
               <input type="checkbox" v-model="enabled" />
               <span>Rule is enabled</span>
             </label>
+          </div>
+
+          <!-- Folder selection for preview/apply -->
+          <div class="form-group">
+            <label>Apply to folders</label>
+            <div class="folder-chips">
+              <button
+                v-for="folder in folders"
+                :key="folder.id"
+                type="button"
+                class="folder-chip"
+                :class="{ selected: applyToFolderIds.includes(folder.id) }"
+                @click="toggleApplyFolder(folder.id)"
+              >
+                {{ folder.name }}
+              </button>
+            </div>
+            <p class="hint">Select which folders to scan when previewing or applying this rule.</p>
           </div>
 
           <!-- Preview section -->
@@ -607,6 +641,39 @@ function formatDate(dateStr: string | null): string {
   text-align: center;
   color: #9ca3af;
   font-size: 13px;
+}
+
+.folder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.folder-chip {
+  padding: 6px 12px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.folder-chip:hover {
+  background: #e5e7eb;
+}
+
+.folder-chip.selected {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.folder-chip.selected:hover {
+  background: #4f46e5;
+  border-color: #4f46e5;
 }
 
 @media (max-width: 600px) {

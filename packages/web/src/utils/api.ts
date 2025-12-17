@@ -1283,6 +1283,7 @@ export interface Rule {
   conditions: RuleConditionGroup
   actionType: string
   actionConfig: { folderId?: number } | null
+  folderIds: number[]
   position: number
   enabled: boolean
   createdAt: string
@@ -1319,6 +1320,7 @@ export async function createRule(data: {
   conditions: RuleConditionGroup
   actionType: string
   actionConfig?: { folderId?: number }
+  folderIds?: number[]
   enabled?: boolean
 }): Promise<{ rule: Rule }> {
   const response = await fetch('/api/rules', {
@@ -1335,6 +1337,7 @@ export async function updateRule(id: number, data: Partial<{
   conditions: RuleConditionGroup
   actionType: string
   actionConfig: { folderId?: number }
+  folderIds: number[]
   enabled: boolean
 }>): Promise<{ rule: Rule }> {
   const response = await fetch(`/api/rules/${id}`, {
@@ -1393,7 +1396,7 @@ export interface RulePreviewMatch {
   sentAt: string | null
 }
 
-export async function previewRule(conditions: RuleConditionGroup): Promise<{
+export async function previewRule(conditions: RuleConditionGroup, folderIds: number[]): Promise<{
   matches: RulePreviewMatch[]
   scannedCount: number
   matchCount: number
@@ -1401,7 +1404,7 @@ export async function previewRule(conditions: RuleConditionGroup): Promise<{
   const response = await fetch('/api/rules/preview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conditions }),
+    body: JSON.stringify({ conditions, folderIds }),
   })
   if (!response.ok) throw new Error('Failed to preview rule')
   return response.json()

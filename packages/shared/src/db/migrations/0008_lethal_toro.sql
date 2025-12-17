@@ -1,0 +1,1 @@
+ALTER TABLE `email_rules` ADD `folder_ids` text DEFAULT '[1]' NOT NULL;

@@ -10,6 +10,8 @@ export const emailRules = sqliteTable('email_rules', {
   actionType: text('action_type').$type<ActionType>().notNull(),
   // Action-specific config (e.g., {folderId: 3} for move_to_folder)
   actionConfig: text('action_config', { mode: 'json' }).$type<ActionConfig>(),
+  // Which folders this rule applies to (for preview/apply, not live import)
+  folderIds: text('folder_ids', { mode: 'json' }).notNull().default('[1]').$type<number[]>(),
   // Order for "first match wins" evaluation
   position: integer('position').notNull().default(0),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),

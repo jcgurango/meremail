@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, sql, asc, desc, isNull } from 'drizzle-orm'
+import { eq, sql, asc, desc, isNull, inArray } from 'drizzle-orm'
 import {
   db,
   emailRules,
@@ -33,6 +33,7 @@ rulesRoutes.get('/', async (c) => {
       conditions: rule.conditions,
       actionType: rule.actionType,
       actionConfig: rule.actionConfig,
+      folderIds: rule.folderIds,
       position: rule.position,
       enabled: rule.enabled,
       createdAt: rule.createdAt,
@@ -64,6 +65,9 @@ rulesRoutes.post('/', async (c) => {
 
   const now = new Date()
 
+  // Validate folderIds if provided
+  const folderIds = Array.isArray(body.folderIds) ? body.folderIds : [1]
+
   const result = db
     .insert(emailRules)
     .values({
@@ -71,6 +75,7 @@ rulesRoutes.post('/', async (c) => {
       conditions: body.conditions as ConditionGroup,
       actionType: body.actionType as ActionType,
       actionConfig: body.actionConfig as ActionConfig || null,
+      folderIds,
       position: maxPosition + 1,
       enabled: body.enabled !== false,
       createdAt: now,
@@ -86,6 +91,7 @@ rulesRoutes.post('/', async (c) => {
       conditions: result.conditions,
       actionType: result.actionType,
       actionConfig: result.actionConfig,
+      folderIds: result.folderIds,
       position: result.position,
       enabled: result.enabled,
       createdAt: result.createdAt,
@@ -177,6 +183,7 @@ rulesRoutes.get('/:id', async (c) => {
       conditions: rule.conditions,
       actionType: rule.actionType,
       actionConfig: rule.actionConfig,
+      folderIds: rule.folderIds,
       position: rule.position,
       enabled: rule.enabled,
       createdAt: rule.createdAt,
@@ -211,6 +218,7 @@ rulesRoutes.patch('/:id', async (c) => {
   if (body.conditions !== undefined) updates.conditions = body.conditions
   if (body.actionType !== undefined) updates.actionType = body.actionType
   if (body.actionConfig !== undefined) updates.actionConfig = body.actionConfig
+  if (body.folderIds !== undefined) updates.folderIds = body.folderIds
   if (body.enabled !== undefined) updates.enabled = body.enabled
 
   db.update(emailRules)
@@ -231,6 +239,7 @@ rulesRoutes.patch('/:id', async (c) => {
       conditions: updatedRule.conditions,
       actionType: updatedRule.actionType,
       actionConfig: updatedRule.actionConfig,
+      folderIds: updatedRule.folderIds,
       position: updatedRule.position,
       enabled: updatedRule.enabled,
       createdAt: updatedRule.createdAt,
@@ -300,6 +309,7 @@ rulesRoutes.post('/preview', async (c) => {
   }
 
   const conditions = body.conditions as ConditionGroup
+  const folderIds: number[] = Array.isArray(body.folderIds) ? body.folderIds : [1]
   const MAX_SCAN = 1000
   const MAX_MATCHES = 20
 
@@ -317,7 +327,7 @@ rulesRoutes.post('/preview', async (c) => {
   const BATCH_SIZE = 100
 
   while (scannedCount < MAX_SCAN && matches.length < MAX_MATCHES) {
-    // Get batch of emails in descending chronological order (non-trashed, sent emails only)
+    // Get batch of emails from threads in selected folders
     const emailBatch = db
       .select({
         id: emails.id,
@@ -329,7 +339,8 @@ rulesRoutes.post('/preview', async (c) => {
         sentAt: emails.sentAt,
       })
       .from(emails)
-      .where(isNull(emails.trashedAt))
+      .innerJoin(emailThreads, eq(emails.threadId, emailThreads.id))
+      .where(sql`${emails.trashedAt} IS NULL AND ${emailThreads.folderId} IN (${sql.join(folderIds.map(id => sql`${id}`), sql`, `)})`)
       .orderBy(desc(emails.sentAt))
       .limit(BATCH_SIZE)
       .offset(offset)
@@ -433,10 +444,14 @@ rulesRoutes.post('/:id/apply', async (c) => {
     return c.json({ error: 'Rule not found' }, 404)
   }
 
-  // Count total threads to process
+  // Use the rule's configured folder IDs
+  const folderIds = rule.folderIds
+
+  // Count total threads to process in selected folders
   const totalCount = db
     .select({ count: sql<number>`COUNT(*)` })
     .from(emailThreads)
+    .where(inArray(emailThreads.folderId, folderIds))
     .get()?.count || 0
 
   const now = new Date()
@@ -457,7 +472,7 @@ rulesRoutes.post('/:id/apply', async (c) => {
     .get()
 
   // Process in background
-  processRuleApplication(application.id, rule).catch(err => {
+  processRuleApplication(application.id, rule, folderIds).catch(err => {
     console.error(`Rule application ${application.id} failed:`, err)
     db.update(ruleApplications)
       .set({
@@ -480,7 +495,8 @@ function yieldToEventLoop(): Promise<void> {
 // Background processing function
 async function processRuleApplication(
   applicationId: number,
-  rule: typeof emailRules.$inferSelect
+  rule: typeof emailRules.$inferSelect,
+  folderIds: number[]
 ): Promise<void> {
   const BATCH_SIZE = 50  // Smaller batches for better responsiveness
   let offset = 0
@@ -497,10 +513,11 @@ async function processRuleApplication(
     // Yield to event loop before each batch to allow other requests
     await yieldToEventLoop()
 
-    // Get batch of threads
+    // Get batch of threads from selected folders
     const threads = db
       .select({ id: emailThreads.id })
       .from(emailThreads)
+      .where(inArray(emailThreads.folderId, folderIds))
       .limit(BATCH_SIZE)
       .offset(offset)
       .all()

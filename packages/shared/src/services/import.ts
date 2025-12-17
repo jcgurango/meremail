@@ -289,8 +289,9 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
   let folderId = email.isJunk ? 2 : 1
 
   // Evaluate rules to potentially override folder and other settings
+  // Pass the target folder ID so rules are only evaluated if they apply to this folder
   const ruleContext = buildRuleContext(email, normalizedSubject)
-  const ruleResult = evaluateRules(ruleContext)
+  const ruleResult = evaluateRules(ruleContext, folderId)
   let ruleActions = ruleResult ? determineImportActions(ruleResult) : null
 
   // Apply rule folder override

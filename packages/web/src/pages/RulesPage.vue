@@ -72,6 +72,7 @@ function openEditor(rule?: Rule) {
       conditions: rule.conditions as unknown as RuleData['conditions'],
       actionType: rule.actionType as ActionType,
       actionConfig: rule.actionConfig || undefined,
+      folderIds: rule.folderIds,
       enabled: rule.enabled,
     }
   } else {
@@ -93,6 +94,7 @@ async function handleSave(ruleData: RuleData) {
         conditions: ruleData.conditions,
         actionType: ruleData.actionType,
         actionConfig: ruleData.actionConfig,
+        folderIds: ruleData.folderIds,
         enabled: ruleData.enabled,
       })
     } else {
@@ -101,6 +103,7 @@ async function handleSave(ruleData: RuleData) {
         conditions: ruleData.conditions,
         actionType: ruleData.actionType,
         actionConfig: ruleData.actionConfig,
+        folderIds: ruleData.folderIds,
         enabled: ruleData.enabled,
       })
     }
@@ -157,7 +160,9 @@ async function moveRule(rule: Rule, direction: 'up' | 'down') {
 }
 
 async function handleApply(rule: Rule) {
-  if (!confirm(`Apply rule "${rule.name}" to all existing emails? This may take a while.`)) return
+  const folderCount = rule.folderIds.length
+  const folderText = folderCount === 1 ? '1 folder' : `${folderCount} folders`
+  if (!confirm(`Apply rule "${rule.name}" to ${folderText}? This may take a while.`)) return
 
   try {
     await applyRule(rule.id)

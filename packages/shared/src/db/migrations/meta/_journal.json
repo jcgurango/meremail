@@ -57,6 +57,13 @@
       "when": 1765962802742,
       "tag": "0007_freezing_bill_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1765991061254,
+      "tag": "0008_lethal_toro",
+      "breakpoints": true
     }
   ]
 }
