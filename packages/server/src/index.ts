@@ -15,6 +15,7 @@ import { uploadsRoutes } from './routes/uploads'
 import { searchRoutes } from './routes/search'
 import { miscRoutes } from './routes/misc'
 import { foldersRoutes } from './routes/folders'
+import { rulesRoutes } from './routes/rules'
 import { authRoutes, requireAuth } from './routes/auth'
 import { startSendQueueProcessor } from './services/send-queue'
 import { startDailyScheduler } from './services/daily-scheduler'
@@ -43,6 +44,7 @@ app.route('/api/attachments', attachmentsRoutes)
 app.route('/api/uploads', uploadsRoutes)
 app.route('/api/search', searchRoutes)
 app.route('/api/folders', foldersRoutes)
+app.route('/api/rules', rulesRoutes)
 app.route('/api', miscRoutes)
 
 // In production, serve the Vue app from packages/web/dist

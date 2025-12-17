@@ -489,3 +489,149 @@ threadsRoutes.patch('/:id/set-aside', async (c) => {
 
   return c.json({ success: true, setAside, setAsideAt })
 })
+
+// POST /api/threads/:id/trash
+// Move thread to Trash folder
+threadsRoutes.post('/:id/trash', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid thread ID' }, 400)
+  }
+
+  const thread = db.select({ folderId: emailThreads.folderId })
+    .from(emailThreads)
+    .where(eq(emailThreads.id, id))
+    .get()
+
+  if (!thread) {
+    return c.json({ error: 'Thread not found' }, 404)
+  }
+
+  const TRASH_FOLDER_ID = 3
+  const now = new Date()
+
+  // Store previous folder for restore and move to Trash
+  db.update(emailThreads)
+    .set({
+      previousFolderId: thread.folderId,
+      folderId: TRASH_FOLDER_ID,
+      trashedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(emailThreads.id, id))
+    .run()
+
+  return c.json({ success: true, trashedAt: now })
+})
+
+// POST /api/threads/:id/restore
+// Restore thread from Trash to its previous folder
+threadsRoutes.post('/:id/restore', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid thread ID' }, 400)
+  }
+
+  const thread = db.select({
+    folderId: emailThreads.folderId,
+    previousFolderId: emailThreads.previousFolderId,
+    trashedAt: emailThreads.trashedAt,
+  })
+    .from(emailThreads)
+    .where(eq(emailThreads.id, id))
+    .get()
+
+  if (!thread) {
+    return c.json({ error: 'Thread not found' }, 404)
+  }
+
+  const TRASH_FOLDER_ID = 3
+  if (thread.folderId !== TRASH_FOLDER_ID) {
+    return c.json({ error: 'Thread is not in Trash' }, 400)
+  }
+
+  const now = new Date()
+  const restoreFolderId = thread.previousFolderId || 1 // Default to Inbox if no previous folder
+
+  db.update(emailThreads)
+    .set({
+      folderId: restoreFolderId,
+      previousFolderId: null,
+      trashedAt: null,
+      updatedAt: now,
+    })
+    .where(eq(emailThreads.id, id))
+    .run()
+
+  return c.json({ success: true, folderId: restoreFolderId })
+})
+
+// DELETE /api/threads/:id
+// Permanently delete a trashed thread
+threadsRoutes.delete('/:id', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid thread ID' }, 400)
+  }
+
+  const thread = db.select({
+    folderId: emailThreads.folderId,
+    trashedAt: emailThreads.trashedAt,
+  })
+    .from(emailThreads)
+    .where(eq(emailThreads.id, id))
+    .get()
+
+  if (!thread) {
+    return c.json({ error: 'Thread not found' }, 404)
+  }
+
+  const TRASH_FOLDER_ID = 3
+  if (thread.folderId !== TRASH_FOLDER_ID) {
+    return c.json({ error: 'Can only permanently delete threads in Trash' }, 400)
+  }
+
+  // Get all emails in this thread
+  const threadEmails = db.select({ id: emails.id })
+    .from(emails)
+    .where(eq(emails.threadId, id))
+    .all()
+
+  const emailIds = threadEmails.map(e => e.id)
+
+  if (emailIds.length > 0) {
+    // Get and delete attachment files
+    const threadAttachments = db.select({ filePath: attachments.filePath })
+      .from(attachments)
+      .where(inArray(attachments.emailId, emailIds))
+      .all()
+
+    const { existsSync, unlinkSync } = await import('fs')
+    for (const attachment of threadAttachments) {
+      try {
+        if (existsSync(attachment.filePath)) {
+          unlinkSync(attachment.filePath)
+        }
+      } catch (err) {
+        console.error(`Failed to delete attachment file ${attachment.filePath}:`, err)
+      }
+    }
+
+    // Delete attachment records
+    db.delete(attachments).where(inArray(attachments.emailId, emailIds)).run()
+
+    // Delete email contacts
+    db.delete(emailContacts).where(inArray(emailContacts.emailId, emailIds)).run()
+  }
+
+  // Delete thread contacts
+  db.delete(emailThreadContacts).where(eq(emailThreadContacts.threadId, id)).run()
+
+  // Delete emails
+  db.delete(emails).where(eq(emails.threadId, id)).run()
+
+  // Delete thread
+  db.delete(emailThreads).where(eq(emailThreads.id, id)).run()
+
+  return c.json({ success: true })
+})

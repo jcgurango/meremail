@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
-import { resolvePath } from '@meremail/shared'
+import { resolvePath, cleanupExpiredItems } from '@meremail/shared'
 import { createBackup, cleanupOldBackups } from '../cli/backup'
 
 // State file to track last run
@@ -12,6 +12,7 @@ const CHECK_INTERVAL = 60 * 60 * 1000 // Check every hour
 
 interface SchedulerState {
   lastBackupDate: string | null
+  lastRetentionCleanupDate: string | null
 }
 
 function loadState(): SchedulerState {
@@ -22,7 +23,7 @@ function loadState(): SchedulerState {
   } catch (error) {
     console.error('[DailyScheduler] Error loading state:', error)
   }
-  return { lastBackupDate: null }
+  return { lastBackupDate: null, lastRetentionCleanupDate: null }
 }
 
 function saveState(state: SchedulerState): void {
@@ -60,6 +61,24 @@ async function runDailyBackup(): Promise<void> {
 }
 
 /**
+ * Run the daily retention cleanup task
+ * Permanently deletes items in Trash and Junk folders older than 30 days
+ */
+async function runRetentionCleanup(): Promise<void> {
+  console.log('[DailyScheduler] Running retention cleanup...')
+
+  try {
+    const result = await cleanupExpiredItems()
+    console.log(`[DailyScheduler] Retention cleanup: ${result.threadsDeleted} threads, ${result.emailsDeleted} emails, ${result.attachmentsDeleted} attachments deleted`)
+    if (result.errors.length > 0) {
+      console.error('[DailyScheduler] Retention cleanup errors:', result.errors)
+    }
+  } catch (error) {
+    console.error('[DailyScheduler] Retention cleanup failed:', error)
+  }
+}
+
+/**
  * Check and run daily tasks if they haven't run today
  */
 async function checkAndRunDailyTasks(): Promise<void> {
@@ -71,6 +90,13 @@ async function checkAndRunDailyTasks(): Promise<void> {
   if (state.lastBackupDate !== today) {
     await runDailyBackup()
     state.lastBackupDate = today
+    stateChanged = true
+  }
+
+  // Run retention cleanup if not done today
+  if (state.lastRetentionCleanupDate !== today) {
+    await runRetentionCleanup()
+    state.lastRetentionCleanupDate = today
     stateChanged = true
   }
 

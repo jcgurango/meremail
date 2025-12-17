@@ -8,6 +8,7 @@
     "build": "tsc --noEmit",
     "start": "NODE_ENV=production tsx src/index.ts",
     "mail:import": "tsx src/cli/import.ts",
+    "mail:eml-import": "tsx src/cli/eml-import.ts",
     "mail:folders": "tsx src/cli/list-folders.ts",
     "mail:demo": "tsx src/cli/demo.ts",
     "db:backup": "tsx src/cli/backup.ts"
