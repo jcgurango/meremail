@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
 import EmailComposer from '@/components/EmailComposer.vue'
-import { getThread as apiGetThread } from '@/utils/api'
+import { getThread as apiGetThread, getFolders, type Folder } from '@/utils/api'
 import { retractNotification } from '@/composables/useOffline'
 
 interface Participant {
@@ -50,6 +50,7 @@ interface Thread {
   createdAt: string
   replyLaterAt: string | null
   setAsideAt: string | null
+  folderId: number
   emails: Email[]
   defaultFromId: number | null
 }
@@ -60,13 +61,23 @@ const router = useRouter()
 const thread = ref<Thread | null>(null)
 const pending = ref(true)
 const error = ref<Error | null>(null)
+const folders = ref<Folder[]>([])
 
 const pageTitle = computed(() => thread.value?.subject ? `${thread.value.subject} - MereMail` : 'MereMail')
 
 onMounted(async () => {
   document.title = pageTitle.value
-  await loadThread()
+  await Promise.all([loadThread(), loadFolders()])
 })
+
+async function loadFolders() {
+  try {
+    const result = await getFolders()
+    folders.value = result.data.folders
+  } catch (e) {
+    console.error('Failed to load folders:', e)
+  }
+}
 
 watch(pageTitle, (newTitle) => {
   document.title = newTitle
@@ -287,6 +298,24 @@ async function toggleSetAside() {
   }
 }
 
+async function moveToFolder(folderId: number) {
+  if (!thread.value) return
+
+  try {
+    const response = await fetch(`/api/threads/${thread.value.id}/move`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderId })
+    })
+    if (response.ok) {
+      thread.value.folderId = folderId
+      showSendToMenu.value = false
+    }
+  } catch (e) {
+    console.error('Failed to move thread:', e)
+  }
+}
+
 function goBack() {
   router.back()
 }
@@ -316,6 +345,17 @@ function goBack() {
               <button class="menu-item" @click="toggleSetAside">
                 <span class="menu-check">{{ thread.setAsideAt ? '✓' : '' }}</span>
                 Set Aside
+              </button>
+              <div v-if="folders.length > 0" class="menu-divider"></div>
+              <div v-if="folders.length > 0" class="menu-label">Move to folder</div>
+              <button
+                v-for="folder in folders"
+                :key="folder.id"
+                class="menu-item"
+                @click="moveToFolder(folder.id)"
+              >
+                <span class="menu-check">{{ thread.folderId === folder.id ? '✓' : '' }}</span>
+                {{ folder.name }}
               </button>
             </div>
           </div>
@@ -522,6 +562,21 @@ function goBack() {
 
 .menu-item:hover {
   background: #f5f5f5;
+}
+
+.menu-divider {
+  height: 1px;
+  background: #e5e5e5;
+  margin: 4px 0;
+}
+
+.menu-label {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .menu-check {

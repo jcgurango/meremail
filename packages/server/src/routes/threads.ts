@@ -415,6 +415,7 @@ threadsRoutes.get('/:id', async (c) => {
     createdAt: thread.createdAt,
     replyLaterAt: thread.replyLaterAt,
     setAsideAt: thread.setAsideAt,
+    folderId: thread.folderId,
     emails: emailsWithParticipants,
     defaultFromId,
   })
@@ -488,6 +489,53 @@ threadsRoutes.patch('/:id/set-aside', async (c) => {
     .run()
 
   return c.json({ success: true, setAside, setAsideAt })
+})
+
+// PATCH /api/threads/:id/move
+// Move thread to a different folder
+threadsRoutes.patch('/:id/move', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid thread ID' }, 400)
+  }
+
+  const body = await c.req.json()
+  const folderId = body.folderId
+
+  if (typeof folderId !== 'number') {
+    return c.json({ error: 'folderId is required' }, 400)
+  }
+
+  // Verify folder exists
+  const folder = db.select({ id: folders.id })
+    .from(folders)
+    .where(eq(folders.id, folderId))
+    .get()
+
+  if (!folder) {
+    return c.json({ error: 'Folder not found' }, 404)
+  }
+
+  const thread = db.select({ id: emailThreads.id, folderId: emailThreads.folderId })
+    .from(emailThreads)
+    .where(eq(emailThreads.id, id))
+    .get()
+
+  if (!thread) {
+    return c.json({ error: 'Thread not found' }, 404)
+  }
+
+  const now = new Date()
+
+  db.update(emailThreads)
+    .set({
+      folderId,
+      updatedAt: now,
+    })
+    .where(eq(emailThreads.id, id))
+    .run()
+
+  return c.json({ success: true, folderId })
 })
 
 // POST /api/threads/:id/trash

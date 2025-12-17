@@ -55,6 +55,7 @@ interface ThreadDetail {
   createdAt: string
   replyLaterAt: string | null
   setAsideAt: string | null
+  folderId: number
   emails: Array<{
     id: number
     subject: string
@@ -435,6 +436,7 @@ export async function getThread(threadId: number, markRead = true): Promise<{ da
     createdAt: new Date(thread.createdAt).toISOString(),
     replyLaterAt: thread.replyLaterAt ? new Date(thread.replyLaterAt).toISOString() : null,
     setAsideAt: thread.setAsideAt ? new Date(thread.setAsideAt).toISOString() : null,
+    folderId: thread.folderId ?? 1, // Default to Inbox if not set
     emails: emails.map(e => ({
       id: e.id,
       subject: e.subject,
