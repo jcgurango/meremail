@@ -1,17 +1,28 @@
 # Meremail
 
-A minimalist, self-hosted email client inspired by [HEY](https://hey.com). Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
+A minimalist, self-hosted email API + client with a robust rules engine. Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
 
 ## Features
 
+### Rules Engine
+
+Automatically organize incoming emails with powerful filtering rules:
+
+- **Flexible Conditions**: Match on sender, subject, content, recipients, attachments, or custom headers
+- **Condition Groups**: Combine conditions with AND/OR logic, including nested groups
+- **Multiple Actions**: Move to folder, delete, mark as read, add to Reply Later, or Set Aside
+- **Contact Lists**: Match senders against a list of email addresses
+- **Header Matching**: Filter on any email header (e.g., `X-Spam-Score`, `List-Unsubscribe`)
+- **Preview**: Test your rule against recent emails before saving
+- **Retroactive Application**: Apply rules to existing emails with progress tracking
+
 ### Folder-Based Organization
 
-Emails are organized into folders that sync with your IMAP server:
+Emails are organized into folders:
 
-- **Inbox** - Your main email folder
-- **Junk** - Spam and unwanted emails
-
-Folders are dynamic - add more folders on your IMAP server and they'll sync automatically.
+- **System Folders**: Inbox, Junk, Trash (with 30-day retention)
+- **Custom Folders**: Create your own folders for organization
+- **IMAP Sync**: Folders sync with your IMAP server
 
 ### Reply Later Queue
 
@@ -143,7 +154,7 @@ AUTH_COOKIE_SECRET=change-this-to-a-random-string
 
 ## CLI Commands
 
-### Email Import
+### IMAP Import
 
 ```bash
 # Import all folders from IMAP
@@ -159,6 +170,31 @@ During import:
 - Threads are constructed from References/In-Reply-To headers
 - Emails are assigned to folders based on IMAP source (INBOX, Junk, etc.)
 - Raw EML files are backed up with IMAP metadata (folder, flags, UID)
+- Rules are evaluated and applied to incoming emails
+
+### EML File Import
+
+Import emails from local `.eml` files:
+
+```bash
+# Import all .eml files from a folder (recursive)
+pnpm mail:eml-import ~/backups/emails
+
+# Import sent emails
+pnpm mail:eml-import ~/backups/sent --sent
+
+# Import spam/junk
+pnpm mail:eml-import ~/backups/spam --junk
+
+# Mark imported emails as read
+pnpm mail:eml-import ~/backups/archive --read
+
+# Preview without importing
+pnpm mail:eml-import ~/backups/emails --dry-run
+
+# Non-recursive (single folder only)
+pnpm mail:eml-import ~/backups/emails --no-recursive
+```
 
 ### Demo Mode
 
@@ -260,10 +296,12 @@ packages/
 
 ### Key Concepts
 
-- **Folders** organize threads (Inbox, Junk, etc.) and sync from IMAP
+- **Folders** organize threads (Inbox, Junk, Trash, plus custom folders)
 - **Threads** group related emails by References/In-Reply-To headers
 - **Emails** have `readAt` timestamp (null = unread) for read tracking
 - **Contacts** are a simple address book of senders and recipients
+- **Rules** filter incoming emails with conditions and actions (first match wins)
+- **Trash** holds deleted items for 30 days before permanent deletion
 - **Offline Sync** caches folders, threads, emails, and contacts to IndexedDB for PWA support
 
 ## License

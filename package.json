@@ -11,6 +11,7 @@
     "db:generate": "pnpm -F @meremail/shared db:generate",
     "db:migrate": "pnpm -F @meremail/shared db:migrate",
     "mail:import": "pnpm -F @meremail/server mail:import",
+    "mail:eml-import": "pnpm -F @meremail/server mail:eml-import",
     "mail:folders": "pnpm -F @meremail/server mail:folders",
     "mail:demo": "pnpm -F @meremail/server mail:demo",
     "db:backup": "pnpm -F @meremail/server db:backup",
