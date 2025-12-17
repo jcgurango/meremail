@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { getThreads } from '@/utils/api'
 import { useSyncInit } from '@/composables/useSyncInit'
@@ -23,7 +23,7 @@ const props = defineProps<{
   emptyMessage?: string
 }>()
 
-const { syncVersion, isInitialSyncInProgress } = useSyncInit()
+const { isInitialSyncInProgress } = useSyncInit()
 
 const threads = ref<Thread[]>([])
 const hasMore = ref(false)
@@ -52,11 +52,6 @@ async function loadThreads() {
     loading.value = false
   }
 }
-
-// Reload when sync completes (syncVersion increments)
-watch(syncVersion, () => {
-  loadThreads()
-})
 
 async function loadMore() {
   if (loadingMore.value || !hasMore.value || fromCache.value) return
