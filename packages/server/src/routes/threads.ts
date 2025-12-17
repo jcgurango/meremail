@@ -61,12 +61,8 @@ threadsRoutes.get('/', async (c) => {
     // Filter by folder
     const folderId = folderIdParam ? parseInt(folderIdParam) : 1 // Default to Inbox (id=1)
     whereClause = eq(emailThreads.folderId, folderId)
-    // Sort: drafts first, then unread, then by most recent read time (for read threads) or email date
-    orderByClause = [
-      desc(sql`CASE WHEN draft_count > 0 AND draft_count = total_count THEN 1 ELSE 0 END`),
-      desc(sql`CASE WHEN unread_count > 0 THEN 1 ELSE 0 END`),
-      desc(sql`COALESCE(last_read_at, sort_date)`)
-    ]
+    // Simple chronological sort by latest email date
+    orderByClause = [desc(sql`sort_date`)]
   }
 
   const threadsWithUnread = db

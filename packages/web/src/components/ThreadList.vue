@@ -135,7 +135,8 @@ onMounted(() => {
         :class="{
           unread: thread.unreadCount > 0,
           'is-draft': thread.type === 'draft',
-          'is-queued': thread.queuedCount && thread.queuedCount > 0
+          'is-queued': thread.queuedCount && thread.queuedCount > 0,
+          'has-draft': thread.type !== 'draft' && thread.draftCount && thread.draftCount > 0
         }"
       >
         <RouterLink
@@ -149,6 +150,7 @@ onMounted(() => {
               {{ thread.type === 'draft' && thread.participants.length === 0
                 ? 'New Message'
                 : getParticipantDisplay(thread.participants) }}
+              <span v-if="thread.type !== 'draft' && thread.draftCount && thread.draftCount > 0" class="has-draft-indicator">Draft</span>
             </span>
             <span class="thread-date">
               {{ formatDate(thread.latestEmailAt) }}
@@ -336,6 +338,24 @@ onMounted(() => {
 
 .thread-item.is-queued:hover {
   background: #dbeafe;
+}
+
+.thread-item.has-draft {
+  border-left: 3px solid #f59e0b;
+}
+
+.has-draft-indicator {
+  display: inline-block;
+  padding: 1px 5px;
+  margin-left: 6px;
+  background: transparent;
+  color: #b45309;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 1px solid #f59e0b;
+  border-radius: 3px;
+  vertical-align: middle;
 }
 
 .cache-notice {
