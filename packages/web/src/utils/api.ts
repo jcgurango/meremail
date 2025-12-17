@@ -1374,6 +1374,16 @@ export async function getRuleApplication(id: number): Promise<{ application: Rul
   return response.json()
 }
 
+export interface RuleApplicationWithName extends RuleApplication {
+  ruleName: string | null
+}
+
+export async function getRuleApplications(): Promise<{ applications: RuleApplicationWithName[] }> {
+  const response = await fetch('/api/rules/applications')
+  if (!response.ok) throw new Error('Failed to fetch applications')
+  return response.json()
+}
+
 export interface RulePreviewMatch {
   id: number
   threadId: number | null

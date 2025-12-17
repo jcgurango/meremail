@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import RuleEditor, { type RuleData, type ActionType } from '@/components/RuleEditor.vue'
 import {
@@ -9,21 +9,33 @@ import {
   deleteRule,
   reorderRules,
   applyRule,
-  getRuleApplication,
+  getRuleApplications,
   type Rule,
+  type RuleApplicationWithName,
 } from '@/utils/api'
+
+let pollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   document.title = 'Rules - MereMail'
   loadRules()
+  loadApplications()
+  // Poll for application updates every 2 seconds
+  pollInterval = setInterval(() => {
+    if (applications.value.some(a => a.status === 'running' || a.status === 'pending')) {
+      loadApplications()
+    }
+  }, 2000)
 })
 
-interface RuleWithApplication extends Rule {
-  applying?: boolean
-  applicationProgress?: { processed: number; total: number; matched: number }
-}
+onUnmounted(() => {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+  }
+})
 
-const rules = ref<RuleWithApplication[]>([])
+const rules = ref<Rule[]>([])
+const applications = ref<RuleApplicationWithName[]>([])
 const loading = ref(false)
 const editorOpen = ref(false)
 const editingRule = ref<RuleData | null>(null)
@@ -40,6 +52,15 @@ async function loadRules() {
     console.error(e)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadApplications() {
+  try {
+    const response = await getRuleApplications()
+    applications.value = response.applications
+  } catch (e) {
+    console.error('Failed to load applications:', e)
   }
 }
 
@@ -91,7 +112,7 @@ async function handleSave(ruleData: RuleData) {
   }
 }
 
-async function toggleEnabled(rule: RuleWithApplication) {
+async function toggleEnabled(rule: Rule) {
   try {
     await updateRule(rule.id, { enabled: !rule.enabled })
     rule.enabled = !rule.enabled
@@ -135,46 +156,38 @@ async function moveRule(rule: Rule, direction: 'up' | 'down') {
   }
 }
 
-async function handleApply(rule: RuleWithApplication) {
-  if (rule.applying) return
-
+async function handleApply(rule: Rule) {
   if (!confirm(`Apply rule "${rule.name}" to all existing emails? This may take a while.`)) return
 
-  rule.applying = true
-  rule.applicationProgress = undefined
-
   try {
-    const response = await applyRule(rule.id)
-    const applicationId = response.application.id
-
-    const pollStatus = async () => {
-      const statusResponse = await getRuleApplication(applicationId)
-      const status = statusResponse.application
-
-      rule.applicationProgress = {
-        processed: status.processedCount,
-        total: status.totalCount,
-        matched: status.matchedCount,
-      }
-
-      if (status.status === 'running' || status.status === 'pending') {
-        setTimeout(pollStatus, 1000)
-      } else {
-        rule.applying = false
-        if (status.status === 'completed') {
-          alert(`Rule applied: ${status.matchedCount} matches out of ${status.totalCount} threads`)
-        } else if (status.status === 'failed') {
-          alert(`Rule application failed: ${status.error || 'Unknown error'}`)
-        }
-      }
-    }
-
-    await pollStatus()
+    await applyRule(rule.id)
+    // Immediately refresh applications list to show the new job
+    await loadApplications()
   } catch (e) {
-    rule.applying = false
     console.error('Failed to apply rule:', e)
     alert('Failed to start rule application')
   }
+}
+
+function formatAppTime(app: RuleApplicationWithName): string {
+  if (app.status === 'running' || app.status === 'pending') {
+    if (app.startedAt) {
+      const started = new Date(app.startedAt)
+      const elapsed = Math.floor((Date.now() - started.getTime()) / 1000)
+      if (elapsed < 60) return `Started ${elapsed}s ago`
+      return `Started ${Math.floor(elapsed / 60)}m ago`
+    }
+    return 'Starting...'
+  }
+  if (app.completedAt) {
+    const completed = new Date(app.completedAt)
+    const ago = Math.floor((Date.now() - completed.getTime()) / 1000)
+    if (ago < 60) return `${ago}s ago`
+    if (ago < 3600) return `${Math.floor(ago / 60)}m ago`
+    if (ago < 86400) return `${Math.floor(ago / 3600)}h ago`
+    return completed.toLocaleDateString()
+  }
+  return ''
 }
 
 </script>
@@ -251,18 +264,9 @@ async function handleApply(rule: RuleWithApplication) {
           <button
             class="action-btn apply"
             @click="handleApply(rule)"
-            :disabled="rule.applying"
             title="Apply to existing emails"
           >
-            <template v-if="rule.applying && rule.applicationProgress">
-              {{ rule.applicationProgress.processed }}/{{ rule.applicationProgress.total }}
-            </template>
-            <template v-else-if="rule.applying">
-              ...
-            </template>
-            <template v-else>
-              Apply
-            </template>
+            Apply
           </button>
 
           <button
@@ -280,6 +284,48 @@ async function handleApply(rule: RuleWithApplication) {
           >
             Delete
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Applications Section -->
+    <div v-if="applications.length > 0" class="applications-section">
+      <h2>Recent Applications</h2>
+      <div class="applications-list">
+        <div
+          v-for="app in applications"
+          :key="app.id"
+          class="application-card"
+          :class="app.status"
+        >
+          <div class="app-info">
+            <span class="app-rule">{{ app.ruleName || `Rule #${app.ruleId}` }}</span>
+            <span class="app-status" :class="app.status">{{ app.status }}</span>
+          </div>
+          <div class="app-progress">
+            <template v-if="app.status === 'running' || app.status === 'pending'">
+              <div class="progress-bar">
+                <div
+                  class="progress-fill"
+                  :style="{ width: `${app.totalCount > 0 ? (app.processedCount / app.totalCount) * 100 : 0}%` }"
+                ></div>
+              </div>
+              <span class="progress-text">
+                {{ app.processedCount }} / {{ app.totalCount }} ({{ app.matchedCount }} matched)
+              </span>
+            </template>
+            <template v-else-if="app.status === 'completed'">
+              <span class="result-text">
+                {{ app.matchedCount }} matches out of {{ app.totalCount }} threads
+              </span>
+            </template>
+            <template v-else-if="app.status === 'failed'">
+              <span class="error-text">{{ app.error || 'Unknown error' }}</span>
+            </template>
+          </div>
+          <div class="app-time">
+            {{ formatAppTime(app) }}
+          </div>
         </div>
       </div>
     </div>
@@ -544,6 +590,144 @@ h1 {
   .rule-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
+  }
+}
+
+/* Applications Section */
+.applications-section {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.applications-section h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 16px 0;
+}
+
+.applications-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.application-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.application-card.running,
+.application-card.pending {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.application-card.failed {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.app-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.app-rule {
+  font-weight: 500;
+  color: #374151;
+}
+
+.app-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.app-status.running,
+.app-status.pending {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.app-status.completed {
+  background: #10b981;
+  color: #fff;
+}
+
+.app-status.failed {
+  background: #ef4444;
+  color: #fff;
+}
+
+.app-progress {
+  flex: 1;
+  min-width: 200px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.3s;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.result-text {
+  font-size: 13px;
+  color: #059669;
+}
+
+.error-text {
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.app-time {
+  font-size: 12px;
+  color: #9ca3af;
+  min-width: 80px;
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .application-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-info {
+    min-width: auto;
+  }
+
+  .app-progress {
+    min-width: auto;
+  }
+
+  .app-time {
+    text-align: left;
   }
 }
 </style>

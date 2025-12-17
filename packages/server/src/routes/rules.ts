@@ -94,6 +94,65 @@ rulesRoutes.post('/', async (c) => {
   }, 201)
 })
 
+// GET /api/rules/applications - List all applications
+// NOTE: This must be defined BEFORE /:id to avoid "applications" being parsed as an ID
+rulesRoutes.get('/applications', async (c) => {
+  const applications = db
+    .select({
+      id: ruleApplications.id,
+      ruleId: ruleApplications.ruleId,
+      ruleName: emailRules.name,
+      status: ruleApplications.status,
+      totalCount: ruleApplications.totalCount,
+      processedCount: ruleApplications.processedCount,
+      matchedCount: ruleApplications.matchedCount,
+      error: ruleApplications.error,
+      startedAt: ruleApplications.startedAt,
+      completedAt: ruleApplications.completedAt,
+      createdAt: ruleApplications.createdAt,
+    })
+    .from(ruleApplications)
+    .leftJoin(emailRules, eq(ruleApplications.ruleId, emailRules.id))
+    .orderBy(desc(ruleApplications.createdAt))
+    .limit(50)
+    .all()
+
+  return c.json({ applications })
+})
+
+// GET /api/rules/applications/:id - Get application status
+rulesRoutes.get('/applications/:id', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid application ID' }, 400)
+  }
+
+  const application = db
+    .select({
+      id: ruleApplications.id,
+      ruleId: ruleApplications.ruleId,
+      ruleName: emailRules.name,
+      status: ruleApplications.status,
+      totalCount: ruleApplications.totalCount,
+      processedCount: ruleApplications.processedCount,
+      matchedCount: ruleApplications.matchedCount,
+      error: ruleApplications.error,
+      startedAt: ruleApplications.startedAt,
+      completedAt: ruleApplications.completedAt,
+      createdAt: ruleApplications.createdAt,
+    })
+    .from(ruleApplications)
+    .leftJoin(emailRules, eq(ruleApplications.ruleId, emailRules.id))
+    .where(eq(ruleApplications.id, id))
+    .get()
+
+  if (!application) {
+    return c.json({ error: 'Application not found' }, 404)
+  }
+
+  return c.json({ application })
+})
+
 // GET /api/rules/:id - Get single rule
 rulesRoutes.get('/:id', async (c) => {
   const id = parseInt(c.req.param('id'))
@@ -413,32 +472,17 @@ rulesRoutes.post('/:id/apply', async (c) => {
   return c.json({ application: { id: application.id, status: 'running', totalCount } })
 })
 
-// GET /api/rule-applications/:id - Get application status
-rulesRoutes.get('/applications/:id', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  if (isNaN(id)) {
-    return c.json({ error: 'Invalid application ID' }, 400)
-  }
-
-  const application = db
-    .select()
-    .from(ruleApplications)
-    .where(eq(ruleApplications.id, id))
-    .get()
-
-  if (!application) {
-    return c.json({ error: 'Application not found' }, 404)
-  }
-
-  return c.json({ application })
-})
+// Helper to yield event loop and allow other requests to process
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
+}
 
 // Background processing function
 async function processRuleApplication(
   applicationId: number,
   rule: typeof emailRules.$inferSelect
 ): Promise<void> {
-  const BATCH_SIZE = 100
+  const BATCH_SIZE = 50  // Smaller batches for better responsiveness
   let offset = 0
   let matchedCount = 0
 
@@ -450,6 +494,9 @@ async function processRuleApplication(
   }
 
   while (true) {
+    // Yield to event loop before each batch to allow other requests
+    await yieldToEventLoop()
+
     // Get batch of threads
     const threads = db
       .select({ id: emailThreads.id })
@@ -485,6 +532,9 @@ async function processRuleApplication(
       })
       .where(eq(ruleApplications.id, applicationId))
       .run()
+
+    // Yield again after updating progress
+    await yieldToEventLoop()
   }
 
   // Mark as completed
