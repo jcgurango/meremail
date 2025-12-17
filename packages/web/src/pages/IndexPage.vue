@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import ThreadList from '@/components/ThreadList.vue'
 import FolderNav from '@/components/FolderNav.vue'
 import SearchToolbar, { type SearchFilters } from '@/components/SearchToolbar.vue'
-import { getFolders } from '@/utils/api'
+import { getFolders, markAllAsRead } from '@/utils/api'
 
 const props = defineProps<{
   folderId?: number
@@ -42,6 +42,25 @@ const searchHasMore = ref(false)
 const searchOffset = ref(0)
 const SEARCH_LIMIT = 25
 const unreadOnly = ref(false)
+
+// Mark all as read state
+const showMarkAllConfirm = ref(false)
+const markingAllAsRead = ref(false)
+const threadListKey = ref(0)
+
+async function handleMarkAllAsRead() {
+  markingAllAsRead.value = true
+  try {
+    await markAllAsRead(currentFolderId.value)
+    showMarkAllConfirm.value = false
+    // Force ThreadList to reload
+    threadListKey.value++
+  } catch (e) {
+    console.error('Failed to mark all as read:', e)
+  } finally {
+    markingAllAsRead.value = false
+  }
+}
 
 // Determine current folder ID from props or route param
 const currentFolderId = computed(() => {
@@ -198,6 +217,17 @@ watch(() => props.name, () => {
         <span class="check-icon">{{ unreadOnly ? '✓' : '' }}</span>
         <span>Unread only</span>
       </label>
+      <div class="spacer"></div>
+      <div v-if="showMarkAllConfirm" class="mark-all-confirm">
+        <span>Mark all as read?</span>
+        <button class="confirm-btn" @click="handleMarkAllAsRead" :disabled="markingAllAsRead">
+          {{ markingAllAsRead ? 'Marking...' : 'Yes' }}
+        </button>
+        <button class="cancel-btn" @click="showMarkAllConfirm = false" :disabled="markingAllAsRead">No</button>
+      </div>
+      <button v-else class="mark-all-btn" @click="showMarkAllConfirm = true">
+        Mark all read
+      </button>
     </div>
 
     <SearchToolbar
@@ -250,7 +280,7 @@ watch(() => props.name, () => {
       <!-- Regular thread list -->
       <ThreadList
         v-else-if="foldersLoaded"
-        :key="`${currentFolderId}-${unreadOnly}`"
+        :key="`${currentFolderId}-${unreadOnly}-${threadListKey}`"
         :folder-id="currentFolderId"
         :unread-only="unreadOnly"
         empty-message="No threads yet"
@@ -350,6 +380,75 @@ watch(() => props.name, () => {
   justify-content: center;
   font-size: 10px;
   line-height: 1;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.mark-all-btn {
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mark-all-btn:hover {
+  background: #e5e5e5;
+  color: #333;
+}
+
+.mark-all-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.mark-all-confirm .confirm-btn {
+  padding: 4px 10px;
+  background: #3b82f6;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mark-all-confirm .confirm-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.mark-all-confirm .confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mark-all-confirm .cancel-btn {
+  padding: 4px 10px;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mark-all-confirm .cancel-btn:hover:not(:disabled) {
+  background: #e5e5e5;
+  color: #333;
+}
+
+.mark-all-confirm .cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .loading,

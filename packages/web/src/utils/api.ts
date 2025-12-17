@@ -1514,3 +1514,13 @@ export async function permanentlyDeleteThread(id: number): Promise<{ success: bo
   if (!response.ok) throw new Error('Failed to delete thread')
   return response.json()
 }
+
+export async function markAllAsRead(folderId: number): Promise<{ success: boolean; count: number }> {
+  const response = await fetch('/api/threads/mark-all-read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folderId }),
+  })
+  if (!response.ok) throw new Error('Failed to mark all as read')
+  return response.json()
+}
