@@ -1,6 +1,5 @@
 # Meremail
-
-A minimalist, self-hosted email API + client with a robust rules engine. Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile.
+A minimalist, self-hosted email API + client with a robust rules engine. Built with Hono, Vue 3, and SQLite. Connect it to your SMTP/IMAP, and it'll handle everything else. PWA for mobile. [Read more about what it is and why it exists here.](WHY.md)
 
 ## Features
 
