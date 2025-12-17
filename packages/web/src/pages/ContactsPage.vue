@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { ref, onMounted, watch, computed } from 'vue'
+import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useOffline } from '@/composables/useOffline'
+import { setDefaultIdentity } from '@/utils/api'
 import MustBeOnline from '@/components/MustBeOnline.vue'
-
-onMounted(() => {
-  document.title = 'Contacts - MereMail'
-  loadContacts(true)
-})
 
 const { isOnline } = useOffline()
 
 const router = useRouter()
+const route = useRoute()
+
+type TabType = 'contacts' | 'identities'
 
 interface Contact {
   id: number
   name: string | null
   email: string
   isMe: boolean
+  isDefaultIdentity?: boolean
   lastEmailAt: string | null
   emailCount: number
 }
@@ -27,11 +27,34 @@ interface ApiResponse {
   hasMore: boolean
 }
 
+// Derive active tab from URL query parameter
+const activeTab = computed<TabType>(() => {
+  const tab = route.query.tab
+  return tab === 'identities' ? 'identities' : 'contacts'
+})
+
+function setActiveTab(tab: TabType) {
+  router.replace({
+    query: tab === 'contacts' ? {} : { tab }
+  })
+}
+
 const searchQuery = ref('')
 const contacts = ref<Contact[]>([])
 const hasMore = ref(false)
 const loading = ref(false)
 const loadingMore = ref(false)
+
+onMounted(() => {
+  document.title = 'Contacts - MereMail'
+  loadContacts(true)
+})
+
+// Reload when tab changes (via URL)
+watch(activeTab, () => {
+  searchQuery.value = ''
+  loadContacts(true)
+})
 
 // Debounce search
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
@@ -48,6 +71,9 @@ async function loadContacts(reset = false) {
     })
     if (searchQuery.value) {
       params.set('q', searchQuery.value)
+    }
+    if (activeTab.value === 'identities') {
+      params.set('isMe', 'true')
     }
 
     const response = await fetch(`/api/contacts?${params}`)
@@ -77,6 +103,9 @@ async function loadMore() {
     if (searchQuery.value) {
       params.set('q', searchQuery.value)
     }
+    if (activeTab.value === 'identities') {
+      params.set('isMe', 'true')
+    }
 
     const response = await fetch(`/api/contacts?${params}`)
     if (response.ok) {
@@ -105,6 +134,19 @@ function formatDate(dateStr: string | null): string {
     year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
   })
 }
+
+async function handleSetDefault(contact: Contact) {
+  try {
+    await setDefaultIdentity(contact.id)
+    // Update local state
+    contacts.value.forEach(c => {
+      c.isDefaultIdentity = c.id === contact.id
+    })
+  } catch (e) {
+    console.error('Failed to set default identity:', e)
+    alert('Failed to set default identity')
+  }
+}
 </script>
 
 <template>
@@ -114,6 +156,23 @@ function formatDate(dateStr: string | null): string {
       <h1>Contacts</h1>
     </header>
 
+    <div class="tabs">
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'contacts' }"
+        @click="setActiveTab('contacts')"
+      >
+        All Contacts
+      </button>
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'identities' }"
+        @click="setActiveTab('identities')"
+      >
+        Identities
+      </button>
+    </div>
+
     <MustBeOnline v-if="!isOnline" message="Contact management requires an internet connection" />
 
     <template v-else>
@@ -121,13 +180,13 @@ function formatDate(dateStr: string | null): string {
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Search contacts..."
+          :placeholder="activeTab === 'contacts' ? 'Search contacts...' : 'Search identities...'"
           @input="handleSearchInput"
         />
       </div>
 
       <div v-if="contacts.length === 0 && !loading" class="empty-state">
-        No contacts found
+        {{ activeTab === 'contacts' ? 'No contacts found' : 'No identities found' }}
       </div>
 
       <div v-if="loading && contacts.length === 0" class="loading-state">
@@ -137,14 +196,24 @@ function formatDate(dateStr: string | null): string {
       <div class="contacts-list">
         <div v-for="contact in contacts" :key="contact.id" class="contact-card">
           <RouterLink :to="`/contact/${contact.id}`" class="contact-info">
-            <div class="contact-name">{{ contact.name || contact.email.split('@')[0] }}</div>
+            <div class="contact-name">
+              {{ contact.name || contact.email.split('@')[0] }}
+              <span v-if="activeTab === 'identities' && contact.isDefaultIdentity" class="default-badge">Default</span>
+            </div>
             <div class="contact-email">{{ contact.email }}</div>
             <div class="contact-meta">
               <span class="email-count">{{ contact.emailCount }} email{{ contact.emailCount !== 1 ? 's' : '' }}</span>
               <span v-if="contact.lastEmailAt" class="last-email"> &middot; Last: {{ formatDate(contact.lastEmailAt) }}</span>
-              <span v-if="contact.isMe" class="me-badge">You</span>
+              <span v-if="contact.isMe && activeTab === 'contacts'" class="me-badge">You</span>
             </div>
           </RouterLink>
+          <button
+            v-if="activeTab === 'identities' && !contact.isDefaultIdentity"
+            class="set-default-btn"
+            @click="handleSetDefault(contact)"
+          >
+            Set as Default
+          </button>
         </div>
       </div>
 
@@ -166,7 +235,36 @@ function formatDate(dateStr: string | null): string {
 }
 
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.tab {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  color: #333;
+}
+
+.tab.active {
+  color: #000;
+  border-bottom-color: #000;
 }
 
 .back-link {
@@ -271,6 +369,34 @@ h1 {
   font-size: 11px;
   font-weight: 500;
   color: #666;
+}
+
+.default-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #dcfce7;
+  color: #166534;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.set-default-btn {
+  padding: 6px 12px;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.set-default-btn:hover {
+  background: #e5e7eb;
 }
 
 .load-more {

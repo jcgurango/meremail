@@ -64,6 +64,13 @@
       "when": 1765991061254,
       "tag": "0008_lethal_toro",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1765997533404,
+      "tag": "0009_happy_rictor",
+      "breakpoints": true
     }
   ]
 }

@@ -102,6 +102,7 @@ interface Contact {
   name: string | null
   email: string
   isMe?: boolean
+  isDefaultIdentity?: boolean
 }
 
 // ============== Helpers ==============
@@ -503,6 +504,19 @@ export async function getMeContacts(): Promise<{ data: { contacts: Contact[] }; 
       })),
     },
     fromCache: true,
+  }
+}
+
+/**
+ * POST /api/contacts/:id/set-default-identity
+ */
+export async function setDefaultIdentity(contactId: number): Promise<void> {
+  const res = await fetch(`/api/contacts/${contactId}/set-default-identity`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.error || 'Failed to set default identity')
   }
 }
 

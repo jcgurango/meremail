@@ -1,0 +1,1 @@
+ALTER TABLE `contacts` ADD `is_default_identity` integer DEFAULT false NOT NULL;

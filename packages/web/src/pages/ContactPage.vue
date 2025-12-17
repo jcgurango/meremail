@@ -56,6 +56,48 @@ const contactId = computed(() => Number(route.params.id))
 
 const contact = ref<Contact | null>(null)
 
+// Name editing
+const isEditingName = ref(false)
+const editedName = ref('')
+const savingName = ref(false)
+
+function startEditingName() {
+  editedName.value = contact.value?.name || ''
+  isEditingName.value = true
+}
+
+function cancelEditingName() {
+  isEditingName.value = false
+  editedName.value = ''
+}
+
+async function saveName() {
+  if (!contact.value) return
+  savingName.value = true
+
+  try {
+    const res = await fetch(`/api/contacts/${contact.value.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editedName.value.trim() || null }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      contact.value = data.contact
+      isEditingName.value = false
+      document.title = pageTitle.value
+    } else {
+      alert('Failed to save name')
+    }
+  } catch (e) {
+    console.error('Failed to save name:', e)
+    alert('Failed to save name')
+  } finally {
+    savingName.value = false
+  }
+}
+
 const pageTitle = computed(() => {
   if (contact.value) return `${contact.value.name || contact.value.email} - MereMail`
   return 'MereMail'
@@ -117,7 +159,29 @@ function goBack() {
       <button class="back-link" @click="goBack">&larr; Back</button>
 
       <div v-if="contact" class="contact-header">
-        <h1>{{ contact.name || contact.email }}</h1>
+        <div v-if="isEditingName" class="name-edit-form">
+          <input
+            v-model="editedName"
+            type="text"
+            class="name-input"
+            placeholder="Enter name..."
+            @keydown.enter="saveName"
+            @keydown.escape="cancelEditingName"
+            autofocus
+          />
+          <button class="save-btn" @click="saveName" :disabled="savingName">
+            {{ savingName ? 'Saving...' : 'Save' }}
+          </button>
+          <button class="cancel-btn" @click="cancelEditingName" :disabled="savingName">
+            Cancel
+          </button>
+        </div>
+        <div v-else class="name-display">
+          <h1>{{ contact.name || contact.email }}</h1>
+          <button class="edit-name-btn" @click="startEditingName" title="Edit name">
+            Edit
+          </button>
+        </div>
         <div class="contact-email" v-if="contact.name">{{ contact.email }}</div>
         <div class="contact-meta">
           <span class="thread-count">{{ totalThreads }} conversation{{ totalThreads !== 1 ? 's' : '' }}</span>
@@ -184,10 +248,85 @@ function goBack() {
   color: #000;
 }
 
+.name-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .contact-header h1 {
   font-size: 24px;
   font-weight: 600;
-  margin: 0 0 4px 0;
+  margin: 0;
+}
+
+.edit-name-btn {
+  padding: 4px 10px;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.edit-name-btn:hover {
+  background: #e5e7eb;
+}
+
+.name-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.name-input {
+  padding: 8px 12px;
+  font-size: 18px;
+  font-weight: 600;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  outline: none;
+  min-width: 250px;
+}
+
+.name-input:focus {
+  border-color: #999;
+}
+
+.save-btn {
+  padding: 8px 16px;
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.save-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: #e5e7eb;
 }
 
 .contact-email {

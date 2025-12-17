@@ -61,30 +61,74 @@ contactsRoutes.get('/', async (c) => {
     })
   }
 
-  // "Me" contacts
+  // "Me" contacts (identities)
   if (isMe) {
-    const results = db
-      .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        isMe: contacts.isMe,
-      })
-      .from(contacts)
-      .where(eq(contacts.isMe, true))
-      .orderBy(asc(contacts.name))
-      .limit(limit)
-      .offset(offset)
-      .all()
+    let identityResults: any[]
+
+    if (hasSearchTerm) {
+      // Use FTS for search, filtered to isMe contacts
+      const identitySql = `
+        SELECT
+          c.id,
+          c.name,
+          c.email,
+          c.is_me as isMe,
+          c.is_default_identity as isDefaultIdentity,
+          (SELECT COUNT(DISTINCT ec.email_id) FROM email_contacts ec WHERE ec.contact_id = c.id) as emailCount,
+          (SELECT MAX(e.sent_at) FROM emails e JOIN email_contacts ec ON e.id = ec.email_id WHERE ec.contact_id = c.id) as lastEmailAt
+        FROM contacts_fts
+        JOIN contacts c ON contacts_fts.rowid = c.id
+        WHERE contacts_fts MATCH ? AND c.is_me = 1
+        ORDER BY c.is_default_identity DESC, COALESCE(c.name, c.email) COLLATE NOCASE ASC
+        LIMIT ? OFFSET ?`
+
+      identityResults = sqlite.prepare(identitySql).all(searchTerm, limit + 1, offset) as any[]
+    } else {
+      const results = db
+        .select({
+          id: contacts.id,
+          name: contacts.name,
+          email: contacts.email,
+          isMe: contacts.isMe,
+          isDefaultIdentity: contacts.isDefaultIdentity,
+          lastEmailAt: sql<number>`MAX(${emails.sentAt})`.as('last_email_at'),
+          emailCount: sql<number>`COUNT(DISTINCT ${emails.id})`.as('email_count'),
+        })
+        .from(contacts)
+        .leftJoin(emailContacts, eq(contacts.id, emailContacts.contactId))
+        .leftJoin(emails, eq(emailContacts.emailId, emails.id))
+        .where(eq(contacts.isMe, true))
+        .groupBy(contacts.id)
+        .orderBy(desc(contacts.isDefaultIdentity), sql`COALESCE(${contacts.name}, ${contacts.email}) COLLATE NOCASE ASC`)
+        .limit(limit + 1)
+        .offset(offset)
+        .all()
+
+      identityResults = results.map(r => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        isMe: r.isMe,
+        isDefaultIdentity: r.isDefaultIdentity,
+        emailCount: r.emailCount,
+        lastEmailAt: r.lastEmailAt,
+      }))
+    }
+
+    const hasMore = identityResults.length > limit
+    const items = identityResults.slice(0, limit)
 
     return c.json({
-      contacts: results.map(r => ({
+      contacts: items.map(r => ({
         id: r.id,
         name: r.name,
         email: r.email,
         isMe: !!r.isMe,
+        isDefaultIdentity: !!r.isDefaultIdentity,
+        lastEmailAt: r.lastEmailAt ? new Date(r.lastEmailAt * 1000) : null,
+        emailCount: r.emailCount || 0,
       })),
-      hasMore: false,
+      hasMore,
     })
   }
 
@@ -157,13 +201,57 @@ contactsRoutes.get('/me', async (c) => {
       id: contacts.id,
       name: contacts.name,
       email: contacts.email,
+      isDefaultIdentity: contacts.isDefaultIdentity,
     })
     .from(contacts)
     .where(eq(contacts.isMe, true))
-    .orderBy(asc(contacts.email))
+    .orderBy(desc(contacts.isDefaultIdentity), asc(contacts.email))
     .all()
 
-  return c.json({ contacts: results })
+  return c.json({
+    contacts: results.map(r => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      isDefaultIdentity: !!r.isDefaultIdentity,
+    })),
+  })
+})
+
+// POST /api/contacts/:id/set-default-identity
+contactsRoutes.post('/:id/set-default-identity', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid contact ID' }, 400)
+  }
+
+  const contact = db
+    .select()
+    .from(contacts)
+    .where(eq(contacts.id, id))
+    .get()
+
+  if (!contact) {
+    return c.json({ error: 'Contact not found' }, 404)
+  }
+
+  if (!contact.isMe) {
+    return c.json({ error: 'Only identities can be set as default' }, 400)
+  }
+
+  // Clear existing default
+  db.update(contacts)
+    .set({ isDefaultIdentity: false })
+    .where(eq(contacts.isDefaultIdentity, true))
+    .run()
+
+  // Set new default
+  db.update(contacts)
+    .set({ isDefaultIdentity: true })
+    .where(eq(contacts.id, id))
+    .run()
+
+  return c.json({ success: true })
 })
 
 // GET /api/contacts/:id
@@ -184,22 +272,6 @@ contactsRoutes.get('/:id', async (c) => {
 
   if (!contact) {
     return c.json({ error: 'Contact not found' }, 404)
-  }
-
-  // "Me" contacts would include every thread - not useful and very slow
-  if (contact.isMe) {
-    return c.json({
-      contact: {
-        id: contact.id,
-        name: contact.name,
-        email: contact.email,
-        isMe: contact.isMe,
-      },
-      threads: [],
-      totalThreads: 0,
-      hasMore: false,
-      isMe: true,
-    })
   }
 
   // Get thread IDs that have emails involving this contact
@@ -395,5 +467,48 @@ contactsRoutes.get('/:id', async (c) => {
     threads: threadData,
     totalThreads,
     hasMore,
+  })
+})
+
+// PATCH /api/contacts/:id - Update contact
+contactsRoutes.patch('/:id', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid contact ID' }, 400)
+  }
+
+  const contact = db
+    .select()
+    .from(contacts)
+    .where(eq(contacts.id, id))
+    .get()
+
+  if (!contact) {
+    return c.json({ error: 'Contact not found' }, 404)
+  }
+
+  const body = await c.req.json()
+
+  // Only allow updating name for now
+  if (body.name !== undefined) {
+    db.update(contacts)
+      .set({ name: body.name || null })
+      .where(eq(contacts.id, id))
+      .run()
+  }
+
+  const updated = db
+    .select()
+    .from(contacts)
+    .where(eq(contacts.id, id))
+    .get()
+
+  return c.json({
+    contact: {
+      id: updated!.id,
+      name: updated!.name,
+      email: updated!.email,
+      isMe: updated!.isMe,
+    },
   })
 })

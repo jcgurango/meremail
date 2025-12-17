@@ -74,6 +74,42 @@ const emit = defineEmits<{
 // From identities
 const meContacts = ref<Contact[]>([])
 const selectedFromId = ref<number | null>(null)
+const fromSearchQuery = ref('')
+const fromDropdownOpen = ref(false)
+
+// Filter identities based on search
+const filteredFromContacts = computed(() => {
+  const query = fromSearchQuery.value.toLowerCase().trim()
+  if (!query) return meContacts.value
+  return meContacts.value.filter(c =>
+    c.email.toLowerCase().includes(query) ||
+    (c.name && c.name.toLowerCase().includes(query))
+  )
+})
+
+// Get selected from contact
+const selectedFromContact = computed(() => {
+  if (!selectedFromId.value) return null
+  return meContacts.value.find(c => c.id === selectedFromId.value) || null
+})
+
+function selectFromContact(contact: Contact) {
+  selectedFromId.value = contact.id
+  fromSearchQuery.value = ''
+  fromDropdownOpen.value = false
+}
+
+function handleFromInputFocus() {
+  fromDropdownOpen.value = true
+}
+
+function handleFromInputBlur() {
+  // Delay to allow click on dropdown item
+  setTimeout(() => {
+    fromDropdownOpen.value = false
+    fromSearchQuery.value = ''
+  }, 150)
+}
 
 // Recipients
 const toRecipients = ref<Recipient[]>([])
@@ -791,11 +827,28 @@ onUnmounted(() => {
       <!-- From -->
       <div class="field-row">
         <label>From</label>
-        <select v-model="selectedFromId" class="from-select">
-          <option v-for="contact in meContacts" :key="contact.id" :value="contact.id">
-            {{ contact.name ? `${contact.name} <${contact.email}>` : contact.email }}
-          </option>
-        </select>
+        <div class="from-field">
+          <input
+            v-model="fromSearchQuery"
+            type="text"
+            class="from-input"
+            :placeholder="selectedFromContact ? (selectedFromContact.name ? `${selectedFromContact.name} <${selectedFromContact.email}>` : selectedFromContact.email) : 'Select identity...'"
+            @focus="handleFromInputFocus"
+            @blur="handleFromInputBlur"
+          />
+          <div v-if="fromDropdownOpen && filteredFromContacts.length > 0" class="from-dropdown">
+            <button
+              v-for="contact in filteredFromContacts"
+              :key="contact.id"
+              class="from-option"
+              :class="{ selected: contact.id === selectedFromId }"
+              @mousedown.prevent="selectFromContact(contact)"
+            >
+              <span class="from-option-name">{{ contact.name || contact.email.split('@')[0] }}</span>
+              <span class="from-option-email">{{ contact.email }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- To -->
@@ -1171,13 +1224,76 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.from-select {
+.from-field {
   flex: 1;
+  position: relative;
+}
+
+.from-input {
+  width: 100%;
   padding: 8px 12px;
   border: 1px solid #e5e5e5;
   border-radius: 4px;
   font-size: 14px;
   background: #fff;
+  outline: none;
+}
+
+.from-input:focus {
+  border-color: #999;
+}
+
+.from-input::placeholder {
+  color: #000;
+  opacity: 1;
+}
+
+.from-input:focus::placeholder {
+  color: #999;
+}
+
+.from-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 2px;
+}
+
+.from-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.from-option:hover {
+  background: #f5f5f5;
+}
+
+.from-option.selected {
+  background: #e8f4ff;
+}
+
+.from-option-name {
+  font-size: 14px;
+  color: #000;
+}
+
+.from-option-email {
+  font-size: 12px;
+  color: #666;
 }
 
 .recipient-field {
