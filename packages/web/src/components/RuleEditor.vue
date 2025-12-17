@@ -1,0 +1,394 @@
+<script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
+import ConditionBuilder, { type ConditionGroup } from './ConditionBuilder.vue'
+import { getFolders, type Folder } from '@/utils/api'
+
+export type ActionType = 'delete_thread' | 'delete_email' | 'move_to_folder' | 'mark_read' |
+  'add_to_reply_later' | 'add_to_set_aside'
+
+export interface ActionConfig {
+  folderId?: number
+}
+
+export interface RuleData {
+  id?: number
+  name: string
+  description?: string
+  conditions: ConditionGroup
+  actionType: ActionType
+  actionConfig?: ActionConfig
+  enabled: boolean
+}
+
+const props = defineProps<{
+  open: boolean
+  rule?: RuleData | null
+}>()
+
+const emit = defineEmits<{
+  close: []
+  save: [rule: RuleData]
+}>()
+
+const defaultConditions: ConditionGroup = {
+  operator: 'AND',
+  conditions: [
+    { field: 'sender_email', matchType: 'contains', value: '' },
+  ],
+}
+
+const name = ref('')
+const description = ref('')
+const conditions = ref<ConditionGroup>({ ...defaultConditions })
+const actionType = ref<ActionType>('move_to_folder')
+const actionFolderId = ref<number | null>(null)
+const enabled = ref(true)
+const folders = ref<Folder[]>([])
+const saving = ref(false)
+
+const actionOptions: { value: ActionType; label: string; description: string }[] = [
+  { value: 'move_to_folder', label: 'Move to Folder', description: 'Move the thread to a specific folder' },
+  { value: 'delete_thread', label: 'Delete Thread', description: 'Move entire thread to Trash' },
+  { value: 'delete_email', label: 'Delete Email', description: 'Move only the matching email to Trash' },
+  { value: 'mark_read', label: 'Mark as Read', description: 'Automatically mark as read' },
+  { value: 'add_to_reply_later', label: 'Add to Reply Later', description: 'Add to Reply Later queue' },
+  { value: 'add_to_set_aside', label: 'Add to Set Aside', description: 'Add to Set Aside queue' },
+]
+
+const needsFolderSelection = computed(() => actionType.value === 'move_to_folder')
+
+const nonSystemFolders = computed(() => folders.value.filter(f => !f.isSystem))
+
+const isValid = computed(() => {
+  if (!name.value.trim()) return false
+  if (needsFolderSelection.value && !actionFolderId.value) return false
+  if (conditions.value.conditions.length === 0) return false
+  return true
+})
+
+watch(() => props.open, (isOpen) => {
+  if (isOpen) {
+    if (props.rule) {
+      name.value = props.rule.name
+      description.value = props.rule.description || ''
+      conditions.value = JSON.parse(JSON.stringify(props.rule.conditions))
+      actionType.value = props.rule.actionType
+      actionFolderId.value = props.rule.actionConfig?.folderId || null
+      enabled.value = props.rule.enabled
+    } else {
+      name.value = ''
+      description.value = ''
+      conditions.value = JSON.parse(JSON.stringify(defaultConditions))
+      actionType.value = 'move_to_folder'
+      actionFolderId.value = null
+      enabled.value = true
+    }
+  }
+})
+
+onMounted(async () => {
+  try {
+    const response = await getFolders()
+    folders.value = response.data.folders
+  } catch (e) {
+    console.error('Failed to load folders:', e)
+  }
+})
+
+function handleClose() {
+  emit('close')
+}
+
+async function handleSave() {
+  if (!isValid.value || saving.value) return
+  saving.value = true
+
+  try {
+    const ruleData: RuleData = {
+      id: props.rule?.id,
+      name: name.value.trim(),
+      description: description.value.trim() || undefined,
+      conditions: conditions.value,
+      actionType: actionType.value,
+      actionConfig: needsFolderSelection.value && actionFolderId.value
+        ? { folderId: actionFolderId.value }
+        : undefined,
+      enabled: enabled.value,
+    }
+    emit('save', ruleData)
+  } finally {
+    saving.value = false
+  }
+}
+</script>
+
+<template>
+  <Teleport to="body">
+    <div v-if="open" class="modal-overlay" @click.self="handleClose">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{{ rule?.id ? 'Edit Rule' : 'Create Rule' }}</h2>
+          <button type="button" class="close-btn" @click="handleClose">&times;</button>
+        </div>
+
+        <form @submit.prevent="handleSave" class="modal-body">
+          <div class="form-group">
+            <label for="rule-name">Rule Name *</label>
+            <input
+              id="rule-name"
+              v-model="name"
+              type="text"
+              placeholder="e.g., Archive Newsletters"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="rule-description">Description</label>
+            <input
+              id="rule-description"
+              v-model="description"
+              type="text"
+              placeholder="Describe this rule..."
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Conditions *</label>
+            <ConditionBuilder v-model="conditions" />
+          </div>
+
+          <div class="form-group">
+            <label for="rule-action">Action *</label>
+            <select id="rule-action" v-model="actionType">
+              <option v-for="opt in actionOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <p class="action-description">
+              {{ actionOptions.find(o => o.value === actionType)?.description }}
+            </p>
+          </div>
+
+          <div v-if="needsFolderSelection" class="form-group">
+            <label for="rule-folder">Target Folder *</label>
+            <select id="rule-folder" v-model="actionFolderId" required>
+              <option :value="null" disabled>Select a folder...</option>
+              <option v-for="folder in nonSystemFolders" :key="folder.id" :value="folder.id">
+                {{ folder.name }}
+              </option>
+            </select>
+            <p v-if="nonSystemFolders.length === 0" class="hint">
+              No custom folders available. Create a folder first.
+            </p>
+          </div>
+
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="enabled" />
+              <span>Rule is enabled</span>
+            </label>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="handleClose">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="!isValid || saving"
+            >
+              {{ saving ? 'Saving...' : (rule?.id ? 'Save Changes' : 'Create Rule') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 700px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.close-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 6px;
+  font-size: 20px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.close-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.modal-body {
+  padding: 24px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.form-group input[type="text"],
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.form-group input[type="text"]:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.action-description {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.hint {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #f59e0b;
+}
+
+.checkbox-group {
+  margin-top: 24px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+.btn-primary {
+  background: #6366f1;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .modal-overlay {
+    padding: 20px 12px;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+}
+</style>

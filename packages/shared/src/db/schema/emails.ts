@@ -15,7 +15,7 @@ export const emails = sqliteTable('emails', {
   readAt: integer('read_at', { mode: 'timestamp' }),
   status: text('status').$type<EmailStatus>().notNull().default('sent'),
   subject: text('subject').notNull(),
-  headers: text('headers', { mode: 'json' }).$type<Record<string, string>>(),
+  headers: text('headers', { mode: 'json' }).$type<{ key: string, value: string }[]>(),
   contentText: text('content_text').notNull(),
   contentHtml: text('content_html'),
   sentAt: integer('sent_at', { mode: 'timestamp' }),
@@ -33,4 +33,6 @@ export const emails = sqliteTable('emails', {
     name: string | null
     role: 'to' | 'cc' | 'bcc'
   }>>(),
+  // Trash timestamp - NULL = not trashed, timestamp = when trashed (for 30-day retention)
+  trashedAt: integer('trashed_at', { mode: 'timestamp' }),
 })

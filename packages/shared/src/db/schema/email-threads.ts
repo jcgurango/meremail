@@ -9,6 +9,10 @@ export const emailThreads = sqliteTable('email_threads', {
   creatorId: integer('creator_id').references(() => contacts.id),
   // Folder this thread belongs to (Inbox, Junk, etc.)
   folderId: integer('folder_id').references(() => folders.id),
+  // Previous folder before trashing (for restore)
+  previousFolderId: integer('previous_folder_id').references(() => folders.id),
+  // Trash timestamp - NULL = not trashed, timestamp = when trashed (for 30-day retention)
+  trashedAt: integer('trashed_at', { mode: 'timestamp' }),
   // Reply Later queue - NULL = not in queue, timestamp = when added (sorted oldest first)
   replyLaterAt: integer('reply_later_at', { mode: 'timestamp' }),
   // Set Aside queue - NULL = not in queue, timestamp = when added (sorted newest first)

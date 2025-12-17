@@ -53,6 +53,14 @@ async function compose() {
       <span class="nav-icon">📎</span>
       <span class="nav-label">Attachments</span>
     </RouterLink>
+    <RouterLink to="/rules" class="nav-pill rules">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">Rules</span>
+    </RouterLink>
+    <RouterLink to="/folders" class="nav-pill folders">
+      <span class="nav-icon">📁</span>
+      <span class="nav-label">Folders</span>
+    </RouterLink>
   </nav>
 
   <SearchModal :open="searchOpen" @close="searchOpen = false" />
@@ -117,6 +125,16 @@ async function compose() {
 .nav-pill.attachments {
   background: #fef3c7;
   color: #b45309;
+}
+
+.nav-pill.rules {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.nav-pill.folders {
+  background: #ecfdf5;
+  color: #059669;
 }
 
 .nav-icon {

@@ -38,7 +38,7 @@ interface Email {
   recipients: Participant[]
   attachments: Attachment[]
   replyTo?: string | null
-  headers?: Record<string, string> | null
+  headers?: { key: string, value: string }[] | null
   messageId?: string | null
   references?: string[] | null
 }
@@ -346,10 +346,10 @@ function formatFileSize(bytes: number | null): string {
     <div v-if="showHeaders && email.headers" class="headers-panel">
       <div class="headers-title">Email Headers</div>
       <dl class="headers-list">
-        <template v-for="(value, key) in email.headers" :key="key">
-          <template v-if="value && value !== '[object Object]'">
-            <dt>{{ key }}</dt>
-            <dd>{{ value }}</dd>
+        <template v-for="header in email.headers">
+          <template v-if="header">
+            <dt>{{ header.key }}</dt>
+            <dd>{{ header.value }}</dd>
           </template>
         </template>
       </dl>

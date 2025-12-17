@@ -96,5 +96,5 @@ export interface ImportableEmail {
    * All headers as key-value pairs for anything else needed.
    * Values are stringified (complex objects should be JSON).
    */
-  headers: Record<string, string>
+  headers: { key: string, value: string }[]
 }

@@ -64,4 +64,14 @@ export const routes: RouteRecordRaw[] = [
     name: 'attachment',
     component: () => import('@/pages/AttachmentPage.vue'),
   },
+  {
+    path: '/rules',
+    name: 'rules',
+    component: () => import('@/pages/RulesPage.vue'),
+  },
+  {
+    path: '/folders',
+    name: 'folders',
+    component: () => import('@/pages/FoldersPage.vue'),
+  },
 ]

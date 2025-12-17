@@ -13,6 +13,7 @@ import {
 } from '../db/schema'
 import type { ImportableEmail, EmailAddress, EmailAttachment } from '../types/email'
 import { resolvePath } from '../config'
+import { buildRuleContext, evaluateRules, determineImportActions } from './rules'
 
 const ATTACHMENTS_DIR = resolvePath('data/attachments');
 
@@ -285,7 +286,17 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
   }
 
   // Determine folder: Junk emails go to Junk folder (id=2), others go to Inbox (id=1)
-  const folderId = email.isJunk ? 2 : 1
+  let folderId = email.isJunk ? 2 : 1
+
+  // Evaluate rules to potentially override folder and other settings
+  const ruleContext = buildRuleContext(email, normalizedSubject)
+  const ruleResult = evaluateRules(ruleContext)
+  let ruleActions = ruleResult ? determineImportActions(ruleResult) : null
+
+  // Apply rule folder override
+  if (ruleActions?.folderId) {
+    folderId = ruleActions.folderId
+  }
 
   // Find or create thread
   let threadId: number | null = findThread(messageId, inReplyTo, references, normalizedSubject, isReply, senderIsMe)
@@ -301,7 +312,12 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
   // Insert email
   // If already read, set readAt to receivedAt; otherwise leave null
   const receivedAt = new Date()
-  const readAt = email.isRead ? receivedAt : null
+  let readAt = email.isRead ? receivedAt : null
+
+  // Apply rule mark_read action
+  if (ruleActions?.markRead && !readAt) {
+    readAt = receivedAt
+  }
 
   const emailResult = db
     .insert(emails)
@@ -354,6 +370,34 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
   // Save attachments
   for (const attachment of email.attachments) {
     saveAttachment(emailId, attachment)
+  }
+
+  // Apply rule actions that need post-insert updates
+  if (ruleActions) {
+    const updates: Record<string, unknown> = {}
+
+    // Trash action - set trashedAt and previousFolderId
+    if (ruleActions.folderId === 3) { // Trash folder
+      const originalFolderId = email.isJunk ? 2 : 1
+      updates.previousFolderId = originalFolderId
+      updates.trashedAt = receivedAt
+    }
+
+    // Queue actions
+    if (ruleActions.addToReplyLater) {
+      updates.replyLaterAt = receivedAt
+    }
+    if (ruleActions.addToSetAside) {
+      updates.setAsideAt = receivedAt
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = receivedAt
+      db.update(emailThreads)
+        .set(updates)
+        .where(eq(emailThreads.id, finalThreadId))
+        .run()
+    }
   }
 
   return { imported: true }

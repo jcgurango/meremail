@@ -161,11 +161,12 @@ export async function getUnreadCounts(): Promise<{ data: UnreadCounts; fromCache
   return { data: counts, fromCache: true }
 }
 
-interface Folder {
+export interface Folder {
   id: number
   name: string
   imapFolder: string | null
   position: number
+  isSystem?: boolean
   unreadCount: number
 }
 
@@ -1254,4 +1255,176 @@ function syncThreadToListItem(thread: SyncThread): ThreadListItem {
     })),
     snippet: thread.snippet,
   }
+}
+
+// ============== Rules API ==============
+
+export interface RuleCondition {
+  field: string
+  matchType: 'exact' | 'contains' | 'regex'
+  value: string
+  negate?: boolean
+}
+
+export interface RuleConditionGroup {
+  operator: 'AND' | 'OR'
+  conditions: (RuleCondition | RuleConditionGroup)[]
+}
+
+export interface Rule {
+  id: number
+  name: string
+  description: string | null
+  conditions: RuleConditionGroup
+  actionType: string
+  actionConfig: { folderId?: number } | null
+  position: number
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RuleApplication {
+  id: number
+  ruleId: number
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  totalCount: number
+  processedCount: number
+  matchedCount: number
+  error: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string
+}
+
+export async function getRules(): Promise<{ rules: Rule[] }> {
+  const response = await fetch('/api/rules')
+  if (!response.ok) throw new Error('Failed to fetch rules')
+  return response.json()
+}
+
+export async function getRule(id: number): Promise<{ rule: Rule }> {
+  const response = await fetch(`/api/rules/${id}`)
+  if (!response.ok) throw new Error('Failed to fetch rule')
+  return response.json()
+}
+
+export async function createRule(data: {
+  name: string
+  description?: string
+  conditions: RuleConditionGroup
+  actionType: string
+  actionConfig?: { folderId?: number }
+  enabled?: boolean
+}): Promise<{ rule: Rule }> {
+  const response = await fetch('/api/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error('Failed to create rule')
+  return response.json()
+}
+
+export async function updateRule(id: number, data: Partial<{
+  name: string
+  description: string
+  conditions: RuleConditionGroup
+  actionType: string
+  actionConfig: { folderId?: number }
+  enabled: boolean
+}>): Promise<{ rule: Rule }> {
+  const response = await fetch(`/api/rules/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error('Failed to update rule')
+  return response.json()
+}
+
+export async function deleteRule(id: number): Promise<{ success: boolean }> {
+  const response = await fetch(`/api/rules/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error('Failed to delete rule')
+  return response.json()
+}
+
+export async function reorderRules(positions: { id: number; position: number }[]): Promise<{ success: boolean }> {
+  const response = await fetch('/api/rules/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ positions }),
+  })
+  if (!response.ok) throw new Error('Failed to reorder rules')
+  return response.json()
+}
+
+export async function applyRule(id: number): Promise<{ application: { id: number; status: string; totalCount: number } }> {
+  const response = await fetch(`/api/rules/${id}/apply`, { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to apply rule')
+  return response.json()
+}
+
+export async function getRuleApplication(id: number): Promise<{ application: RuleApplication }> {
+  const response = await fetch(`/api/rules/applications/${id}`)
+  if (!response.ok) throw new Error('Failed to fetch application status')
+  return response.json()
+}
+
+// ============== Folders API (extended) ==============
+
+export async function createFolder(name: string): Promise<{ folder: Folder }> {
+  const response = await fetch('/api/folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!response.ok) throw new Error('Failed to create folder')
+  return response.json()
+}
+
+export async function updateFolder(id: number, name: string): Promise<{ folder: Folder }> {
+  const response = await fetch(`/api/folders/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!response.ok) throw new Error('Failed to update folder')
+  return response.json()
+}
+
+export async function deleteFolder(id: number): Promise<{ success: boolean; deletedThreads: number }> {
+  const response = await fetch(`/api/folders/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error('Failed to delete folder')
+  return response.json()
+}
+
+export async function reorderFolders(positions: { id: number; position: number }[]): Promise<{ success: boolean }> {
+  const response = await fetch('/api/folders/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ positions }),
+  })
+  if (!response.ok) throw new Error('Failed to reorder folders')
+  return response.json()
+}
+
+// ============== Trash API ==============
+
+export async function trashThread(id: number): Promise<{ success: boolean; trashedAt: string }> {
+  const response = await fetch(`/api/threads/${id}/trash`, { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to trash thread')
+  return response.json()
+}
+
+export async function restoreThread(id: number): Promise<{ success: boolean; folderId: number }> {
+  const response = await fetch(`/api/threads/${id}/restore`, { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to restore thread')
+  return response.json()
+}
+
+export async function permanentlyDeleteThread(id: number): Promise<{ success: boolean }> {
+  const response = await fetch(`/api/threads/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error('Failed to delete thread')
+  return response.json()
 }

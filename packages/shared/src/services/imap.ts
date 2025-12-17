@@ -90,16 +90,6 @@ function convertAttachment(att: ParsedMail['attachments'][number]): EmailAttachm
 }
 
 /**
- * Stringify headers map to key-value record
- */
-function stringifyHeaders(headers: ParsedMail['headers']): Record<string, string> {
-  if (!headers) return {}
-  return Object.fromEntries(
-    Array.from(headers.entries()).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)])
-  )
-}
-
-/**
  * Convert IMAP FetchedEmail to source-agnostic ImportableEmail
  */
 export function toImportableEmail(fetched: FetchedEmail): ImportableEmail {
@@ -142,8 +132,39 @@ export function toImportableEmail(fetched: FetchedEmail): ImportableEmail {
     attachments: (parsed.attachments || []).map(convertAttachment),
 
     // Headers
-    headers: stringifyHeaders(parsed.headers),
+    headers: parsed.headerLines.map(({ key, line }) => ({ key, value: line })),
   }
+}
+
+/**
+ * Parse raw EML content into an ImportableEmail
+ * This is useful for importing EML files directly without IMAP
+ */
+export async function parseEml(
+  raw: Buffer | string,
+  options: { isSent?: boolean; isJunk?: boolean; isRead?: boolean } = {}
+): Promise<ImportableEmail> {
+  const parsed = await simpleParser(raw)
+  const rawBuffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
+
+  // Determine folder name based on options (used by isSentFolder/isJunkFolder checks)
+  const folder = options.isSent ? 'Sent' : options.isJunk ? 'Junk' : 'INBOX'
+
+  // Build flags set
+  const flags = new Set<string>()
+  if (options.isRead || options.isSent) {
+    flags.add('\\Seen')
+  }
+
+  const fetched: FetchedEmail = {
+    uid: 0,
+    folder,
+    parsed,
+    raw: rawBuffer,
+    flags,
+  }
+
+  return toImportableEmail(fetched)
 }
 
 export async function createImapClient(): Promise<ImapFlow> {
