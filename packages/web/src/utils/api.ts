@@ -1368,6 +1368,29 @@ export async function getRuleApplication(id: number): Promise<{ application: Rul
   return response.json()
 }
 
+export interface RulePreviewMatch {
+  id: number
+  threadId: number | null
+  subject: string
+  senderName: string | null
+  senderEmail: string
+  sentAt: string | null
+}
+
+export async function previewRule(conditions: RuleConditionGroup): Promise<{
+  matches: RulePreviewMatch[]
+  scannedCount: number
+  matchCount: number
+}> {
+  const response = await fetch('/api/rules/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conditions }),
+  })
+  if (!response.ok) throw new Error('Failed to preview rule')
+  return response.json()
+}
+
 // ============== Folders API (extended) ==============
 
 export async function createFolder(name: string): Promise<{ folder: Folder }> {

@@ -1,15 +1,20 @@
 import { Hono } from 'hono'
-import { eq, sql, asc } from 'drizzle-orm'
+import { eq, sql, asc, desc, isNull } from 'drizzle-orm'
 import {
   db,
   emailRules,
   ruleApplications,
   emailThreads,
+  emails,
+  contacts,
+  emailContacts,
+  attachments,
   evaluateRules,
+  evaluateConditions,
   applyRuleToThread,
   buildContextFromThread,
 } from '@meremail/shared'
-import type { ConditionGroup, ActionType, ActionConfig } from '@meremail/shared'
+import type { ConditionGroup, ActionType, ActionConfig, RuleEvaluationContext } from '@meremail/shared'
 
 export const rulesRoutes = new Hono()
 
@@ -225,6 +230,131 @@ rulesRoutes.post('/reorder', async (c) => {
   }
 
   return c.json({ success: true })
+})
+
+// POST /api/rules/preview - Preview rule matches without saving
+rulesRoutes.post('/preview', async (c) => {
+  const body = await c.req.json()
+
+  if (!body.conditions) {
+    return c.json({ error: 'conditions is required' }, 400)
+  }
+
+  const conditions = body.conditions as ConditionGroup
+  const MAX_SCAN = 1000
+  const MAX_MATCHES = 20
+
+  const matches: Array<{
+    id: number
+    threadId: number | null
+    subject: string
+    senderName: string | null
+    senderEmail: string
+    sentAt: string | null
+  }> = []
+
+  let scannedCount = 0
+  let offset = 0
+  const BATCH_SIZE = 100
+
+  while (scannedCount < MAX_SCAN && matches.length < MAX_MATCHES) {
+    // Get batch of emails in descending chronological order (non-trashed, sent emails only)
+    const emailBatch = db
+      .select({
+        id: emails.id,
+        threadId: emails.threadId,
+        subject: emails.subject,
+        senderId: emails.senderId,
+        contentText: emails.contentText,
+        headers: emails.headers,
+        sentAt: emails.sentAt,
+      })
+      .from(emails)
+      .where(isNull(emails.trashedAt))
+      .orderBy(desc(emails.sentAt))
+      .limit(BATCH_SIZE)
+      .offset(offset)
+      .all()
+
+    if (emailBatch.length === 0) break
+
+    for (const email of emailBatch) {
+      if (scannedCount >= MAX_SCAN || matches.length >= MAX_MATCHES) break
+      scannedCount++
+
+      // Get sender info
+      const sender = db
+        .select({ email: contacts.email, name: contacts.name })
+        .from(contacts)
+        .where(eq(contacts.id, email.senderId))
+        .get()
+
+      // Get recipients
+      const recipients = db
+        .select({
+          role: emailContacts.role,
+          email: contacts.email,
+          name: contacts.name,
+        })
+        .from(emailContacts)
+        .innerJoin(contacts, eq(emailContacts.contactId, contacts.id))
+        .where(eq(emailContacts.emailId, email.id))
+        .all()
+
+      // Get attachments
+      const emailAttachments = db
+        .select({ filename: attachments.filename })
+        .from(attachments)
+        .where(eq(attachments.emailId, email.id))
+        .all()
+
+      // Get thread subject if available
+      let threadSubject = email.subject
+      if (email.threadId) {
+        const thread = db
+          .select({ subject: emailThreads.subject })
+          .from(emailThreads)
+          .where(eq(emailThreads.id, email.threadId))
+          .get()
+        if (thread) threadSubject = thread.subject
+      }
+
+      // Build context
+      const ctx: RuleEvaluationContext = {
+        emailSubject: email.subject,
+        threadSubject,
+        content: email.contentText || '',
+        senderEmail: sender?.email || '',
+        senderName: sender?.name || '',
+        toEmails: recipients.filter(r => r.role === 'to').map(r => r.email),
+        toNames: recipients.filter(r => r.role === 'to').map(r => r.name || ''),
+        ccEmails: recipients.filter(r => r.role === 'cc').map(r => r.email),
+        ccNames: recipients.filter(r => r.role === 'cc').map(r => r.name || ''),
+        attachmentFilenames: emailAttachments.map(a => a.filename || ''),
+        headers: email.headers || [],
+      }
+
+      // Evaluate conditions
+      if (evaluateConditions(conditions, ctx)) {
+        matches.push({
+          id: email.id,
+          threadId: email.threadId,
+          subject: email.subject,
+          senderName: sender?.name || null,
+          senderEmail: sender?.email || '',
+          sentAt: email.sentAt?.toISOString() || null,
+        })
+      }
+    }
+
+    offset += emailBatch.length
+  }
+
+  return c.json({
+    matches,
+    scannedCount,
+    matchCount: matches.length,
+  })
 })
 
 // POST /api/rules/:id/apply - Start retroactive rule application

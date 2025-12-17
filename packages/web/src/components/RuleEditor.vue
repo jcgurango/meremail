@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import ConditionBuilder, { type ConditionGroup, type Condition } from './ConditionBuilder.vue'
-import { getFolders, type Folder } from '@/utils/api'
+import { getFolders, previewRule, type Folder, type RulePreviewMatch } from '@/utils/api'
 
 export type ActionType = 'delete_thread' | 'delete_email' | 'move_to_folder' | 'mark_read' |
   'add_to_reply_later' | 'add_to_set_aside'
@@ -42,6 +42,12 @@ const actionFolderId = ref<number | null>(null)
 const enabled = ref(true)
 const folders = ref<Folder[]>([])
 const saving = ref(false)
+
+// Preview state
+const previewing = ref(false)
+const previewResults = ref<RulePreviewMatch[] | null>(null)
+const previewScanned = ref(0)
+const previewError = ref('')
 
 const actionOptions: { value: ActionType; label: string; shortLabel: string }[] = [
   { value: 'move_to_folder', label: 'Move to Folder', shortLabel: 'Move' },
@@ -147,6 +153,8 @@ function countConditions(group: ConditionGroup): number {
 
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
+    // Clear preview when opening
+    clearPreview()
     if (props.rule) {
       conditions.value = JSON.parse(JSON.stringify(props.rule.conditions))
       actionType.value = props.rule.actionType
@@ -160,6 +168,11 @@ watch(() => props.open, (isOpen) => {
     }
   }
 })
+
+// Clear preview when conditions change
+watch(conditions, () => {
+  clearPreview()
+}, { deep: true })
 
 onMounted(async () => {
   try {
@@ -193,6 +206,36 @@ async function handleSave() {
   } finally {
     saving.value = false
   }
+}
+
+async function handlePreview() {
+  if (!isValid.value || previewing.value) return
+  previewing.value = true
+  previewError.value = ''
+  previewResults.value = null
+
+  try {
+    const result = await previewRule(conditions.value)
+    previewResults.value = result.matches
+    previewScanned.value = result.scannedCount
+  } catch (e) {
+    previewError.value = 'Failed to preview rule'
+    console.error('Preview error:', e)
+  } finally {
+    previewing.value = false
+  }
+}
+
+function clearPreview() {
+  previewResults.value = null
+  previewScanned.value = 0
+  previewError.value = ''
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 </script>
 
@@ -238,6 +281,49 @@ async function handleSave() {
               <input type="checkbox" v-model="enabled" />
               <span>Rule is enabled</span>
             </label>
+          </div>
+
+          <!-- Preview section -->
+          <div class="preview-section">
+            <button
+              type="button"
+              class="btn btn-preview"
+              :disabled="!isValid || previewing"
+              @click="handlePreview"
+            >
+              {{ previewing ? 'Scanning...' : 'Preview matches' }}
+            </button>
+
+            <div v-if="previewError" class="preview-error">
+              {{ previewError }}
+            </div>
+
+            <div v-if="previewResults !== null" class="preview-results">
+              <div class="preview-summary">
+                Found {{ previewResults.length }} match{{ previewResults.length !== 1 ? 'es' : '' }}
+                <span class="preview-scanned">(scanned {{ previewScanned }} emails)</span>
+              </div>
+
+              <div v-if="previewResults.length > 0" class="preview-list">
+                <a
+                  v-for="match in previewResults"
+                  :key="match.id"
+                  :href="`/thread/${match.threadId || match.id}`"
+                  target="_blank"
+                  class="preview-item"
+                >
+                  <div class="preview-sender">
+                    {{ match.senderName || match.senderEmail }}
+                  </div>
+                  <div class="preview-subject">{{ match.subject }}</div>
+                  <div class="preview-date">{{ formatDate(match.sentAt) }}</div>
+                </a>
+              </div>
+
+              <div v-else class="preview-empty">
+                No emails match these conditions.
+              </div>
+            </div>
           </div>
 
           <div class="modal-footer">
@@ -410,6 +496,117 @@ async function handleSave() {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Preview section */
+.preview-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn-preview {
+  background: #f3f4f6;
+  color: #374151;
+  width: 100%;
+}
+
+.btn-preview:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.btn-preview:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fee2e2;
+  color: #dc2626;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.preview-results {
+  margin-top: 12px;
+}
+
+.preview-summary {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.preview-scanned {
+  font-weight: normal;
+  color: #9ca3af;
+}
+
+.preview-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.preview-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.preview-item:hover {
+  background: #f9fafb;
+}
+
+.preview-item:last-child {
+  border-bottom: none;
+}
+
+.preview-sender {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  grid-column: 1;
+  grid-row: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-date {
+  font-size: 12px;
+  color: #9ca3af;
+  grid-column: 2;
+  grid-row: 1;
+  white-space: nowrap;
+}
+
+.preview-subject {
+  font-size: 13px;
+  color: #6b7280;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-empty {
+  padding: 20px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
 }
 
 @media (max-width: 600px) {

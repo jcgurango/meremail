@@ -217,6 +217,14 @@ function evaluateGroup(group: ConditionGroup, ctx: RuleEvaluationContext): boole
 }
 
 /**
+ * Evaluate a condition group directly against a context
+ * Used for rule preview without saving the rule first
+ */
+export function evaluateConditions(conditions: ConditionGroup, ctx: RuleEvaluationContext): boolean {
+  return evaluateGroup(conditions, ctx)
+}
+
+/**
  * Evaluate all enabled rules against the context
  * Returns the first matching rule (first match wins based on position)
  */
