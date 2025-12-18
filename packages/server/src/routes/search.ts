@@ -48,7 +48,8 @@ searchRoutes.get('/', async (c) => {
   const dateTo = c.req.query('dateTo')
   const senderId = c.req.query('senderId') ? parseInt(c.req.query('senderId')!) : null
   const fileType = c.req.query('fileType')
-  const folderId = c.req.query('folderId') ? parseInt(c.req.query('folderId')!) : null
+  const folderIdsParam = c.req.query('folderIds')
+  const folderIds = folderIdsParam ? folderIdsParam.split(',').map(id => parseInt(id)).filter(id => !isNaN(id)) : null
   const unreadOnly = c.req.query('unreadOnly') === 'true'
   const sortBy = c.req.query('sortBy') || 'relevance' // 'relevance' or 'date'
 
@@ -73,7 +74,7 @@ searchRoutes.get('/', async (c) => {
   const searchTerm = hasSearchTerm ? q.replace(/['"*()@\-+.:^]/g, ' ').trim() + '*' : ''
 
   // Search emails
-  const hasEmailFilters = senderId || dateFromUnix || dateToUnix || folderId || unreadOnly
+  const hasEmailFilters = senderId || dateFromUnix || dateToUnix || (folderIds && folderIds.length > 0) || unreadOnly
   if ((hasSearchTerm || (type === 'email' && hasEmailFilters)) && (!type || type === 'email')) {
     let emailSql: string
     const emailParams: any[] = []
@@ -116,9 +117,9 @@ searchRoutes.get('/', async (c) => {
       emailSql += ` AND e.sender_id = ?`
       emailParams.push(senderId)
     }
-    if (folderId) {
-      emailSql += ` AND t.folder_id = ?`
-      emailParams.push(folderId)
+    if (folderIds && folderIds.length > 0) {
+      emailSql += ` AND t.folder_id IN (${folderIds.map(() => '?').join(',')})`
+      emailParams.push(...folderIds)
     }
     if (unreadOnly) {
       emailSql += ` AND e.read_at IS NULL`

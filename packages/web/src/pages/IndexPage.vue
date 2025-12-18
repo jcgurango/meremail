@@ -129,8 +129,12 @@ async function performSearch(reset = true) {
       type: 'email',
       limit: String(SEARCH_LIMIT),
       offset: String(searchOffset.value),
-      folderId: String(currentFolderId.value),
     })
+
+    // Only set folderIds if specific folders are selected (empty = all folders)
+    if (searchFilters.value.folderIds.length > 0) {
+      params.set('folderIds', searchFilters.value.folderIds.join(','))
+    }
 
     if (searchFilters.value.query) params.set('q', searchFilters.value.query)
     if (searchFilters.value.senderId) params.set('senderId', String(searchFilters.value.senderId))
@@ -208,7 +212,7 @@ watch(() => props.name, () => {
     </header>
 
     <div class="search-toggle-bar">
-      <button class="search-toggle-btn" @click="showSearchToolbar = !showSearchToolbar">
+      <button class="search-toggle-btn" @click="showSearchToolbar ? (showSearchToolbar = false, onClearSearch()) : showSearchToolbar = true">
         <span class="search-icon">🔍</span>
         <span>{{ showSearchToolbar ? 'Hide Search' : 'Search & Filter' }}</span>
       </button>
@@ -233,6 +237,7 @@ watch(() => props.name, () => {
     <SearchToolbar
       v-if="showSearchToolbar"
       :folder-id="currentFolderId"
+      :folders="folders"
       @search="onSearch"
       @clear="onClearSearch"
     />

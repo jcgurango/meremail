@@ -7,6 +7,11 @@ interface Contact {
   email: string
 }
 
+interface Folder {
+  id: number
+  name: string
+}
+
 export interface SearchFilters {
   query: string
   senderId: number | null
@@ -14,10 +19,12 @@ export interface SearchFilters {
   dateFrom: string
   dateTo: string
   sortBy: 'relevance' | 'date'
+  folderIds: number[]  // empty array means all folders
 }
 
 const props = defineProps<{
   folderId?: number
+  folders: Folder[]
 }>()
 
 const emit = defineEmits<{
@@ -30,6 +37,8 @@ const searchQuery = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
 const sortBy = ref<'relevance' | 'date'>('relevance')
+const selectedFolderIds = ref<Set<number>>(new Set(props.folderId ? [props.folderId] : []))
+const showFolderDropdown = ref(false)
 
 // Sender filter state
 const senderSearch = ref('')
@@ -47,6 +56,39 @@ const hasActiveFilters = computed(() => {
     dateTo.value !== ''
 })
 
+// Folder selection display text
+const folderDisplayText = computed(() => {
+  if (selectedFolderIds.value.size === 0) return 'All folders'
+  if (selectedFolderIds.value.size === props.folders.length) return 'All folders'
+  if (selectedFolderIds.value.size === 1) {
+    const id = [...selectedFolderIds.value][0]
+    return props.folders.find(f => f.id === id)?.name ?? 'Selected'
+  }
+  return `${selectedFolderIds.value.size} folders`
+})
+
+function toggleFolder(folderId: number) {
+  const newSet = new Set(selectedFolderIds.value)
+  if (newSet.has(folderId)) {
+    newSet.delete(folderId)
+  } else {
+    newSet.add(folderId)
+  }
+  selectedFolderIds.value = newSet
+  emitSearch()
+}
+
+function selectAllFolders() {
+  selectedFolderIds.value = new Set()
+  emitSearch()
+}
+
+function isFolderSelected(folderId: number): boolean {
+  // If no folders selected, all are effectively selected
+  if (selectedFolderIds.value.size === 0) return true
+  return selectedFolderIds.value.has(folderId)
+}
+
 // Emit search when filters change
 function emitSearch() {
   if (!hasActiveFilters.value) {
@@ -61,6 +103,7 @@ function emitSearch() {
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
     sortBy: sortBy.value,
+    folderIds: [...selectedFolderIds.value],
   })
 }
 
@@ -122,7 +165,16 @@ function clearAllFilters() {
   dateFrom.value = ''
   dateTo.value = ''
   sortBy.value = 'relevance'
+  selectedFolderIds.value = new Set(props.folderId ? [props.folderId] : [])
   emit('clear')
+}
+
+function onFolderDropdownBlur(e: FocusEvent) {
+  setTimeout(() => {
+    if (!e.relatedTarget || !(e.relatedTarget as HTMLElement).closest('.folder-dropdown')) {
+      showFolderDropdown.value = false
+    }
+  }, 150)
 }
 
 // Close dropdown when clicking outside
@@ -162,6 +214,45 @@ function onBlur(e: FocusEvent) {
     </div>
 
     <div class="toolbar-row filters-row">
+      <!-- Folder filter -->
+      <div class="filter-group folder-filter">
+        <label>In</label>
+        <div class="folder-select-wrapper">
+          <button
+            type="button"
+            class="folder-select-btn"
+            @click="showFolderDropdown = !showFolderDropdown"
+            @blur="onFolderDropdownBlur"
+          >
+            <span>{{ folderDisplayText }}</span>
+            <span class="dropdown-arrow">▾</span>
+          </button>
+          <div v-if="showFolderDropdown" class="folder-dropdown">
+            <button
+              type="button"
+              class="folder-option"
+              :class="{ selected: selectedFolderIds.size === 0 }"
+              @mousedown.prevent="selectAllFolders"
+            >
+              <span class="check-box">{{ selectedFolderIds.size === 0 ? '✓' : '' }}</span>
+              <span>All folders</span>
+            </button>
+            <div class="folder-divider"></div>
+            <button
+              v-for="folder in folders"
+              :key="folder.id"
+              type="button"
+              class="folder-option"
+              :class="{ selected: isFolderSelected(folder.id) && selectedFolderIds.size > 0 }"
+              @mousedown.prevent="toggleFolder(folder.id)"
+            >
+              <span class="check-box">{{ selectedFolderIds.has(folder.id) ? '✓' : '' }}</span>
+              <span>{{ folder.name }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- From filter -->
       <div class="filter-group sender-filter">
         <label>From</label>
@@ -405,5 +496,96 @@ function onBlur(e: FocusEvent) {
   border-radius: 4px;
   font-size: 13px;
   background: #fff;
+}
+
+.folder-filter {
+  position: relative;
+}
+
+.folder-select-wrapper {
+  position: relative;
+}
+
+.folder-select-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.folder-select-btn:hover {
+  border-color: #999;
+}
+
+.dropdown-arrow {
+  font-size: 10px;
+  color: #666;
+  margin-left: auto;
+}
+
+.folder-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 160px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 100;
+  max-height: 250px;
+  overflow-y: auto;
+  margin-top: 2px;
+}
+
+.folder-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.folder-option:hover {
+  background: #f5f5f5;
+}
+
+.folder-option.selected {
+  background: #f0f7ff;
+}
+
+.folder-option .check-box {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #999;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #4338ca;
+  flex-shrink: 0;
+}
+
+.folder-option.selected .check-box {
+  border-color: #4338ca;
+  background: #e0e7ff;
+}
+
+.folder-divider {
+  height: 1px;
+  background: #e5e5e5;
+  margin: 4px 0;
 }
 </style>
