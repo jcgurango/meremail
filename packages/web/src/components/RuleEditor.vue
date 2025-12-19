@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import ConditionBuilder, { type ConditionGroup, type Condition } from './ConditionBuilder.vue'
+import ConditionBuilder, { type ConditionGroup } from './ConditionBuilder.vue'
 import { getFolders, previewRule, type Folder, type RulePreviewMatch } from '@/utils/api'
 
-export type ActionType = 'delete_thread' | 'delete_email' | 'move_to_folder' | 'mark_read' |
+export type ActionType = 'delete_thread' | 'move_to_folder' | 'mark_read' |
   'add_to_reply_later' | 'add_to_set_aside'
 
 export interface ActionConfig {
@@ -54,7 +54,6 @@ const previewError = ref('')
 const actionOptions: { value: ActionType; label: string; shortLabel: string }[] = [
   { value: 'move_to_folder', label: 'Move to Folder', shortLabel: 'Move' },
   { value: 'delete_thread', label: 'Delete Thread', shortLabel: 'Delete' },
-  { value: 'delete_email', label: 'Delete Email', shortLabel: 'Delete email' },
   { value: 'mark_read', label: 'Mark as Read', shortLabel: 'Mark read' },
   { value: 'add_to_reply_later', label: 'Add to Reply Later', shortLabel: 'Reply Later' },
   { value: 'add_to_set_aside', label: 'Add to Set Aside', shortLabel: 'Set Aside' },

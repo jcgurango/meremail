@@ -274,7 +274,6 @@ export function determineImportActions(result: RuleEvaluationResult): RuleAction
 
   switch (result.actionType) {
     case 'delete_thread':
-    case 'delete_email':
       // Move to Trash folder
       actions.folderId = TRASH_FOLDER_ID
       actions.markRead = true // Auto-mark trashed items as read
@@ -323,27 +322,6 @@ export async function applyRuleToThread(
         db.update(emailThreads)
           .set({
             previousFolderId: thread.folderId,
-            folderId: TRASH_FOLDER_ID,
-            trashedAt: now,
-            updatedAt: now,
-          })
-          .where(eq(emailThreads.id, threadId))
-          .run()
-      }
-      break
-
-    case 'delete_email':
-      // For delete_email on retroactive, we trash the whole thread
-      // (individual email deletion doesn't make sense retroactively)
-      const threadForDelete = db.select({ folderId: emailThreads.folderId })
-        .from(emailThreads)
-        .where(eq(emailThreads.id, threadId))
-        .get()
-
-      if (threadForDelete) {
-        db.update(emailThreads)
-          .set({
-            previousFolderId: threadForDelete.folderId,
             folderId: TRASH_FOLDER_ID,
             trashedAt: now,
             updatedAt: now,

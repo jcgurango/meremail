@@ -74,7 +74,6 @@ export interface ConditionGroup {
 
 export type ActionType =
   | 'delete_thread'
-  | 'delete_email'
   | 'move_to_folder'
   | 'mark_read'
   | 'add_to_reply_later'
