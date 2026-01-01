@@ -542,11 +542,10 @@ async function processRuleApplication(
       const context = buildContextFromThread(thread.id)
       if (!context) continue
 
-      // Evaluate rule against this thread
-      const result = evaluateRules(context)
-
-      // Only apply if THIS rule matches (since we're applying a specific rule)
-      if (result && result.ruleId === rule.id) {
+      // Evaluate THIS rule's conditions directly (not all rules)
+      // This ensures the specific rule being applied is tested, regardless of priority
+      const conditions = rule.conditions as ConditionGroup
+      if (evaluateConditions(conditions, context)) {
         await applyRuleToThread(thread.id, ruleResult)
         matchedCount++
       }
