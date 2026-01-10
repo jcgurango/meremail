@@ -455,6 +455,7 @@ draftsRoutes.post('/:id/send', async (c) => {
       .values({
         subject: draft.subject || '(No subject)',
         creatorId: draft.senderId,
+        folderId: 1, // Inbox
       })
       .returning({ id: emailThreads.id })
       .get()
