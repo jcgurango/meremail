@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
 import EmailComposer from '@/components/EmailComposer.vue'
-import { getThread as apiGetThread, getFolders, type Folder } from '@/utils/api'
+import { getThread as apiGetThread, getFolders, trashThread, deleteEmail, type Folder } from '@/utils/api'
 import { retractNotification } from '@/composables/useOffline'
 
 interface Participant {
@@ -316,6 +316,35 @@ async function moveToFolder(folderId: number) {
   }
 }
 
+async function handleTrashThread() {
+  if (!thread.value) return
+  if (!confirm('Move this thread to Trash?')) return
+
+  try {
+    await trashThread(thread.value.id)
+    router.back()
+  } catch (e) {
+    console.error('Failed to trash thread:', e)
+  }
+}
+
+async function handleDeleteEmail(emailId: number) {
+  if (!confirm('Delete this email?')) return
+
+  try {
+    const result = await deleteEmail(emailId)
+    if (result.threadDeleted) {
+      // Thread was deleted (last email), go back
+      router.back()
+    } else {
+      // Refresh to show updated email list
+      await refresh()
+    }
+  } catch (e) {
+    console.error('Failed to delete email:', e)
+  }
+}
+
 function goBack() {
   router.back()
 }
@@ -327,6 +356,12 @@ function goBack() {
       <div class="header-top">
         <button class="back-link" @click="goBack">&larr; Back</button>
         <div v-if="thread" class="header-actions">
+          <button class="trash-btn" title="Move to Trash" @click="handleTrashThread">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
           <div class="send-to-wrapper">
             <button
               class="send-to-btn"
@@ -454,6 +489,7 @@ function goBack() {
               :email="email"
               :show-reply-buttons="true"
               @reply="handleReply"
+              @delete="handleDeleteEmail"
             />
           </template>
         </div>
@@ -497,6 +533,26 @@ function goBack() {
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.trash-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.15s;
+}
+
+.trash-btn:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: #fef2f2;
 }
 
 .send-to-wrapper {

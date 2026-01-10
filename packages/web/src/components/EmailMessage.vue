@@ -51,6 +51,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reply: [emailId: number, replyAll: boolean]
+  delete: [emailId: number]
 }>()
 
 const showQuoted = ref(false)
@@ -395,6 +396,16 @@ function formatFileSize(bytes: number | null): string {
               <path d="M22 18v-2a4 4 0 0 0-4-4H7"></path>
             </svg>
           </button>
+          <button
+            class="reply-icon-btn delete-btn"
+            title="Delete email"
+            @click="emit('delete', email.id)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
           <div v-if="email.sender && !email.sender.isMe" class="add-to-rule-wrapper">
             <button
               class="reply-icon-btn"
@@ -660,6 +671,11 @@ function formatFileSize(bytes: number | null): string {
 .reply-icon-btn:hover {
   color: #000;
   background: #f0f0f0;
+}
+
+.reply-icon-btn.delete-btn:hover {
+  color: #dc2626;
+  background: #fef2f2;
 }
 
 .add-to-rule-wrapper {

@@ -685,6 +685,73 @@ threadsRoutes.delete('/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// DELETE /api/emails/:id - Delete a single email from a thread
+threadsRoutes.delete('/emails/:id', async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid email ID' }, 400)
+  }
+
+  const email = db
+    .select({ id: emails.id, threadId: emails.threadId })
+    .from(emails)
+    .where(eq(emails.id, id))
+    .get()
+
+  if (!email) {
+    return c.json({ error: 'Email not found' }, 404)
+  }
+
+  const threadId = email.threadId
+
+  // Delete attachment files
+  const emailAttachments = db
+    .select({ id: attachments.id, filePath: attachments.filePath })
+    .from(attachments)
+    .where(eq(attachments.emailId, id))
+    .all()
+
+  for (const att of emailAttachments) {
+    if (att.filePath) {
+      try {
+        const fs = await import('fs/promises')
+        await fs.unlink(att.filePath)
+      } catch {
+        // File may already be deleted
+      }
+    }
+  }
+
+  // Delete attachments
+  db.delete(attachments).where(eq(attachments.emailId, id)).run()
+
+  // Delete email contacts
+  db.delete(emailContacts).where(eq(emailContacts.emailId, id)).run()
+
+  // Delete the email
+  db.delete(emails).where(eq(emails.id, id)).run()
+
+  // Check if thread has any remaining emails
+  let threadDeleted = false
+  if (threadId) {
+    const remainingEmails = db
+      .select({ id: emails.id })
+      .from(emails)
+      .where(eq(emails.threadId, threadId))
+      .limit(1)
+      .all()
+
+    if (remainingEmails.length === 0) {
+      // Delete thread contacts and the thread itself
+      db.delete(emailThreadContacts).where(eq(emailThreadContacts.threadId, threadId)).run()
+      db.delete(emailThreads).where(eq(emailThreads.id, threadId)).run()
+      threadDeleted = true
+    }
+  }
+
+  return c.json({ success: true, threadDeleted })
+})
+
 // POST /api/threads/mark-all-read
 // Mark all emails as read in a folder
 threadsRoutes.post('/mark-all-read', async (c) => {

@@ -1515,6 +1515,12 @@ export async function permanentlyDeleteThread(id: number): Promise<{ success: bo
   return response.json()
 }
 
+export async function deleteEmail(id: number): Promise<{ success: boolean; threadDeleted: boolean }> {
+  const response = await fetch(`/api/threads/emails/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error('Failed to delete email')
+  return response.json()
+}
+
 export async function markAllAsRead(folderId: number): Promise<{ success: boolean; count: number }> {
   const response = await fetch('/api/threads/mark-all-read', {
     method: 'POST',
