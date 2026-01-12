@@ -774,6 +774,7 @@ function formatFileSize(bytes: number | null): string {
 .email-body {
   font-size: 14px;
   line-height: 1.6;
+  overflow-x: auto;
 }
 
 .email-content {
