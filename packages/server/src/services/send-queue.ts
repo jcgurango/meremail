@@ -1,6 +1,5 @@
 import { eq, and, or, isNull, lte, inArray, sql } from 'drizzle-orm'
-import { isAbsolute, join } from 'path'
-import { db, config, emails, emailContacts, contacts, attachments, emailThreads } from '@meremail/shared'
+import { db, emails, emailContacts, contacts, attachments, emailThreads, resolveAttachmentPath } from '@meremail/shared'
 import { sendEmail, generateMessageId } from '@meremail/shared/services'
 import type { SendableEmail, EmailRecipient } from '@meremail/shared/services'
 
@@ -227,8 +226,7 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
     references: email.references || undefined,
     attachments: attachmentsData.map(a => ({
       filename: a.filename,
-      // filePath may be absolute (imported) or relative filename (uploaded)
-      path: isAbsolute(a.filePath) ? a.filePath : join(config.uploads.path, a.filePath),
+      path: resolveAttachmentPath(a.filePath),
       contentType: a.mimeType || undefined,
       cid: a.contentId || undefined,
     })),

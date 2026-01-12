@@ -1,6 +1,7 @@
 import { existsSync, unlinkSync } from 'fs'
 import { sql, and, lt, inArray, eq } from 'drizzle-orm'
 import { db } from '../db'
+import { resolveAttachmentPath } from '../config'
 import { emailThreads, emails, emailContacts, emailThreadContacts, attachments } from '../db/schema'
 
 // Folder IDs
@@ -71,8 +72,9 @@ export async function cleanupExpiredItems(): Promise<CleanupResult> {
         // Delete attachment files from disk
         for (const attachment of threadAttachments) {
           try {
-            if (existsSync(attachment.filePath)) {
-              unlinkSync(attachment.filePath)
+            const resolvedPath = resolveAttachmentPath(attachment.filePath)
+            if (existsSync(resolvedPath)) {
+              unlinkSync(resolvedPath)
               result.attachmentsDeleted++
             }
           } catch (err) {

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, desc, and, sql, or, like } from 'drizzle-orm'
 import { createReadStream, existsSync } from 'fs'
 import { Readable } from 'stream'
-import { db, sqlite, attachments, emails, emailThreads, contacts, config } from '@meremail/shared'
+import { db, sqlite, attachments, emails, emailThreads, contacts, resolveAttachmentPath } from '@meremail/shared'
 
 export const attachmentsRoutes = new Hono()
 
@@ -222,11 +222,12 @@ attachmentsRoutes.get('/:id', async (c) => {
     return c.json({ error: 'Attachment not found' }, 404)
   }
 
-  if (!existsSync(attachment.filePath)) {
+  const resolvedPath = resolveAttachmentPath(attachment.filePath)
+  if (!existsSync(resolvedPath)) {
     return c.json({ error: 'Attachment file not found on disk' }, 404)
   }
 
-  const stream = createReadStream(attachment.filePath)
+  const stream = createReadStream(resolvedPath)
   const webStream = Readable.toWeb(stream) as ReadableStream
 
   return new Response(webStream, {
@@ -289,8 +290,9 @@ attachmentsRoutes.delete('/:id', async (c) => {
   // Try to delete file (don't fail if file doesn't exist)
   try {
     const { unlinkSync } = await import('fs')
-    if (existsSync(attachment.filePath)) {
-      unlinkSync(attachment.filePath)
+    const resolvedPath = resolveAttachmentPath(attachment.filePath)
+    if (existsSync(resolvedPath)) {
+      unlinkSync(resolvedPath)
     }
   } catch (e) {
     console.error('Failed to delete attachment file:', e)

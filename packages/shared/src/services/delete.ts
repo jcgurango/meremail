@@ -1,6 +1,7 @@
 import { eq, inArray, sql } from 'drizzle-orm'
 import { unlinkSync, existsSync } from 'fs'
 import { db } from '../db'
+import { resolveAttachmentPath } from '../config'
 import {
   emails,
   emailThreads,
@@ -24,13 +25,16 @@ function deleteAttachmentFiles(attachmentIds: number[]): { deleted: number; erro
       .where(eq(attachments.id, id))
       .get()
 
-    if (attachment?.filePath && existsSync(attachment.filePath)) {
-      try {
-        unlinkSync(attachment.filePath)
-        deleted++
-      } catch (e) {
-        console.error(`Failed to delete file ${attachment.filePath}:`, e)
-        errors++
+    if (attachment?.filePath) {
+      const resolvedPath = resolveAttachmentPath(attachment.filePath)
+      if (existsSync(resolvedPath)) {
+        try {
+          unlinkSync(resolvedPath)
+          deleted++
+        } catch (e) {
+          console.error(`Failed to delete file ${resolvedPath}:`, e)
+          errors++
+        }
       }
     }
   }

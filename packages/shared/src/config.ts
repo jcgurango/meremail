@@ -1,5 +1,5 @@
 import dotenv from 'dotenv'
-import { dirname, resolve } from 'path'
+import { dirname, resolve, isAbsolute, join } from 'path'
 import { fileURLToPath } from 'url'
 
 // Calculate monorepo root from this file's location (3 levels up from packages/shared/src)
@@ -91,3 +91,11 @@ export const config = {
 } as const
 
 export type Config = typeof config
+
+/**
+ * Resolve attachment file path - handles both absolute (imported) and relative (uploaded) paths.
+ * Imported attachments store full absolute path, uploaded attachments store just the filename.
+ */
+export function resolveAttachmentPath(filePath: string): string {
+  return isAbsolute(filePath) ? filePath : join(config.uploads.path, filePath)
+}

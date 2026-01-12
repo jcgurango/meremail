@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { eq, sql, inArray } from 'drizzle-orm'
-import { db, folders, emailThreads, emails, emailContacts, emailThreadContacts, attachments } from '@meremail/shared'
+import { db, folders, emailThreads, emails, emailContacts, emailThreadContacts, attachments, resolveAttachmentPath } from '@meremail/shared'
 
 export const foldersRoutes = new Hono()
 
@@ -206,8 +206,9 @@ foldersRoutes.delete('/:id', async (c) => {
       const { existsSync, unlinkSync } = await import('fs')
       for (const attachment of folderAttachments) {
         try {
-          if (existsSync(attachment.filePath)) {
-            unlinkSync(attachment.filePath)
+          const resolvedPath = resolveAttachmentPath(attachment.filePath)
+          if (existsSync(resolvedPath)) {
+            unlinkSync(resolvedPath)
           }
         } catch (err) {
           console.error(`Failed to delete attachment file ${attachment.filePath}:`, err)

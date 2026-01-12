@@ -9,6 +9,7 @@ import {
   emailThreadContacts,
   attachments,
   folders,
+  resolveAttachmentPath,
 } from '@meremail/shared'
 import { proxyImagesInHtml } from '../utils/proxy-images'
 import { replaceCidReferences } from '../utils/replace-cid'
@@ -658,8 +659,9 @@ threadsRoutes.delete('/:id', async (c) => {
     const { existsSync, unlinkSync } = await import('fs')
     for (const attachment of threadAttachments) {
       try {
-        if (existsSync(attachment.filePath)) {
-          unlinkSync(attachment.filePath)
+        const resolvedPath = resolveAttachmentPath(attachment.filePath)
+        if (existsSync(resolvedPath)) {
+          unlinkSync(resolvedPath)
         }
       } catch (err) {
         console.error(`Failed to delete attachment file ${attachment.filePath}:`, err)
@@ -715,7 +717,7 @@ threadsRoutes.delete('/emails/:id', async (c) => {
     if (att.filePath) {
       try {
         const fs = await import('fs/promises')
-        await fs.unlink(att.filePath)
+        await fs.unlink(resolveAttachmentPath(att.filePath))
       } catch {
         // File may already be deleted
       }

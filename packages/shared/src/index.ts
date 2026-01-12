@@ -2,5 +2,5 @@
 export * from './db'
 export * from './types'
 export * from './services'
-export { config, rootDir, resolvePath } from './config'
+export { config, rootDir, resolvePath, resolveAttachmentPath } from './config'
 export type { Config } from './config'
