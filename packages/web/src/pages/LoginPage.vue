@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { resetAuthState } from '@/main'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,6 +31,9 @@ async function handleSubmit() {
       error.value = data.error || 'Login failed'
       return
     }
+
+    // Clear cached auth state so the navigation guard rechecks
+    resetAuthState()
 
     // Redirect to intended page or home
     const redirect = route.query.redirect as string
