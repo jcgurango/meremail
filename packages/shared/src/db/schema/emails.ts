@@ -10,6 +10,7 @@ export const emails = sqliteTable('emails', {
   senderId: integer('sender_id').notNull(),
   messageId: text('message_id').unique(),
   inReplyTo: text('in_reply_to'),
+  forwardedMessageId: text('forwarded_message_id'),  // Message ID of the email being forwarded
   references: text('references', { mode: 'json' }).$type<string[]>(),
   folder: text('folder').notNull().default('INBOX'),
   readAt: integer('read_at', { mode: 'timestamp' }),

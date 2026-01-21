@@ -51,6 +51,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reply: [emailId: number, replyAll: boolean]
+  forward: [emailId: number]
   delete: [emailId: number]
 }>()
 
@@ -394,6 +395,16 @@ function formatFileSize(bytes: number | null): string {
               <polyline points="7 17 2 12 7 7"></polyline>
               <polyline points="12 17 7 12 12 7"></polyline>
               <path d="M22 18v-2a4 4 0 0 0-4-4H7"></path>
+            </svg>
+          </button>
+          <button
+            class="reply-icon-btn"
+            title="Forward"
+            @click="emit('forward', email.id)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 17 20 12 15 7"></polyline>
+              <path d="M4 18v-2a4 4 0 0 1 4-4h12"></path>
             </svg>
           </button>
           <button

@@ -78,6 +78,13 @@
       "when": 1766002940531,
       "tag": "0010_many_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1768994944000,
+      "tag": "0011_lumpy_gambit",
+      "breakpoints": true
     }
   ]
 }

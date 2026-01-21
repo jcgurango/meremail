@@ -38,6 +38,19 @@ interface OriginalEmail {
   replyTo?: string | null
 }
 
+interface ForwardEmail {
+  id: number
+  subject: string
+  sentAt: string | null
+  sender: Contact | null
+  recipients: (Contact & { role: string })[]
+  contentText: string
+  contentHtml?: string | null
+  messageId?: string
+  references?: string[]
+  attachments?: { id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean | null }[]
+}
+
 interface ExistingDraft {
   id: number
   subject: string
@@ -60,6 +73,7 @@ interface UploadedFile {
 const props = defineProps<{
   threadId?: number  // Optional for standalone drafts
   originalEmail?: OriginalEmail
+  forwardEmail?: ForwardEmail
   replyAll?: boolean
   defaultFromId?: number
   existingDraft?: ExistingDraft
@@ -462,6 +476,34 @@ function initializeReply() {
   }
 }
 
+// Initialize forward data
+function initializeForward() {
+  if (!props.forwardEmail) return
+
+  const fwd = props.forwardEmail
+
+  // Set subject with "Fwd:" prefix
+  const subjectPrefix = fwd.subject.toLowerCase().startsWith('fwd:') ? '' : 'Fwd: '
+  subject.value = subjectPrefix + fwd.subject
+
+  // For forward, recipients are left empty (user will add them)
+  // No need to set toRecipients, ccRecipients, bccRecipients
+
+  // Load attachments from the original email (so they can be forwarded)
+  if (fwd.attachments) {
+    for (const att of fwd.attachments) {
+      attachments.value.push({
+        id: att.id,
+        filename: att.filename,
+        mimeType: att.mimeType || 'application/octet-stream',
+        size: att.size || 0,
+        url: `/api/attachments/${att.id}`,
+        isInline: att.isInline || false,
+      })
+    }
+  }
+}
+
 // Load existing draft for editing
 function loadExistingDraft() {
   if (!props.existingDraft) return
@@ -710,6 +752,7 @@ async function saveDraft() {
       contentHtml: isRichText.value ? getEditorContent() : undefined,
       inReplyTo: props.originalEmail?.messageId,
       references: props.originalEmail?.references,
+      forwardedMessageId: props.forwardEmail?.messageId,
       recipients,
       attachmentIds: attachments.value.map(a => typeof a.id === 'number' ? a.id : parseInt(a.id as string)).filter(id => !isNaN(id)),
     }
@@ -798,6 +841,8 @@ onMounted(async () => {
   await loadMeContacts()
   if (props.existingDraft) {
     loadExistingDraft()
+  } else if (props.forwardEmail) {
+    initializeForward()
   } else {
     initializeReply()
   }
@@ -813,7 +858,7 @@ onUnmounted(() => {
 <template>
   <div class="email-composer">
     <div class="composer-header">
-      <h3>{{ existingDraft ? 'Edit Draft' : (originalEmail ? (replyAll ? 'Reply All' : 'Reply') : 'New Email') }}</h3>
+      <h3>{{ existingDraft ? 'Edit Draft' : (forwardEmail ? 'Forward' : (originalEmail ? (replyAll ? 'Reply All' : 'Reply') : 'New Email')) }}</h3>
       <div class="header-right">
         <span v-if="uploading" class="uploading-indicator">Uploading...</span>
         <span v-else-if="saving" class="saving-indicator">Saving...</span>

@@ -84,6 +84,65 @@ function buildHtmlQuote(originalDate: Date, senderName: string | null, senderEma
 }
 
 /**
+ * Build the forwarded email content for text
+ * Format: "---------- Forwarded message ---------" header with original metadata
+ */
+function buildTextForward(
+  originalDate: Date,
+  senderName: string | null,
+  senderEmail: string,
+  subject: string,
+  toRecipients: string,
+  originalText: string
+): string {
+  const dateStr = formatReplyDate(originalDate)
+  const sender = formatSenderForQuote(senderName, senderEmail)
+
+  return `
+
+---------- Forwarded message ---------
+From: ${sender}
+Date: ${dateStr}
+Subject: ${subject}
+To: ${toRecipients}
+
+${originalText}`
+}
+
+/**
+ * Build the forwarded email content for HTML
+ * Uses standard email forward styling
+ */
+function buildHtmlForward(
+  originalDate: Date,
+  senderName: string | null,
+  senderEmail: string,
+  subject: string,
+  toRecipients: string,
+  originalHtml: string
+): string {
+  const dateStr = formatReplyDate(originalDate)
+  const sender = senderName
+    ? `${senderName} &lt;${senderEmail}&gt;`
+    : senderEmail
+
+  return `
+<br><br>
+<div class="gmail_quote">
+  <div style="border-left:1px solid #ccc;padding-left:1ex">
+    <div style="font-size:12px;color:#777;margin-bottom:10px">
+      ---------- Forwarded message ---------<br>
+      <b>From:</b> ${sender}<br>
+      <b>Date:</b> ${dateStr}<br>
+      <b>Subject:</b> ${subject}<br>
+      <b>To:</b> ${toRecipients}
+    </div>
+    ${originalHtml}
+  </div>
+</div>`
+}
+
+/**
  * Build a sendable email from database records
  */
 async function buildSendableEmail(emailId: number): Promise<SendableEmail | null> {
@@ -95,6 +154,7 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
       contentText: emails.contentText,
       contentHtml: emails.contentHtml,
       inReplyTo: emails.inReplyTo,
+      forwardedMessageId: emails.forwardedMessageId,
       references: emails.references,
     })
     .from(emails)
@@ -204,6 +264,78 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
             originalDate,
             originalSender.name,
             originalSender.email,
+            originalEmail.contentHtml
+          )
+        }
+      }
+    }
+  } else if (email.forwardedMessageId) {
+    // Find the original email being forwarded by messageId
+    const originalEmail = db
+      .select({
+        id: emails.id,
+        subject: emails.subject,
+        sentAt: emails.sentAt,
+        contentText: emails.contentText,
+        contentHtml: emails.contentHtml,
+        senderId: emails.senderId,
+      })
+      .from(emails)
+      .where(eq(emails.messageId, email.forwardedMessageId))
+      .get()
+
+    if (originalEmail && originalEmail.senderId) {
+      // Get the original sender
+      const originalSender = db
+        .select({
+          name: contacts.name,
+          email: contacts.email,
+        })
+        .from(contacts)
+        .where(eq(contacts.id, originalEmail.senderId))
+        .get()
+
+      // Get the original recipients for the forward header
+      const originalRecipients = db
+        .select({
+          name: contacts.name,
+          email: contacts.email,
+          role: emailContacts.role,
+        })
+        .from(emailContacts)
+        .innerJoin(contacts, eq(contacts.id, emailContacts.contactId))
+        .where(eq(emailContacts.emailId, originalEmail.id))
+        .all()
+        .filter(r => r.role === 'to')
+
+      const toRecipientsStr = originalRecipients
+        .map(r => r.name ? `${r.name} <${r.email}>` : r.email)
+        .join(', ') || 'Unknown'
+
+      if (originalSender && originalEmail.sentAt) {
+        const originalDate = originalEmail.sentAt
+
+        // Append forwarded text content
+        if (originalEmail.contentText) {
+          finalText += buildTextForward(
+            originalDate,
+            originalSender.name,
+            originalSender.email,
+            originalEmail.subject,
+            toRecipientsStr,
+            originalEmail.contentText
+          )
+        }
+
+        // Append forwarded HTML content
+        if (originalEmail.contentHtml) {
+          const baseHtml = finalHtml || `<div>${email.contentText.replace(/\n/g, '<br>')}</div>`
+          finalHtml = baseHtml + buildHtmlForward(
+            originalDate,
+            originalSender.name,
+            originalSender.email,
+            originalEmail.subject,
+            toRecipientsStr,
             originalEmail.contentHtml
           )
         }

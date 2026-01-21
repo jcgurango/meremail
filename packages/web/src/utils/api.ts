@@ -758,6 +758,7 @@ export interface DraftData {
   attachmentIds?: number[]
   inReplyTo?: string | null
   references?: string[] | null
+  forwardedMessageId?: string | null
 }
 
 export interface DraftResult {
@@ -810,6 +811,7 @@ export async function createDraft(data: DraftData): Promise<DraftResult> {
           recipients: data.recipients || [],
           inReplyTo: data.inReplyTo,
           references: data.references,
+          forwardedMessageId: data.forwardedMessageId,
         }),
       })
 

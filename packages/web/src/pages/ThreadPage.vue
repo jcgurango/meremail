@@ -157,15 +157,22 @@ const sortedEmails = computed(() => {
   return result
 })
 
-// Composer state - track which email we're replying to or draft we're editing
+// Composer state - track which email we're replying to, forwarding, or draft we're editing
 const replyingToEmailId = ref<number | null>(null)
 const replyAll = ref(false)
+const forwardingEmailId = ref<number | null>(null)
 const editingDraftId = ref<number | null>(null)
 
 // Find the email being replied to
 const replyToEmail = computed(() => {
   if (!replyingToEmailId.value || !thread.value) return null
   return thread.value.emails.find(e => e.id === replyingToEmailId.value) || null
+})
+
+// Find the email being forwarded
+const forwardToEmail = computed(() => {
+  if (!forwardingEmailId.value || !thread.value) return null
+  return thread.value.emails.find(e => e.id === forwardingEmailId.value) || null
 })
 
 // Find the draft being edited
@@ -175,8 +182,9 @@ const editingDraft = computed(() => {
 })
 
 function handleReply(emailId: number, all: boolean) {
-  // Close any draft editing
+  // Close any draft editing or forwarding
   editingDraftId.value = null
+  forwardingEmailId.value = null
 
   // If clicking same email's reply, toggle off
   if (replyingToEmailId.value === emailId && replyAll.value === all) {
@@ -187,9 +195,23 @@ function handleReply(emailId: number, all: boolean) {
   replyAll.value = all
 }
 
-function handleEditDraft(emailId: number) {
-  // Close any reply composer
+function handleForward(emailId: number) {
+  // Close any draft editing or replying
+  editingDraftId.value = null
   replyingToEmailId.value = null
+
+  // If clicking same email's forward, toggle off
+  if (forwardingEmailId.value === emailId) {
+    forwardingEmailId.value = null
+    return
+  }
+  forwardingEmailId.value = emailId
+}
+
+function handleEditDraft(emailId: number) {
+  // Close any reply or forward composer
+  replyingToEmailId.value = null
+  forwardingEmailId.value = null
 
   // Toggle draft editing
   if (editingDraftId.value === emailId) {
@@ -201,6 +223,7 @@ function handleEditDraft(emailId: number) {
 
 async function closeComposer() {
   replyingToEmailId.value = null
+  forwardingEmailId.value = null
   editingDraftId.value = null
   // Refresh to show any newly created/updated drafts
   await refresh()
@@ -208,6 +231,7 @@ async function closeComposer() {
 
 async function onDraftDiscarded() {
   replyingToEmailId.value = null
+  forwardingEmailId.value = null
   editingDraftId.value = null
   await refresh() // Refresh to remove deleted draft from list
 }
@@ -435,6 +459,29 @@ function goBack() {
               />
             </div>
 
+            <!-- Inline composer for forwarding -->
+            <div v-if="forwardingEmailId === email.id" class="inline-composer">
+              <EmailComposer
+                :thread-id="thread.id"
+                :forward-email="{
+                  id: email.id,
+                  subject: email.subject,
+                  sentAt: email.sentAt,
+                  sender: email.sender,
+                  recipients: email.recipients,
+                  contentText: email.contentText,
+                  contentHtml: email.contentHtml,
+                  messageId: email.messageId || undefined,
+                  references: email.references || undefined,
+                  attachments: email.attachments,
+                }"
+                :default-from-id="thread.defaultFromId || undefined"
+                @close="closeComposer"
+                @discarded="onDraftDiscarded"
+                @sent="onDraftSaved"
+              />
+            </div>
+
             <!-- Inline composer for editing draft -->
             <div v-if="editingDraftId === email.id && email.status === 'draft'" class="inline-composer">
               <EmailComposer
@@ -489,6 +536,7 @@ function goBack() {
               :email="email"
               :show-reply-buttons="true"
               @reply="handleReply"
+              @forward="handleForward"
               @delete="handleDeleteEmail"
             />
           </template>

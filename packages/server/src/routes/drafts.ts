@@ -24,6 +24,7 @@ interface DraftBody {
   contentText?: string
   contentHtml?: string
   inReplyTo?: string
+  forwardedMessageId?: string
   references?: string[]
   recipients?: Recipient[]
 }
@@ -92,6 +93,7 @@ draftsRoutes.post('/', async (c) => {
       contentText: body.contentText || '',
       contentHtml: body.contentHtml || null,
       inReplyTo: body.inReplyTo || null,
+      forwardedMessageId: body.forwardedMessageId || null,
       references: body.references || null,
       status: 'draft',
       folder: 'Drafts',
