@@ -489,19 +489,9 @@ function initializeForward() {
   // For forward, recipients are left empty (user will add them)
   // No need to set toRecipients, ccRecipients, bccRecipients
 
-  // Load attachments from the original email (so they can be forwarded)
-  if (fwd.attachments) {
-    for (const att of fwd.attachments) {
-      attachments.value.push({
-        id: att.id,
-        filename: att.filename,
-        mimeType: att.mimeType || 'application/octet-stream',
-        size: att.size || 0,
-        url: `/api/attachments/${att.id}`,
-        isInline: att.isInline || false,
-      })
-    }
-  }
+  // Attachments from the original email are copied server-side when
+  // the draft is created with forwardedMessageId. We don't pre-load
+  // them here to avoid stale IDs that could accidentally delete originals.
 }
 
 // Load existing draft for editing

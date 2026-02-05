@@ -144,6 +144,44 @@ draftsRoutes.post('/', async (c) => {
     }
   }
 
+  // For forwarded emails, copy attachments from the original email
+  if (body.forwardedMessageId) {
+    const originalEmail = db
+      .select({ id: emails.id })
+      .from(emails)
+      .where(eq(emails.messageId, body.forwardedMessageId))
+      .get()
+
+    if (originalEmail) {
+      const originalAttachments = db
+        .select({
+          filename: attachments.filename,
+          mimeType: attachments.mimeType,
+          size: attachments.size,
+          filePath: attachments.filePath,
+          contentId: attachments.contentId,
+          isInline: attachments.isInline,
+        })
+        .from(attachments)
+        .where(eq(attachments.emailId, originalEmail.id))
+        .all()
+
+      for (const att of originalAttachments) {
+        db.insert(attachments)
+          .values({
+            emailId,
+            filename: att.filename,
+            mimeType: att.mimeType,
+            size: att.size,
+            filePath: att.filePath,
+            contentId: att.contentId,
+            isInline: att.isInline,
+          })
+          .run()
+      }
+    }
+  }
+
   return c.json({ id: emailId, threadId, status: 'draft' })
 })
 
