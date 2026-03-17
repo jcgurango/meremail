@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { syncAll } from './useSync'
+import { isNative } from '@/utils/native-config'
 
 // Shared state across all component instances
 const isOnline = ref(true)
@@ -32,8 +33,8 @@ export function useOffline() {
       isOnline.value = false
     })
 
-    // Listen for service worker messages
-    if ('serviceWorker' in navigator) {
+    // Listen for service worker messages (skip on native — no SW in WebView)
+    if (!isNative() && 'serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data?.type === 'SYNC_REQUESTED') {
           console.log('[Offline] Background sync requested by service worker')
@@ -69,6 +70,7 @@ export function setNavigationHandler(handler: (url: string) => void): void {
  * Call this when adding items to pendingSync.
  */
 export async function registerBackgroundSync(): Promise<void> {
+  if (isNative()) return
   if (!('serviceWorker' in navigator) || !('SyncManager' in window)) {
     return // Background sync not supported
   }
@@ -105,6 +107,8 @@ export function useOfflineStatus() {
  * Returns the permission result.
  */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (isNative()) return 'default'
+
   if (!('Notification' in window)) {
     console.warn('[Notifications] Not supported in this browser')
     return 'denied'
@@ -135,6 +139,8 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  * Requests a 10-minute interval (actual frequency depends on browser/engagement).
  */
 export async function registerPeriodicSync(): Promise<boolean> {
+  if (isNative()) return false
+
   if (!('serviceWorker' in navigator)) {
     console.warn('[PeriodicSync] Service worker not supported')
     return false
@@ -182,6 +188,8 @@ export async function registerPeriodicSync(): Promise<boolean> {
  * Call this after the user has granted notification permission.
  */
 export async function initializeNotifications(): Promise<void> {
+  if (isNative()) return
+
   const permission = await requestNotificationPermission()
 
   if (permission === 'granted') {
@@ -193,6 +201,8 @@ export async function initializeNotifications(): Promise<void> {
  * Retract a notification by tag (e.g., when email is read).
  */
 export async function retractNotification(tag: string): Promise<void> {
+  if (isNative()) return
+
   if (!('serviceWorker' in navigator)) {
     return
   }

@@ -13,6 +13,7 @@ import {
   deleteDraft as apiDeleteDraft,
   sendDraft as apiSendDraft,
 } from '@/utils/api'
+import { resolveApiUrl } from '@/utils/api-url'
 
 interface Contact {
   id: number
@@ -542,7 +543,7 @@ function loadExistingDraft() {
         filename: att.filename,
         mimeType: att.mimeType || 'application/octet-stream',
         size: att.size || 0,
-        url: `/api/attachments/${att.id}`,
+        url: resolveApiUrl(`/api/attachments/${att.id}`),
         isInline: att.isInline || false,
       })
     }

@@ -11,6 +11,7 @@ import {
   type IcsEvent,
 } from '../utils/ics'
 import { getRules, addSenderToRule, type Rule } from '../utils/api'
+import { resolveApiUrl, resolveContentUrls } from '../utils/api-url'
 
 interface Participant {
   id: number
@@ -227,8 +228,8 @@ const splitContent = computed<SplitContent>(() => {
     const isForward = /forwarded message/i.test(afterMatch)
     if (!isForward) {
       return {
-        visible: sanitizeHtml(content.slice(0, gmailMatch.index).trim()),
-        quoted: sanitizeHtml(content.slice(gmailMatch.index).trim()),
+        visible: resolveContentUrls(sanitizeHtml(content.slice(0, gmailMatch.index).trim())),
+        quoted: resolveContentUrls(sanitizeHtml(content.slice(gmailMatch.index).trim())),
       }
     }
   }
@@ -240,17 +241,17 @@ const splitContent = computed<SplitContent>(() => {
     const { visible, quoted } = splitInnerContent(innerContent)
     if (quoted) {
       return {
-        visible: sanitizeHtml(`<pre${preAttrs}>${visible}</pre>`),
-        quoted: sanitizeHtml(`<pre${preAttrs}>${quoted}</pre>`),
+        visible: resolveContentUrls(sanitizeHtml(`<pre${preAttrs}>${visible}</pre>`)),
+        quoted: resolveContentUrls(sanitizeHtml(`<pre${preAttrs}>${quoted}</pre>`)),
       }
     }
-    return { visible: sanitizeHtml(content), quoted: null }
+    return { visible: resolveContentUrls(sanitizeHtml(content)), quoted: null }
   }
 
   const split = splitInnerContent(content)
   return {
-    visible: sanitizeHtml(split.visible),
-    quoted: split.quoted ? sanitizeHtml(split.quoted) : null,
+    visible: resolveContentUrls(sanitizeHtml(split.visible)),
+    quoted: split.quoted ? resolveContentUrls(sanitizeHtml(split.quoted)) : null,
   }
 })
 
@@ -536,7 +537,7 @@ function formatFileSize(bytes: number | null): string {
                     Outlook.com
                   </a>
                   <a
-                    :href="`/api/attachments/${attachment.id}`"
+                    :href="resolveApiUrl(`/api/attachments/${attachment.id}`)"
                     download
                     class="calendar-menu-item"
                     @click="closeCalendarMenu"
@@ -556,7 +557,7 @@ function formatFileSize(bytes: number | null): string {
         </div>
         <ul class="attachment-list">
           <li v-for="attachment in email.attachments" :key="attachment.id">
-            <a :href="`/api/attachments/${attachment.id}`" target="_blank" class="attachment-item">
+            <a :href="resolveApiUrl(`/api/attachments/${attachment.id}`)" target="_blank" class="attachment-item">
               <span class="attachment-icon">{{ getFileIcon(attachment.mimeType, attachment.filename) }}</span>
               <span class="attachment-name">{{ attachment.filename }}</span>
               <span v-if="attachment.size" class="attachment-size">{{ formatFileSize(attachment.size) }}</span>

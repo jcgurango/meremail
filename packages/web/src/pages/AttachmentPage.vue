@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { resolveApiUrl } from '@/utils/api-url'
 
 interface Attachment {
   id: number
@@ -145,20 +146,20 @@ function goBack() {
       <div class="preview-section" v-if="isPreviewable">
         <img
           v-if="isImage"
-          :src="`/api/attachments/${attachment.id}`"
+          :src="resolveApiUrl(`/api/attachments/${attachment.id}`)"
           :alt="attachment.filename"
           class="preview-image"
         />
         <iframe
           v-else-if="attachment.mimeType === 'application/pdf'"
-          :src="`/api/attachments/${attachment.id}`"
+          :src="resolveApiUrl(`/api/attachments/${attachment.id}`)"
           class="preview-pdf"
         ></iframe>
       </div>
 
       <div class="actions">
         <a
-          :href="`/api/attachments/${attachment.id}`"
+          :href="resolveApiUrl(`/api/attachments/${attachment.id}`)"
           target="_blank"
           rel="noopener noreferrer"
           class="download-btn"

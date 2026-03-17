@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import OfflineIndicator from '@/components/OfflineIndicator.vue'
 import BottomNav from '@/components/BottomNav.vue'
 import { setNavigationHandler, initializeNotifications } from '@/composables/useOffline'
+import { isNative } from '@/utils/native-config'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,11 +30,40 @@ onMounted(async () => {
     console.error('Failed to initialize sync:', e)
   }
 
-  // Initialize notifications (request permission and register periodic sync)
-  try {
-    await initializeNotifications()
-  } catch (e) {
-    console.error('Failed to initialize notifications:', e)
+  if (isNative()) {
+    // Native: use Capacitor App lifecycle + background poller
+    try {
+      const { App: CapApp } = await import('@capacitor/app')
+      const { syncAll } = await import('@/composables/useSync')
+      const { useBackgroundPoller } = await import('@/composables/useBackgroundPoller')
+      const { LocalNotifications } = await import('@capacitor/local-notifications')
+
+      // Sync on app resume
+      CapApp.addListener('resume', () => {
+        syncAll().catch(err => console.error('Failed to sync on resume:', err))
+      })
+
+      // Handle notification tap — navigate to thread
+      LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+        const threadId = event.notification.extra?.threadId
+        if (threadId) {
+          router.push(`/thread/${threadId}`)
+        }
+      })
+
+      // Start background poller for notifications
+      const poller = useBackgroundPoller(syncAll)
+      poller.start()
+    } catch (e) {
+      console.error('Failed to initialize native features:', e)
+    }
+  } else {
+    // Web: initialize browser notifications (request permission and register periodic sync)
+    try {
+      await initializeNotifications()
+    } catch (e) {
+      console.error('Failed to initialize notifications:', e)
+    }
   }
 })
 </script>
