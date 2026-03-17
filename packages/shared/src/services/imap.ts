@@ -79,13 +79,16 @@ function extractDeliveredTo(headers: ParsedMail['headers']): string | undefined 
  * Convert mailparser attachment to our common format
  */
 function convertAttachment(att: ParsedMail['attachments'][number]): EmailAttachment {
+  // Only mark as inline if Content-Disposition explicitly says 'inline'.
+  // Gmail adds Content-ID to ALL attachments (for tracking), so CID alone
+  // is not a reliable indicator of inline content.
   return {
     filename: att.filename,
     contentType: att.contentType,
     size: att.size,
     content: att.content,
     contentId: att.cid,
-    isInline: !!att.cid || att.contentDisposition === 'inline',
+    isInline: att.contentDisposition === 'inline',
   }
 }
 
