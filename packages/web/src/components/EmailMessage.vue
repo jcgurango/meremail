@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from '../utils/sanitize'
 import {
   parseIcs,
   isIcsAttachment,
@@ -190,25 +190,6 @@ async function handleAddToRule(rule: Rule) {
   } finally {
     addingToRule.value = false
   }
-}
-
-function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      'a', 'abbr', 'address', 'b', 'blockquote', 'br', 'caption', 'cite', 'code',
-      'col', 'colgroup', 'dd', 'del', 'dfn', 'div', 'dl', 'dt', 'em', 'figcaption',
-      'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'kbd',
-      'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'samp', 'small', 'span', 'strong',
-      'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
-      'var', 'wbr', 'font', 'center',
-    ],
-    ALLOWED_ATTR: [
-      'href', 'src', 'alt', 'title', 'class', 'id', 'style', 'width', 'height',
-      'colspan', 'rowspan', 'target', 'rel', 'color', 'size', 'face', 'align',
-      'valign', 'bgcolor', 'border', 'cellpadding', 'cellspacing',
-    ],
-    ALLOW_DATA_ATTR: false,
-  })
 }
 
 const QUOTE_PATTERNS = [
@@ -826,6 +807,17 @@ function formatFileSize(bytes: number | null): string {
 
 .email-content :deep(a:hover) {
   text-decoration: underline;
+}
+
+/* The app-wide reset strips list padding, which hides the markers */
+.email-content :deep(ul),
+.email-content :deep(ol) {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.email-content :deep(li) {
+  margin: 4px 0;
 }
 
 .email-content :deep(blockquote) {
