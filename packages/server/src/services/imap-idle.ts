@@ -3,6 +3,7 @@ import {
   toImportableEmail,
   backupEml,
   importEmail,
+  deleteRetrieved,
   toDate,
   config,
   type FetchedEmail,
@@ -59,6 +60,9 @@ class ImapIdleService {
     console.log('[ImapIdle] Starting IMAP IDLE service...')
     console.log(`[ImapIdle] - IDLE restart interval: ${IDLE_RESTART_INTERVAL / 1000}s`)
     console.log(`[ImapIdle] - Other folders poll interval: ${OTHER_FOLDERS_POLL_INTERVAL / 1000}s`)
+    if (config.imap.deleteMode) {
+      console.log('[ImapIdle] - DELETE_MODE on: mail is deleted from the IMAP server once retrieved')
+    }
 
     // Start the main IDLE loop
     this.runIdleLoop()
@@ -193,6 +197,7 @@ class ImapIdleService {
     try {
       let imported = 0
       let skipped = 0
+      const retrieved: number[] = []
 
       for await (const message of this.client.fetch({ since }, {
         uid: true,
@@ -203,7 +208,10 @@ class ImapIdleService {
         const result = await this.processMessage(message, 'INBOX')
         if (result === 'imported') imported++
         else if (result === 'skipped') skipped++
+        if (result !== 'error' && message.source) retrieved.push(message.uid)
       }
+
+      await this.deleteFromServer(this.client, retrieved, 'INBOX')
 
       if (imported > 0 || skipped > 0) {
         console.log(`[ImapIdle] Initial fetch: ${imported} imported, ${skipped} skipped`)
@@ -223,6 +231,7 @@ class ImapIdleService {
       // Fetch messages with sequence numbers > prevCount
       const range = `${prevCount + 1}:*`
       let imported = 0
+      const retrieved: number[] = []
 
       for await (const message of this.client.fetch(range, {
         uid: true,
@@ -232,7 +241,10 @@ class ImapIdleService {
       })) {
         const result = await this.processMessage(message, 'INBOX')
         if (result === 'imported') imported++
+        if (result !== 'error' && message.source) retrieved.push(message.uid)
       }
+
+      await this.deleteFromServer(this.client, retrieved, 'INBOX')
 
       if (imported > 0) {
         console.log(`[ImapIdle] Imported ${imported} new email(s)`)
@@ -274,6 +286,22 @@ class ImapIdleService {
     } catch (error) {
       console.error(`[ImapIdle] Error processing message UID ${message.uid}:`, error)
       return 'error'
+    }
+  }
+
+  /**
+   * Delete retrieved messages from the server (DELETE_MODE only).
+   * A failure here leaves the mail on the server; it is skipped as a
+   * duplicate and deleted on a later fetch.
+   */
+  private async deleteFromServer(client: ImapFlow, uids: number[], folder: string): Promise<void> {
+    try {
+      const deleted = await deleteRetrieved(client, uids)
+      if (deleted > 0) {
+        console.log(`[ImapIdle] ${folder}: deleted ${deleted} retrieved email(s) from server`)
+      }
+    } catch (error) {
+      console.error(`[ImapIdle] Error deleting retrieved emails from ${folder}:`, error)
     }
   }
 
@@ -341,6 +369,7 @@ class ImapIdleService {
 
           let imported = 0
           let skipped = 0
+          const retrieved: number[] = []
 
           for await (const message of pollClient.fetch({ since: lastPoll }, {
             uid: true,
@@ -351,7 +380,10 @@ class ImapIdleService {
             const result = await this.processMessage(message, folder)
             if (result === 'imported') imported++
             else if (result === 'skipped') skipped++
+            if (result !== 'error' && message.source) retrieved.push(message.uid)
           }
+
+          await this.deleteFromServer(pollClient, retrieved, folder)
 
           this.lastPollTime[folder] = new Date()
 

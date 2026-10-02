@@ -151,6 +151,9 @@ IMAP_PORT=993
 IMAP_USER=you@example.com
 IMAP_PASS=your-password
 IMAP_SECURE=true
+# Delete mail from the IMAP server once the running server has retrieved it
+# (irreversible; pnpm mail:import never deletes)
+DELETE_MODE=false
 
 # Your identity (auto-created on first import)
 DEFAULT_SENDER_NAME=Your Name

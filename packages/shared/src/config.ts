@@ -63,6 +63,9 @@ export const config = {
     user: envStr('IMAP_USER', ''),
     pass: envStr('IMAP_PASS', ''),
     secure: envBool('IMAP_SECURE', true),
+    // Delete mail from the IMAP server once the running server has retrieved it
+    // (default false). The CLI import never deletes.
+    deleteMode: envBool('DELETE_MODE', false),
   },
   defaultSender: {
     name: envStrOptional('DEFAULT_SENDER_NAME'),

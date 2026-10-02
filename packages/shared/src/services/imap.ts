@@ -265,6 +265,26 @@ export async function* fetchEmails(
 }
 
 /**
+ * Delete retrieved messages from the currently selected mailbox when
+ * DELETE_MODE is on. Only pass UIDs of mail that is safely in the database.
+ * Call it after the fetch loop has finished - imapflow can't run another
+ * command while a fetch is being iterated.
+ *
+ * @returns The number of messages deleted
+ */
+export async function deleteRetrieved(client: ImapFlow, uids: number[]): Promise<number> {
+  if (!config.imap.deleteMode || uids.length === 0) return 0
+
+  // Chunked to keep the command line short on large imports
+  for (let i = 0; i < uids.length; i += DELETE_CHUNK_SIZE) {
+    await client.messageDelete(uids.slice(i, i + DELETE_CHUNK_SIZE), { uid: true })
+  }
+  return uids.length
+}
+
+const DELETE_CHUNK_SIZE = 500
+
+/**
  * imapflow reports INTERNALDATE as a Date or a string depending on version
  */
 export function toDate(value: Date | string | undefined): Date | undefined {
