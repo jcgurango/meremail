@@ -11,6 +11,7 @@ import { enqueue, discardDraft } from '@/local/actions'
 import { ensureThreads } from '@/local/sync'
 import { uuid } from '@/local/uuid'
 import { retractNotification } from '@/composables/useOffline'
+import { goBackOr } from '@/utils/navigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -189,12 +190,21 @@ async function moveToFolder(folderId: number) {
   showSendToMenu.value = false
 }
 
+// The list this thread belongs in - where Back leads when the thread was opened directly
+function listRoute(): string {
+  const folder = folders.value.find(f => f.id === thread.value?.folderId)
+  if (!folder || folder.id === 1) return '/'
+  return `/folder/${folder.name.toLowerCase()}`
+}
+
 async function handleTrashThread() {
   if (!thread.value) return
   if (!confirm('Move this thread to Trash?')) return
 
+  // Work out where to return to before the thread moves to Trash
+  const returnTo = listRoute()
   await enqueue({ type: 'thread.trash', payload: { threadId: thread.value.id } })
-  router.back()
+  goBackOr(router, returnTo)
 }
 
 async function handleDeleteEmail(emailId: number) {
@@ -202,12 +212,13 @@ async function handleDeleteEmail(emailId: number) {
 
   // Deleting the last email deletes the thread
   const wasLast = emails.value.length === 1
+  const returnTo = listRoute()
   await enqueue({ type: 'email.delete', payload: { emailId } })
-  if (wasLast) router.back()
+  if (wasLast) goBackOr(router, returnTo)
 }
 
 function goBack() {
-  router.back()
+  goBackOr(router, listRoute())
 }
 </script>
 

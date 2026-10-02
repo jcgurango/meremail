@@ -1,15 +1,27 @@
+<script lang="ts">
+import type { Navigation } from '@/local/queries'
+
+// The last navigation shown, kept across page changes so the bar renders
+// complete straight away instead of appearing a moment after the page does
+let lastNavigation: Navigation = { folders: [], replyLaterCount: 0, setAsideCount: 0 }
+</script>
+
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import SyncStatus from '@/components/SyncStatus.vue'
 import { useLiveQuery } from '@/local/live'
-import { getNavigation, type FolderNavItem, type Navigation } from '@/local/queries'
+import { watch } from 'vue'
+import { getNavigation, type FolderNavItem } from '@/local/queries'
 
 defineProps<{
   activeFolderId?: number
   activeQueue?: 'reply_later' | 'set_aside'
 }>()
 
-const { data: nav } = useLiveQuery<Navigation>(getNavigation, { folders: [], replyLaterCount: 0, setAsideCount: 0 })
+const { data: nav } = useLiveQuery<Navigation>(getNavigation, lastNavigation)
+watch(nav, (value) => {
+  lastNavigation = value
+})
 
 // Icon mapping for folders
 function getFolderIcon(folder: FolderNavItem): string {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { goBackOr } from '@/utils/navigation'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailComposer from '@/components/EmailComposer.vue'
@@ -39,11 +40,11 @@ watch(pageTitle, (newTitle) => {
 })
 
 function leave() {
-  router.push('/')
+  goBackOr(router, '/')
 }
 
 function goBack() {
-  router.back()
+  goBackOr(router, '/')
 }
 </script>
 

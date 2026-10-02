@@ -148,3 +148,26 @@ export function mergeResults(local: EmailSearchResult[], server: EmailSearchResu
   const seen = new Set(server.map(r => r.id))
   return [...server, ...local.filter(r => !seen.has(r.id))]
 }
+
+/**
+ * The most recent search and what it found. Coming back to the same search
+ * (opening a result, then Back) shows exactly the same list straight away,
+ * rather than re-running it and having results shift as the server answers.
+ */
+export const lastSearch: {
+  key: string
+  local: EmailSearchResult[]
+  server: EmailSearchResult[]
+  hasMore: boolean
+} = { key: '', local: [], server: [], hasMore: false }
+
+/**
+ * Bring remembered results up to date with what has been read since
+ */
+export async function refreshReadState(results: EmailSearchResult[]): Promise<EmailSearchResult[]> {
+  const emails = await db.emails.bulkGet(results.map(r => r.id))
+  return results.map((result, i) => {
+    const email = emails[i]
+    return email ? { ...result, isRead: !email.unread } : result
+  })
+}

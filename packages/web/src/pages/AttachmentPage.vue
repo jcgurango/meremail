@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { goBackOr } from '@/utils/navigation'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 
@@ -117,7 +118,7 @@ const isImage = computed(() =>
 )
 
 function goBack() {
-  router.back()
+  goBackOr(router, '/attachments')
 }
 </script>
 

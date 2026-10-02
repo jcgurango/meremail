@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, watch, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter, type LocationQuery, type LocationQueryRaw } from 'vue-router'
 import ThreadList from '@/components/ThreadList.vue'
 import FolderNav from '@/components/FolderNav.vue'
 import SearchToolbar, { type SearchFilters } from '@/components/SearchToolbar.vue'
 import { db } from '@/local/db'
 import { useLiveQuery } from '@/local/live'
 import { enqueue } from '@/local/actions'
-import { searchLocal, searchServer, mergeResults, type EmailSearchFilters, type EmailSearchResult } from '@/local/search'
+import { searchLocal, searchServer, mergeResults, lastSearch, refreshReadState, type EmailSearchFilters, type EmailSearchResult } from '@/local/search'
 import { formatListDate } from '@/utils/format'
 
 const props = defineProps<{
@@ -17,17 +17,73 @@ const props = defineProps<{
 
 const { data: folders, loaded: foldersLoaded } = useLiveQuery(() => db.folders.orderBy('position').toArray(), [])
 
+const route = useRoute()
+const router = useRouter()
+
+// The search lives in the URL (?q=...&in=...), so it survives opening a
+// result and coming back, reloading, and can be linked to.
+function queryString(value: LocationQuery[string] | undefined): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function filtersFromQuery(query: LocationQuery): SearchFilters | null {
+  const text = queryString(query.q)
+  const senderId = Number(queryString(query.sender)) || null
+  const dateFrom = queryString(query.from)
+  const dateTo = queryString(query.to)
+  if (!text && !senderId && !dateFrom && !dateTo) return null
+
+  const folders = queryString(query.in)
+  return {
+    query: text,
+    senderId,
+    senderName: queryString(query.senderName) || null,
+    dateFrom,
+    dateTo,
+    sortBy: query.sort === 'date' ? 'date' : 'relevance',
+    folderIds: folders && folders !== 'all' ? folders.split(',').map(Number).filter(id => !isNaN(id)) : [],
+  }
+}
+
+function filtersToQuery(filters: SearchFilters | null): LocationQueryRaw {
+  const query: LocationQueryRaw = {}
+  if (filters) {
+    if (filters.query) query.q = filters.query
+    if (filters.senderId) {
+      query.sender = String(filters.senderId)
+      if (filters.senderName) query.senderName = filters.senderName
+    }
+    if (filters.dateFrom) query.from = filters.dateFrom
+    if (filters.dateTo) query.to = filters.dateTo
+    if (filters.sortBy === 'date') query.sort = 'date'
+    query.in = filters.folderIds.length > 0 ? filters.folderIds.join(',') : 'all'
+  }
+  if (unreadOnly.value) query.unread = '1'
+  return query
+}
+
 // Search state
-const showSearchToolbar = ref(false)
-const searchActive = ref(false)
-const searchFilters = ref<SearchFilters | null>(null)
+const searchFilters = ref<SearchFilters | null>(filtersFromQuery(route.query))
+const searchActive = computed(() => searchFilters.value !== null)
+const showSearchToolbar = ref(searchActive.value)
+// Bumped when the search changes from outside the toolbar (back/forward), so the toolbar picks it up
+const toolbarKey = ref(0)
+let lastToolbarSearch = JSON.stringify(searchFilters.value)
 const localResults = ref<EmailSearchResult[]>([])
 const serverResults = ref<EmailSearchResult[]>([])
 const searchingLocal = ref(false)
 const searchingServer = ref(false)
 const serverSearchFailed = ref(false)
 const searchHasMore = ref(false)
-const unreadOnly = ref(false)
+const unreadOnly = computed({
+  get: () => route.query.unread === '1',
+  set: (value: boolean) => {
+    const query = { ...route.query }
+    if (value) query.unread = '1'
+    else delete query.unread
+    router.replace({ query })
+  },
+})
 // Bumped on every new search so that late responses to an old one are ignored
 let searchRun = 0
 
@@ -79,22 +135,26 @@ function currentFilters(): EmailSearchFilters | null {
   return { query, senderId, dateFrom, dateTo, sortBy, folderIds, unreadOnly: unreadOnly.value }
 }
 
-async function onSearch(filters: SearchFilters) {
-  searchFilters.value = filters
-  searchActive.value = true
-  await performSearch()
+function onSearch(filters: SearchFilters) {
+  lastToolbarSearch = JSON.stringify(filters)
+  router.replace({ query: filtersToQuery(filters) })
 }
 
 function onClearSearch() {
+  lastToolbarSearch = JSON.stringify(null)
+  if (searchActive.value) {
+    router.replace({ query: filtersToQuery(null) })
+  }
+  // Keep toolbar visible - only hide via toggle button
+}
+
+function resetSearchState() {
   searchRun++
-  searchActive.value = false
-  searchFilters.value = null
   localResults.value = []
   serverResults.value = []
   searchHasMore.value = false
   searchingLocal.value = false
   searchingServer.value = false
-  // Keep toolbar visible - only hide via toggle button
 }
 
 // What's on this device answers straight away; the server then fills in the
@@ -103,7 +163,24 @@ async function performSearch() {
   const filters = currentFilters()
   if (!filters) return
   const run = ++searchRun
+  const key = JSON.stringify(filters)
 
+  // Returning to the search we just ran (e.g. Back from a result): show the same list again
+  if (lastSearch.key === key) {
+    searchingLocal.value = false
+    searchingServer.value = false
+    serverSearchFailed.value = false
+    searchHasMore.value = lastSearch.hasMore
+    localResults.value = lastSearch.local
+    serverResults.value = lastSearch.server
+    const [local, server] = await Promise.all([refreshReadState(lastSearch.local), refreshReadState(lastSearch.server)])
+    if (run !== searchRun) return
+    localResults.value = lastSearch.local = local
+    serverResults.value = lastSearch.server = server
+    return
+  }
+
+  lastSearch.key = ''
   serverResults.value = []
   searchHasMore.value = false
   serverSearchFailed.value = false
@@ -130,6 +207,13 @@ async function searchServerPage(filters: EmailSearchFilters, run: number) {
     if (run !== searchRun) return
     serverResults.value.push(...page.results)
     searchHasMore.value = page.hasMore
+
+    // Remember the finished search (only once the server has answered, so a
+    // device-only result set from an offline attempt isn't mistaken for complete)
+    lastSearch.key = JSON.stringify(filters)
+    lastSearch.local = localResults.value
+    lastSearch.server = serverResults.value
+    lastSearch.hasMore = page.hasMore
   } catch (e) {
     if (run !== searchRun) return
     console.error('Server search failed:', e)
@@ -151,14 +235,24 @@ watch([pageTitle, foldersLoaded], () => {
   }
 }, { immediate: true })
 
-// Clear search when switching folders
-watch(() => props.name, () => {
-  onClearSearch()
-})
+// The URL is the source of truth: run whatever search it describes
+watch(() => route.query, (query) => {
+  const filters = filtersFromQuery(query)
+  searchFilters.value = filters
 
-watch(unreadOnly, () => {
-  if (searchActive.value) performSearch()
-})
+  // Changed by navigation rather than by typing in the toolbar: re-seed the toolbar
+  if (JSON.stringify(filters) !== lastToolbarSearch) {
+    lastToolbarSearch = JSON.stringify(filters)
+    toolbarKey.value++
+    if (filters) showSearchToolbar.value = true
+  }
+
+  if (filters) {
+    performSearch()
+  } else {
+    resetSearchState()
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -191,6 +285,8 @@ watch(unreadOnly, () => {
 
     <SearchToolbar
       v-if="showSearchToolbar"
+      :key="`${currentFolderId}-${toolbarKey}`"
+      :initial="searchFilters"
       :folder-id="currentFolderId"
       :folders="folders"
       :searching-server="searchActive && searchingServer"

@@ -28,6 +28,8 @@ const props = defineProps<{
   folders: Folder[]
   /** True while the server is being searched (results from this device show first) */
   searchingServer?: boolean
+  /** Filters to start with, when a search is being restored (e.g. coming back to the page) */
+  initial?: SearchFilters | null
 }>()
 
 const emit = defineEmits<{
@@ -36,18 +38,22 @@ const emit = defineEmits<{
 }>()
 
 // Search state
-const searchQuery = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
-const sortBy = ref<'relevance' | 'date'>('relevance')
-const selectedFolderIds = ref<Set<number>>(new Set(props.folderId ? [props.folderId] : []))
+const searchQuery = ref(props.initial?.query ?? '')
+const dateFrom = ref(props.initial?.dateFrom ?? '')
+const dateTo = ref(props.initial?.dateTo ?? '')
+const sortBy = ref<'relevance' | 'date'>(props.initial?.sortBy ?? 'relevance')
+const selectedFolderIds = ref<Set<number>>(new Set(props.initial ? props.initial.folderIds : props.folderId ? [props.folderId] : []))
 const showFolderDropdown = ref(false)
 
 // Sender filter state
 const senderSearch = ref('')
 const senderResults = ref<Contact[]>([])
 const senderSearchLoading = ref(false)
-const selectedSender = ref<Contact | null>(null)
+const selectedSender = ref<Contact | null>(
+  props.initial?.senderId
+    ? { id: props.initial.senderId, name: props.initial.senderName, email: props.initial.senderName ?? '' }
+    : null
+)
 const showSenderDropdown = ref(false)
 let senderDebounce: ReturnType<typeof setTimeout> | null = null
 
