@@ -33,7 +33,21 @@ Temporarily set threads aside to focus on what matters now. They're sorted by wh
 
 ### Full-Text Search
 
-Search across all emails, contacts, and attachments.
+One search box covers the subject, body, sender, recipients and attachment names of every email, and drafts on the device. Results are grouped by thread, with the matching words highlighted.
+
+Words match whole words, ignoring case and accents; the word being typed matches as the start of a word. Everything else about a search is typed into the same box as operators:
+
+| | |
+|---|---|
+| `"exact phrase"` | Words next to each other, in order |
+| `from:alice` `to:bob@example.com` | Sender, or any recipient, by name or address |
+| `subject:word` `filename:report.pdf` | Subject or attachment name only |
+| `in:inbox` | Folder, by name (repeat for several) |
+| `has:attachment` `is:unread` `is:read` | |
+| `after:2026-01-31` `before:2026-02-28` | Date range, including both days |
+| `sort:oldest` | Oldest first; newest first is the default |
+
+Contacts and attachments have their own search on their pages.
 
 ### Rich Email Composer
 

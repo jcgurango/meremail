@@ -52,6 +52,14 @@ How it works is in the README; these are the rules to keep it working.
 - Folders with "sync offline" off (Junk and Trash by default) are not held on the device; they page from the server when opened.
 - Raw headers are not synced. `GET /api/emails/:id/headers` serves them on demand.
 
+## Search
+
+- **The query language lives in `packages/shared/src/search.ts`** and is used by both sides: the server turns a parsed query into an FTS5 expression, the client matches it against held mail with regexes. A change to what a query means goes there, so the two tiers keep agreeing. That file must stay free of Node and DOM imports.
+- **`emails_fts` is contentless** (migration `0015_search_index.sql`) and is filled from the `emails_search_documents` view by triggers on `emails`, `email_contacts`, `attachments` and `contacts`. To index something new, add it to the view, the table and the triggers that can change it, and to `emailDocument` / `draftDocument` in `packages/web/src/local/search.ts`.
+- Snippets are cut from `content_text` in code (`searchSnippet`); the index stores no text.
+- Drafts are only searched on the device. The server index covers emails only.
+- The query text is the whole search - folders, people, dates and sort order are operators in it - and it is the only search state in the URL (`?q=`). There are no separate filter controls.
+
 ## Still online-only
 
 Folder management, rules, the attachments browser and per-contact history call the server directly (`packages/web/src/utils/api.ts`). After changing folders or identities, call `syncNow()` so the local copy catches up.
