@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { searchContacts } from '@/local/queries'
 
 interface Contact {
   id: number
@@ -25,6 +26,10 @@ export interface SearchFilters {
 const props = defineProps<{
   folderId?: number
   folders: Folder[]
+  /** True while the server is being searched (results from this device show first) */
+  searchingServer?: boolean
+  /** Filters to start with, when a search is being restored (e.g. coming back to the page) */
+  initial?: SearchFilters | null
 }>()
 
 const emit = defineEmits<{
@@ -33,18 +38,22 @@ const emit = defineEmits<{
 }>()
 
 // Search state
-const searchQuery = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
-const sortBy = ref<'relevance' | 'date'>('relevance')
-const selectedFolderIds = ref<Set<number>>(new Set(props.folderId ? [props.folderId] : []))
+const searchQuery = ref(props.initial?.query ?? '')
+const dateFrom = ref(props.initial?.dateFrom ?? '')
+const dateTo = ref(props.initial?.dateTo ?? '')
+const sortBy = ref<'relevance' | 'date'>(props.initial?.sortBy ?? 'relevance')
+const selectedFolderIds = ref<Set<number>>(new Set(props.initial ? props.initial.folderIds : props.folderId ? [props.folderId] : []))
 const showFolderDropdown = ref(false)
 
 // Sender filter state
 const senderSearch = ref('')
 const senderResults = ref<Contact[]>([])
 const senderSearchLoading = ref(false)
-const selectedSender = ref<Contact | null>(null)
+const selectedSender = ref<Contact | null>(
+  props.initial?.senderId
+    ? { id: props.initial.senderId, name: props.initial.senderName, email: props.initial.senderName ?? '' }
+    : null
+)
 const showSenderDropdown = ref(false)
 let senderDebounce: ReturnType<typeof setTimeout> | null = null
 
@@ -133,11 +142,8 @@ async function onSenderSearchInput() {
   senderDebounce = setTimeout(async () => {
     senderSearchLoading.value = true
     try {
-      const response = await fetch(`/api/contacts?q=${encodeURIComponent(senderSearch.value)}&limit=10&view=all`)
-      if (response.ok) {
-        const data = await response.json() as { contacts: Contact[] }
-        senderResults.value = data.contacts.map(c => ({ id: c.id, name: c.name, email: c.email }))
-      }
+      const contacts = await searchContacts(senderSearch.value, 10)
+      senderResults.value = contacts.map(c => ({ id: c.id, name: c.name, email: c.email }))
     } catch {
       senderResults.value = []
     } finally {
@@ -201,6 +207,10 @@ function onBlur(e: FocusEvent) {
           class="search-input"
           @input="onSearchInput"
         />
+        <span v-if="searchingServer" class="server-search-indicator" title="Results from this device are shown first">
+          <span class="server-search-spinner"></span>
+          Searching server…
+        </span>
       </div>
 
       <!-- Clear all button -->
@@ -324,6 +334,30 @@ function onBlur(e: FocusEvent) {
 
 .toolbar-row + .toolbar-row {
   margin-top: 10px;
+}
+
+.server-search-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.server-search-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #d1d5db;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: server-search-spin 0.8s linear infinite;
+}
+
+@keyframes server-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .search-input-wrapper {

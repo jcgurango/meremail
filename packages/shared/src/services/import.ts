@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { eq, or } from 'drizzle-orm'
-import { db } from '../db'
+import { db, sqlite } from '../db'
 import {
   emails,
   emailThreads,
@@ -237,6 +237,13 @@ function saveAttachment(emailId: number, attachment: EmailAttachment): void {
  * came from IMAP, mbox, EML files, or any other source.
  */
 export async function importEmail(email: ImportableEmail): Promise<{ imported: boolean; reason?: string }> {
+  // One transaction per email, so a sync client never sees it half-written
+  return importEmailTransaction(email)
+}
+
+const importEmailTransaction = sqlite.transaction(importEmailSync)
+
+function importEmailSync(email: ImportableEmail): { imported: boolean; reason?: string } {
   const { messageId, subject, inReplyTo, references } = email
 
   // Skip if already imported
@@ -311,8 +318,11 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
   const finalThreadId = threadId!
 
   // Insert email
+  // receivedAt is when the mailbox took delivery, not when we imported it -
+  // a bulk import of old mail must not look like it all arrived today.
   // If already read, set readAt to receivedAt; otherwise leave null
-  const receivedAt = new Date()
+  const now = new Date()
+  const receivedAt = email.receivedAt ?? email.sentAt ?? now
   let readAt = email.isRead ? receivedAt : null
 
   // Apply rule mark_read action
@@ -381,19 +391,19 @@ export async function importEmail(email: ImportableEmail): Promise<{ imported: b
     if (ruleActions.folderId === 3) { // Trash folder
       const originalFolderId = email.isJunk ? 2 : 1
       updates.previousFolderId = originalFolderId
-      updates.trashedAt = receivedAt
+      updates.trashedAt = now
     }
 
     // Queue actions
     if (ruleActions.addToReplyLater) {
-      updates.replyLaterAt = receivedAt
+      updates.replyLaterAt = now
     }
     if (ruleActions.addToSetAside) {
-      updates.setAsideAt = receivedAt
+      updates.setAsideAt = now
     }
 
     if (Object.keys(updates).length > 0) {
-      updates.updatedAt = receivedAt
+      updates.updatedAt = now
       db.update(emailThreads)
         .set(updates)
         .where(eq(emailThreads.id, finalThreadId))

@@ -1,97 +1,39 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getSetAsideEmails } from '@/utils/api'
 import EmailMessage from '@/components/EmailMessage.vue'
+import { getMeta } from '@/local/db'
+import { useLiveQuery } from '@/local/live'
+import { listSetAsideEmails } from '@/local/queries'
+import { toEmailView, type EmailView } from '@/local/views'
+import { enqueue } from '@/local/actions'
 import { retractNotification } from '@/composables/useOffline'
-
-interface Participant {
-  id: number
-  name: string | null
-  email: string
-  isMe?: boolean
-  role?: string
-}
-
-interface Attachment {
-  id: number
-  filename: string
-  mimeType: string | null
-  size: number | null
-}
-
-interface FeedEmail {
-  id: number
-  threadId: number
-  subject: string
-  content: string
-  sentAt: string | null
-  receivedAt: string | null
-  isRead: boolean
-  sender: Participant | null
-  recipients: Participant[]
-  attachments: Attachment[]
-  replyTo?: string | null
-}
 
 defineProps<{
   emptyMessage: string
 }>()
 
-const emails = ref<FeedEmail[]>([])
-const hasMore = ref(false)
-const loading = ref(true)
-const loadingMore = ref(false)
-const error = ref<Error | null>(null)
-const fromCache = ref(false)
-const loadedIds = ref<Set<number>>(new Set())
-const markedReadIds = ref<Set<number>>(new Set())
-const pendingMarkRead = ref<Set<number>>(new Set())
+const PAGE_SIZE = 20
+
+// Set-aside threads are always held on this device, so the whole feed is local
+const { data: feed, loaded } = useLiveQuery(async () => ({
+  emails: await listSetAsideEmails(),
+  imageProxyUrl: (await getMeta('config'))?.imageProxyUrl ?? '',
+}), { emails: [], imageProxyUrl: '' })
+
+// Rendering every email at once would be slow; show them a page at a time
+const shown = ref(PAGE_SIZE)
+const emails = computed<EmailView[]>(() =>
+  feed.value.emails.slice(0, shown.value).map(e => toEmailView(e, feed.value.imageProxyUrl))
+)
+const hasMore = computed(() => feed.value.emails.length > shown.value)
+
 const itemRefs = ref<HTMLElement[]>([])
 const currentMiddleIndex = ref<number | null>(null)
 let readDebounceTimeout: ReturnType<typeof setTimeout> | null = null
 
-async function loadEmails() {
-  loading.value = true
-  error.value = null
-  loadedIds.value.clear()
-  markedReadIds.value.clear()
-  fromCache.value = false
-
-  try {
-    const result = await getSetAsideEmails()
-    emails.value = result.data.emails
-    hasMore.value = result.data.hasMore
-    fromCache.value = result.fromCache
-
-    for (const email of result.data.emails) {
-      loadedIds.value.add(email.id)
-    }
-  } catch (e) {
-    error.value = e as Error
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadMore() {
-  if (loadingMore.value || !hasMore.value || fromCache.value) return
-  loadingMore.value = true
-  try {
-    const excludeList = Array.from(loadedIds.value)
-    const result = await getSetAsideEmails(excludeList)
-
-    for (const email of result.data.emails) {
-      loadedIds.value.add(email.id)
-    }
-
-    emails.value = [...emails.value, ...result.data.emails]
-    hasMore.value = result.data.hasMore
-  } catch (e) {
-    console.error('Failed to load more:', e)
-  } finally {
-    loadingMore.value = false
-  }
+function loadMore() {
+  shown.value += PAGE_SIZE
 }
 
 function getMiddleItemIndex(): number | null {
@@ -124,23 +66,18 @@ function getMiddleItemIndex(): number | null {
   return null
 }
 
+// Scrolling past an email reads it, along with everything above it
 function markEmailsReadUpTo(index: number) {
-  const idsToMark: number[] = []
+  const idsToMark = emails.value
+    .slice(0, index + 1)
+    .filter(e => !e.isRead)
+    .map(e => e.id)
 
-  for (let i = 0; i <= index; i++) {
-    const email = emails.value[i]
-    if (!email || email.isRead || markedReadIds.value.has(email.id)) continue
+  if (idsToMark.length === 0) return
 
-    email.isRead = true
-    markedReadIds.value.add(email.id)
-    idsToMark.push(email.id)
-  }
-
-  if (idsToMark.length > 0) {
-    for (const id of idsToMark) {
-      pendingMarkRead.value.add(id)
-    }
-    flushMarkRead()
+  enqueue({ type: 'emails.markRead', payload: { emailIds: idsToMark } })
+  for (const id of idsToMark) {
+    retractNotification(`email-${id}`)
   }
 }
 
@@ -164,30 +101,7 @@ function onScroll() {
   }
 }
 
-async function flushMarkRead() {
-  if (pendingMarkRead.value.size === 0) return
-
-  const ids = Array.from(pendingMarkRead.value)
-  pendingMarkRead.value.clear()
-
-  // Retract notifications for these emails
-  for (const id of ids) {
-    retractNotification(`email-${id}`)
-  }
-
-  try {
-    await fetch('/api/emails/mark-read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids })
-    })
-  } catch (e) {
-    console.error('Failed to mark emails as read:', e)
-  }
-}
-
 onMounted(() => {
-  loadEmails()
   window.addEventListener('scroll', onScroll, { passive: true })
   onScroll()
 })
@@ -197,27 +111,18 @@ onBeforeUnmount(() => {
   if (readDebounceTimeout) {
     clearTimeout(readDebounceTimeout)
   }
-  flushMarkRead()
 })
 </script>
 
 <template>
   <div>
-    <div v-if="loading" class="loading">Loading...</div>
-
-    <div v-else-if="error" class="error">
-      Failed to load: {{ error?.message }}
-    </div>
+    <div v-if="!loaded" class="loading">Loading...</div>
 
     <div v-else-if="emails.length === 0" class="empty">
       {{ emptyMessage }}
     </div>
 
-    <div v-if="fromCache && !loading" class="cache-notice">
-      Showing cached data (offline)
-    </div>
-
-    <div v-if="emails.length > 0 && !loading" class="email-feed">
+    <div v-if="emails.length > 0" class="email-feed">
       <div
         v-for="(email, index) in emails"
         :key="email.id"
@@ -233,9 +138,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="hasMore && !loading" class="load-more">
-      <button @click="loadMore" :disabled="loadingMore" class="load-more-btn">
-        {{ loadingMore ? 'Loading...' : 'Load More' }}
+    <div v-if="hasMore" class="load-more">
+      <button @click="loadMore" class="load-more-btn">
+        Load More
       </button>
     </div>
   </div>

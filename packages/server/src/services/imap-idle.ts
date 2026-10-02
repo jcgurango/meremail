@@ -3,6 +3,7 @@ import {
   toImportableEmail,
   backupEml,
   importEmail,
+  toDate,
   config,
   type FetchedEmail,
 } from '@meremail/shared'
@@ -197,6 +198,7 @@ class ImapIdleService {
         uid: true,
         source: true,
         flags: true,
+        internalDate: true,
       })) {
         const result = await this.processMessage(message, 'INBOX')
         if (result === 'imported') imported++
@@ -226,6 +228,7 @@ class ImapIdleService {
         uid: true,
         source: true,
         flags: true,
+        internalDate: true,
       })) {
         const result = await this.processMessage(message, 'INBOX')
         if (result === 'imported') imported++
@@ -243,7 +246,7 @@ class ImapIdleService {
    * Process a single message
    */
   private async processMessage(
-    message: { uid: number; source?: Buffer; flags?: Set<string> },
+    message: { uid: number; source?: Buffer; flags?: Set<string>; internalDate?: Date | string },
     folder: string
   ): Promise<'imported' | 'skipped' | 'error'> {
     if (!message.source) return 'skipped'
@@ -257,6 +260,7 @@ class ImapIdleService {
         parsed,
         raw: message.source,
         flags: message.flags ?? new Set<string>(),
+        internalDate: toDate(message.internalDate),
       }
 
       // Backup raw EML
@@ -342,6 +346,7 @@ class ImapIdleService {
             uid: true,
             source: true,
             flags: true,
+            internalDate: true,
           })) {
             const result = await this.processMessage(message, folder)
             if (result === 'imported') imported++

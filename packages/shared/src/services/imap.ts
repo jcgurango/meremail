@@ -11,6 +11,8 @@ export interface FetchedEmail {
   parsed: ParsedMail
   raw: Buffer
   flags: Set<string>
+  /** IMAP INTERNALDATE - when the server took delivery of the message */
+  internalDate?: Date
 }
 
 /**
@@ -76,6 +78,40 @@ function extractDeliveredTo(headers: ParsedMail['headers']): string | undefined 
 }
 
 /**
+ * Extract the delivery time from the newest Received header.
+ * The timestamp follows the last ';' in the header value.
+ */
+export function parseReceivedDate(received: string | undefined): Date | undefined {
+  if (!received) return undefined
+  const idx = received.lastIndexOf(';')
+  if (idx === -1) return undefined
+  // Strip comments like "(UTC)" that Date can't parse
+  const date = new Date(received.slice(idx + 1).replace(/\([^)]*\)/g, '').trim())
+  return isNaN(date.getTime()) ? undefined : date
+}
+
+/**
+ * Determine when an email was received: IMAP INTERNALDATE if we have it
+ * (also preserved in EML backups as X-IMAP-InternalDate), otherwise the
+ * newest Received header.
+ */
+function extractReceivedAt(fetched: FetchedEmail): Date | undefined {
+  if (fetched.internalDate && !isNaN(fetched.internalDate.getTime())) {
+    return fetched.internalDate
+  }
+
+  const headers = fetched.parsed.headers
+  const backedUp = headers?.get('x-imap-internaldate')
+  if (typeof backedUp === 'string') {
+    const date = new Date(backedUp)
+    if (!isNaN(date.getTime())) return date
+  }
+
+  const received = headers?.get('received') as string | string[] | undefined
+  return parseReceivedDate(Array.isArray(received) ? received[0] : received)
+}
+
+/**
  * Convert mailparser attachment to our common format
  */
 function convertAttachment(att: ParsedMail['attachments'][number]): EmailAttachment {
@@ -127,6 +163,7 @@ export function toImportableEmail(fetched: FetchedEmail): ImportableEmail {
 
     // Metadata
     sentAt: parsed.date,
+    receivedAt: extractReceivedAt(fetched),
     isRead: flags.has('\\Seen') || isSentFolder(folder),
     isSent: isSentFolder(folder),
     isJunk: isJunkFolder(folder),
@@ -204,6 +241,7 @@ export async function* fetchEmails(
       envelope: true,
       source: true,
       flags: true,
+      internalDate: true,
     })
 
     for await (const message of messages) {
@@ -218,11 +256,21 @@ export async function* fetchEmails(
         parsed,
         raw,
         flags: message.flags ?? new Set<string>(),
+        internalDate: toDate(message.internalDate),
       }
     }
   } finally {
     lock.release()
   }
+}
+
+/**
+ * imapflow reports INTERNALDATE as a Date or a string depending on version
+ */
+export function toDate(value: Date | string | undefined): Date | undefined {
+  if (!value) return undefined
+  const date = value instanceof Date ? value : new Date(value)
+  return isNaN(date.getTime()) ? undefined : date
 }
 
 export async function listFolders(client: ImapFlow): Promise<string[]> {
@@ -245,6 +293,7 @@ function sanitizeFilename(name: string): string {
  * - X-IMAP-Folder: The folder this email was retrieved from
  * - X-IMAP-Flags: IMAP flags (\Seen, \Flagged, etc.)
  * - X-IMAP-Uid: IMAP UID for this message
+ * - X-IMAP-InternalDate: When the IMAP server received this message
  *
  * @returns The path where the file was saved, or null if backup is disabled
  */
@@ -279,6 +328,7 @@ export function backupEml(fetched: FetchedEmail): string | null {
     `X-IMAP-Folder: ${fetched.folder}`,
     `X-IMAP-Uid: ${fetched.uid}`,
     `X-IMAP-Flags: ${Array.from(fetched.flags).join(' ') || '(none)'}`,
+    ...(fetched.internalDate ? [`X-IMAP-InternalDate: ${fetched.internalDate.toISOString()}`] : []),
   ].join('\r\n') + '\r\n'
 
   const emlWithMetadata = Buffer.concat([

@@ -71,6 +71,11 @@ export interface ImportableEmail {
   // === Metadata ===
   /** When the email was sent (Date header) */
   sentAt?: Date
+  /**
+   * When the email was delivered to the mailbox (IMAP INTERNALDATE, or the
+   * newest Received header). Falls back to sentAt, then to the import time.
+   */
+  receivedAt?: Date
   /** Whether the email has been read */
   isRead: boolean
   /**

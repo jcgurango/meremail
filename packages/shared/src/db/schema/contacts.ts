@@ -8,6 +8,8 @@ export const contacts = sqliteTable('contacts', {
   email: text('email').notNull().unique(),
   isMe: integer('is_me', { mode: 'boolean' }).notNull().default(false),
   isDefaultIdentity: integer('is_default_identity', { mode: 'boolean' }).notNull().default(false),
+  // Sync revision - bumped by triggers on every change (see sync migration)
+  rev: integer('rev').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 

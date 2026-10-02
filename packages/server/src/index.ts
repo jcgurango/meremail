@@ -7,15 +7,14 @@ import { readFileSync, existsSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
-import { threadsRoutes } from './routes/threads'
 import { contactsRoutes } from './routes/contacts'
-import { draftsRoutes } from './routes/drafts'
 import { attachmentsRoutes } from './routes/attachments'
 import { uploadsRoutes } from './routes/uploads'
 import { searchRoutes } from './routes/search'
 import { miscRoutes } from './routes/misc'
 import { foldersRoutes } from './routes/folders'
 import { rulesRoutes } from './routes/rules'
+import { syncRoutes, draftAttachmentsRoutes } from './routes/sync'
 import { authRoutes, requireAuth } from './routes/auth'
 import { startSendQueueProcessor } from './services/send-queue'
 import { startDailyScheduler } from './services/daily-scheduler'
@@ -37,9 +36,9 @@ app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
 // Protected API Routes - require authentication
 app.use('/api/*', requireAuth())
-app.route('/api/threads', threadsRoutes)
+app.route('/api/sync', syncRoutes)
+app.route('/api/draft-attachments', draftAttachmentsRoutes)
 app.route('/api/contacts', contactsRoutes)
-app.route('/api/drafts', draftsRoutes)
 app.route('/api/attachments', attachmentsRoutes)
 app.route('/api/uploads', uploadsRoutes)
 app.route('/api/search', searchRoutes)

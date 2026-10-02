@@ -17,6 +17,8 @@ export const emailThreads = sqliteTable('email_threads', {
   replyLaterAt: integer('reply_later_at', { mode: 'timestamp' }),
   // Set Aside queue - NULL = not in queue, timestamp = when added (sorted newest first)
   setAsideAt: integer('set_aside_at', { mode: 'timestamp' }),
+  // Sync revision - bumped by triggers on every change (see sync migration)
+  rev: integer('rev').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })

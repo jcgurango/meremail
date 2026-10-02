@@ -3,154 +3,100 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
 import EmailComposer from '@/components/EmailComposer.vue'
-import { getThread as apiGetThread, getFolders, trashThread, deleteEmail, type Folder } from '@/utils/api'
+import { db, getMeta, type LocalDraft } from '@/local/db'
+import { useLiveQuery } from '@/local/live'
+import { getThreadView, defaultFromId as pickDefaultFromId, type ThreadView } from '@/local/queries'
+import { toEmailView, type EmailView } from '@/local/views'
+import { enqueue, discardDraft } from '@/local/actions'
+import { ensureThreads } from '@/local/sync'
+import { uuid } from '@/local/uuid'
 import { retractNotification } from '@/composables/useOffline'
-
-interface Participant {
-  id: number
-  name: string | null
-  email: string
-  isMe?: boolean
-  role: string
-}
-
-interface Attachment {
-  id: number
-  filename: string
-  mimeType: string | null
-  size: number | null
-  isInline: boolean | null
-}
-
-interface Email {
-  id: number
-  subject: string
-  content: string
-  contentText: string
-  contentHtml?: string | null
-  sentAt: string | null
-  receivedAt: string | null
-  isRead: boolean
-  status: 'draft' | 'queued' | 'sent'
-  sender: Participant | null
-  recipients: Participant[]
-  attachments: Attachment[]
-  messageId?: string | null
-  references?: string[] | null
-  inReplyTo?: string | null
-  replyTo?: string | null
-  queuedAt?: string | null
-  sendAttempts?: number
-  lastSendError?: string | null
-}
-
-interface Thread {
-  id: number
-  subject: string
-  createdAt: string
-  replyLaterAt: string | null
-  setAsideAt: string | null
-  folderId: number
-  emails: Email[]
-  defaultFromId: number | null
-}
+import { goBackOr } from '@/utils/navigation'
 
 const route = useRoute()
 const router = useRouter()
 
-const thread = ref<Thread | null>(null)
-const pending = ref(true)
+const threadId = computed(() => Number(route.params.id))
+
+// The thread as held on this device; updates live as mail arrives or changes are made
+const { data: view, loaded } = useLiveQuery<{ thread: ThreadView | null; imageProxyUrl: string }>(async () => ({
+  thread: await getThreadView(threadId.value),
+  imageProxyUrl: (await getMeta('config'))?.imageProxyUrl ?? '',
+}), { thread: null, imageProxyUrl: '' }, [threadId])
+
+const { data: folders } = useLiveQuery(() => db.folders.orderBy('position').toArray(), [])
+
+const thread = computed(() => view.value.thread?.thread ?? null)
+const drafts = computed(() => view.value.thread?.drafts ?? [])
+const emails = computed<EmailView[]>(() =>
+  (view.value.thread?.emails ?? []).map(e => toEmailView(e, view.value.imageProxyUrl))
+)
+const defaultFromId = computed(() => pickDefaultFromId(view.value.thread?.emails ?? []) ?? undefined)
+
+// Fetching a thread that isn't on this device (an old link, a search result)
+const fetching = ref(false)
 const error = ref<Error | null>(null)
-const folders = ref<Folder[]>([])
+const pending = computed(() => !loaded.value || (fetching.value && !thread.value))
 
-const pageTitle = computed(() => thread.value?.subject ? `${thread.value.subject} - MereMail` : 'MereMail')
+async function fetchIfMissing() {
+  if (await db.threads.get(threadId.value)) return
 
-onMounted(async () => {
-  document.title = pageTitle.value
-  await Promise.all([loadThread(), loadFolders()])
-})
-
-async function loadFolders() {
-  try {
-    const result = await getFolders()
-    folders.value = result.data.folders
-  } catch (e) {
-    console.error('Failed to load folders:', e)
-  }
-}
-
-watch(pageTitle, (newTitle) => {
-  document.title = newTitle
-})
-
-const isFromCache = ref(false)
-
-async function loadThread() {
-  pending.value = true
+  fetching.value = true
   error.value = null
-  isFromCache.value = false
-
-  const threadId = Number(route.params.id)
-
   try {
-    const result = await apiGetThread(threadId)
-    if (result) {
-      thread.value = result.data
-      isFromCache.value = result.fromCache
-
-      // Retract notifications for all emails in this thread (they're now marked as read)
-      for (const email of result.data.emails) {
-        retractNotification(`email-${email.id}`)
-      }
-    } else {
+    await ensureThreads([threadId.value])
+    if (!(await db.threads.get(threadId.value))) {
       throw new Error('Thread not found')
     }
   } catch (e) {
-    error.value = e as Error
+    error.value = e instanceof Error && e.message === 'Thread not found'
+      ? e
+      : new Error('This thread isn\'t on this device, and the server couldn\'t be reached')
   } finally {
-    pending.value = false
+    fetching.value = false
   }
 }
 
-async function refresh() {
-  await loadThread()
-}
+onMounted(fetchIfMissing)
+watch(threadId, fetchIfMissing)
 
-// Sort emails: drafts appear above the email they're replying to
-const sortedEmails = computed(() => {
-  if (!thread.value?.emails) return []
+const pageTitle = computed(() => thread.value?.subject ? `${thread.value.subject} - MereMail` : 'MereMail')
+watch(pageTitle, (newTitle) => {
+  document.title = newTitle
+}, { immediate: true })
 
-  const emails = [...thread.value.emails]
-  const result: Email[] = []
-  const drafts: Email[] = []
+// Opening a thread reads it
+watch(emails, (current) => {
+  const unread = current.filter(e => !e.isRead).map(e => e.id)
+  if (unread.length === 0) return
 
-  // Separate drafts from sent emails
-  for (const email of emails) {
-    if (email.status === 'draft') {
-      drafts.push(email)
-    } else {
-      result.push(email)
-    }
+  enqueue({ type: 'emails.markRead', payload: { emailIds: unread } })
+  for (const id of unread) {
+    retractNotification(`email-${id}`)
   }
+}, { immediate: true })
 
-  // Sort sent/queued emails by date descending
-  // For queued emails, use queuedAt since they don't have sentAt yet
-  result.sort((a, b) => {
-    const dateA = a.sentAt ? new Date(a.sentAt).getTime()
-      : (a.queuedAt ? new Date(a.queuedAt).getTime() : 0)
-    const dateB = b.sentAt ? new Date(b.sentAt).getTime()
-      : (b.queuedAt ? new Date(b.queuedAt).getTime() : 0)
-    return dateB - dateA
-  })
+type ThreadItem =
+  | { kind: 'email'; key: string; email: EmailView }
+  | { kind: 'draft'; key: string; draft: LocalDraft }
 
-  // Insert each draft above the email it's replying to
-  for (const draft of drafts) {
-    const targetMessageId = draft.inReplyTo
-    const targetIndex = result.findIndex(e => e.messageId === targetMessageId)
-    if (targetIndex !== -1) {
-      result.splice(targetIndex, 0, draft) // Insert at target's index (pushes target down, so draft appears above)
+// Emails newest first, with each draft above the email it's replying to
+const items = computed<ThreadItem[]>(() => {
+  const result: ThreadItem[] = [...emails.value]
+    // For queued emails, use queuedAt since they don't have sentAt yet
+    .sort((a, b) => (b.sentAt ?? b.queuedAt ?? 0) - (a.sentAt ?? a.queuedAt ?? 0))
+    .map(email => ({ kind: 'email', key: `email-${email.id}`, email }))
+
+  for (const draft of drafts.value) {
+    // A reply or forward being written is shown in its composer, not as a separate entry
+    if (draft.id === composingDraftId.value && draft.id !== editingDraftId.value) continue
+
+    const item: ThreadItem = { kind: 'draft', key: `draft-${draft.id}`, draft }
+    const targetIndex = result.findIndex(i => i.kind === 'email' && i.email.messageId === draft.inReplyTo)
+    if (draft.inReplyTo && targetIndex !== -1) {
+      result.splice(targetIndex, 0, item)
     } else {
-      result.unshift(draft) // No target found, put at top
+      result.unshift(item)
     }
   }
 
@@ -161,216 +107,118 @@ const sortedEmails = computed(() => {
 const replyingToEmailId = ref<number | null>(null)
 const replyAll = ref(false)
 const forwardingEmailId = ref<number | null>(null)
-const editingDraftId = ref<number | null>(null)
+const editingDraftId = ref<string | null>(null)
+// ID of the draft the open composer is writing to
+const composingDraftId = ref<string | null>(null)
 
-// Find the email being replied to
-const replyToEmail = computed(() => {
-  if (!replyingToEmailId.value || !thread.value) return null
-  return thread.value.emails.find(e => e.id === replyingToEmailId.value) || null
-})
-
-// Find the email being forwarded
-const forwardToEmail = computed(() => {
-  if (!forwardingEmailId.value || !thread.value) return null
-  return thread.value.emails.find(e => e.id === forwardingEmailId.value) || null
-})
-
-// Find the draft being edited
-const editingDraft = computed(() => {
-  if (!editingDraftId.value || !thread.value) return null
-  return thread.value.emails.find(e => e.id === editingDraftId.value) || null
-})
+function closeComposer() {
+  replyingToEmailId.value = null
+  forwardingEmailId.value = null
+  editingDraftId.value = null
+  composingDraftId.value = null
+}
 
 function handleReply(emailId: number, all: boolean) {
-  // Close any draft editing or forwarding
-  editingDraftId.value = null
-  forwardingEmailId.value = null
-
   // If clicking same email's reply, toggle off
-  if (replyingToEmailId.value === emailId && replyAll.value === all) {
-    replyingToEmailId.value = null
-    return
-  }
+  const same = replyingToEmailId.value === emailId && replyAll.value === all
+  closeComposer()
+  if (same) return
+
   replyingToEmailId.value = emailId
   replyAll.value = all
+  composingDraftId.value = uuid()
 }
 
 function handleForward(emailId: number) {
-  // Close any draft editing or replying
-  editingDraftId.value = null
-  replyingToEmailId.value = null
-
   // If clicking same email's forward, toggle off
-  if (forwardingEmailId.value === emailId) {
-    forwardingEmailId.value = null
-    return
-  }
-  forwardingEmailId.value = emailId
-}
-
-function handleEditDraft(emailId: number) {
-  // Close any reply or forward composer
-  replyingToEmailId.value = null
-  forwardingEmailId.value = null
-
-  // Toggle draft editing
-  if (editingDraftId.value === emailId) {
-    editingDraftId.value = null
-    return
-  }
-  editingDraftId.value = emailId
-}
-
-async function closeComposer() {
-  replyingToEmailId.value = null
-  forwardingEmailId.value = null
-  editingDraftId.value = null
-  // Refresh to show any newly created/updated drafts
-  await refresh()
-}
-
-async function onDraftDiscarded() {
-  replyingToEmailId.value = null
-  forwardingEmailId.value = null
-  editingDraftId.value = null
-  await refresh() // Refresh to remove deleted draft from list
-}
-
-function onDraftSaved(_draftId: number) {
+  const same = forwardingEmailId.value === emailId
   closeComposer()
+  if (same) return
+
+  forwardingEmailId.value = emailId
+  composingDraftId.value = uuid()
+}
+
+function handleEditDraft(draftId: string) {
+  closeComposer()
+  editingDraftId.value = draftId
+  composingDraftId.value = draftId
 }
 
 // Send to menu state
 const showSendToMenu = ref(false)
 
-// Count drafts in thread
-const draftCount = computed(() => {
-  if (!thread.value?.emails) return 0
-  return thread.value.emails.filter(e => e.status === 'draft').length
-})
+// Drafts that are still being written (not ones already on their way out)
+const draftCount = computed(() => drafts.value.filter(d => !d.sending).length)
 
 // Reply Later is "on" if explicitly set OR if there are drafts
 const isInReplyLater = computed(() => {
   return !!thread.value?.replyLaterAt || draftCount.value > 0
 })
 
-async function toggleReplyLater(deleteDrafts = false) {
+async function toggleReplyLater() {
   if (!thread.value) return
-
-  // Determine new value based on current "combined" state
   const newValue = !isInReplyLater.value
 
-  try {
-    const response = await fetch(`/api/threads/${thread.value.id}/reply-later`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ replyLater: newValue, deleteDrafts })
-    })
+  // Taking a thread out of Reply Later abandons the replies being written for it
+  if (!newValue && draftCount.value > 0) {
+    const plural = draftCount.value > 1 ? 's' : ''
+    const confirmed = window.confirm(
+      `This thread has ${draftCount.value} draft${plural}. Removing from Reply Later will delete ${draftCount.value > 1 ? 'them' : 'it'}.\n\nAre you sure you want to remove this thread from Reply Later and delete the draft${plural}?`
+    )
+    if (!confirmed) return
 
-    if (response.ok) {
-      const data = await response.json() as {
-        success: boolean
-        requiresConfirmation?: boolean
-        draftCount?: number
-        message?: string
-        replyLater?: boolean
-        replyLaterAt?: string | null
-      }
-
-      // If confirmation is required (has drafts), show confirm dialog
-      if (data.requiresConfirmation) {
-        const confirmed = window.confirm(
-          `${data.message}\n\nAre you sure you want to remove this thread from Reply Later and delete the draft${data.draftCount! > 1 ? 's' : ''}?`
-        )
-        if (confirmed) {
-          // Retry with deleteDrafts: true
-          await toggleReplyLater(true)
-        }
-        return
-      }
-
-      // Update local state
-      thread.value.replyLaterAt = data.replyLaterAt || null
-
-      // If drafts were deleted, refresh to update the email list
-      if (deleteDrafts) {
-        await refresh()
-      }
-
-      showSendToMenu.value = false
+    closeComposer()
+    for (const draft of drafts.value.filter(d => !d.sending)) {
+      await discardDraft(draft.id)
     }
-  } catch (e) {
-    console.error('Failed to update reply later status:', e)
   }
+
+  await enqueue({ type: 'thread.replyLater', payload: { threadId: thread.value.id, value: newValue } })
+  showSendToMenu.value = false
 }
 
 async function toggleSetAside() {
   if (!thread.value) return
-  const newValue = !thread.value.setAsideAt
-
-  try {
-    await fetch(`/api/threads/${thread.value.id}/set-aside`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ setAside: newValue })
-    })
-    // Update local state - set to current time or null
-    thread.value.setAsideAt = newValue ? new Date().toISOString() : null
-    showSendToMenu.value = false
-  } catch (e) {
-    console.error('Failed to update set aside status:', e)
-  }
+  await enqueue({ type: 'thread.setAside', payload: { threadId: thread.value.id, value: !thread.value.setAsideAt } })
+  showSendToMenu.value = false
 }
 
 async function moveToFolder(folderId: number) {
   if (!thread.value) return
+  await enqueue({ type: 'thread.move', payload: { threadId: thread.value.id, folderId } })
+  showSendToMenu.value = false
+}
 
-  try {
-    const response = await fetch(`/api/threads/${thread.value.id}/move`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folderId })
-    })
-    if (response.ok) {
-      thread.value.folderId = folderId
-      showSendToMenu.value = false
-    }
-  } catch (e) {
-    console.error('Failed to move thread:', e)
-  }
+// The list this thread belongs in - where Back leads when the thread was opened directly
+function listRoute(): string {
+  const folder = folders.value.find(f => f.id === thread.value?.folderId)
+  if (!folder || folder.id === 1) return '/'
+  return `/folder/${folder.name.toLowerCase()}`
 }
 
 async function handleTrashThread() {
   if (!thread.value) return
   if (!confirm('Move this thread to Trash?')) return
 
-  try {
-    await trashThread(thread.value.id)
-    router.back()
-  } catch (e) {
-    console.error('Failed to trash thread:', e)
-  }
+  // Work out where to return to before the thread moves to Trash
+  const returnTo = listRoute()
+  await enqueue({ type: 'thread.trash', payload: { threadId: thread.value.id } })
+  goBackOr(router, returnTo)
 }
 
 async function handleDeleteEmail(emailId: number) {
   if (!confirm('Delete this email?')) return
 
-  try {
-    const result = await deleteEmail(emailId)
-    if (result.threadDeleted) {
-      // Thread was deleted (last email), go back
-      router.back()
-    } else {
-      // Refresh to show updated email list
-      await refresh()
-    }
-  } catch (e) {
-    console.error('Failed to delete email:', e)
-  }
+  // Deleting the last email deletes the thread
+  const wasLast = emails.value.length === 1
+  const returnTo = listRoute()
+  await enqueue({ type: 'email.delete', payload: { emailId } })
+  if (wasLast) goBackOr(router, returnTo)
 }
 
 function goBack() {
-  router.back()
+  goBackOr(router, listRoute())
 }
 </script>
 
@@ -426,119 +274,121 @@ function goBack() {
     <main class="main">
       <div v-if="pending" class="loading">Loading...</div>
 
-      <div v-else-if="error" class="error">
+      <div v-else-if="error && !thread" class="error">
         Failed to load thread: {{ error.message }}
       </div>
 
-      <template v-else-if="thread">
-        <div v-if="isFromCache" class="offline-notice">
-          Viewing cached version (offline)
-        </div>
+      <div v-else-if="!thread" class="error">
+        This thread no longer exists.
+      </div>
+
+      <template v-else>
         <div class="emails">
-          <template v-for="email in sortedEmails" :key="email.id">
-            <!-- Inline composer for replying -->
-            <div v-if="replyingToEmailId === email.id" class="inline-composer">
+          <template v-for="item in items" :key="item.key">
+            <template v-if="item.kind === 'email'">
+              <!-- Inline composer for replying -->
+              <div v-if="replyingToEmailId === item.email.id && composingDraftId" class="inline-composer">
+                <EmailComposer
+                  :key="composingDraftId"
+                  :draft-id="composingDraftId"
+                  :thread-id="thread.id"
+                  :original-email="{
+                    id: item.email.id,
+                    subject: item.email.subject,
+                    sentAt: item.email.sentAt,
+                    sender: item.email.sender,
+                    recipients: item.email.recipients,
+                    contentText: item.email.contentText,
+                    messageId: item.email.messageId || undefined,
+                    references: item.email.references,
+                    replyTo: item.email.replyTo || undefined,
+                  }"
+                  :reply-all="replyAll"
+                  :default-from-id="defaultFromId"
+                  @close="closeComposer"
+                  @discarded="closeComposer"
+                  @sent="closeComposer"
+                />
+              </div>
+
+              <!-- Inline composer for forwarding -->
+              <div v-if="forwardingEmailId === item.email.id && composingDraftId" class="inline-composer">
+                <EmailComposer
+                  :key="composingDraftId"
+                  :draft-id="composingDraftId"
+                  :thread-id="thread.id"
+                  :forward-email="{
+                    id: item.email.id,
+                    subject: item.email.subject,
+                    messageId: item.email.messageId || undefined,
+                  }"
+                  :default-from-id="defaultFromId"
+                  @close="closeComposer"
+                  @discarded="closeComposer"
+                  @sent="closeComposer"
+                />
+              </div>
+
+              <!-- Queued email - show like regular email with status badge -->
+              <div v-if="item.email.status === 'queued'" class="queued-email-wrapper">
+                <div class="queued-status-bar">
+                  <span class="queued-badge">Queued</span>
+                  <span v-if="item.email.lastSendError" class="queued-error">
+                    Send failed: {{ item.email.lastSendError }}
+                    <span class="retry-info">(Retrying automatically)</span>
+                  </span>
+                </div>
+                <EmailMessage
+                  :email="item.email"
+                  :show-reply-buttons="false"
+                />
+              </div>
+
+              <!-- Regular sent email -->
+              <EmailMessage
+                v-else
+                :email="item.email"
+                :show-reply-buttons="true"
+                @reply="handleReply"
+                @forward="handleForward"
+                @delete="handleDeleteEmail"
+              />
+            </template>
+
+            <!-- Inline composer for editing draft, in place of the draft -->
+            <div v-else-if="editingDraftId === item.draft.id && !item.draft.sending" class="inline-composer">
               <EmailComposer
+                :draft-id="item.draft.id"
                 :thread-id="thread.id"
-                :original-email="{
-                  id: email.id,
-                  subject: email.subject,
-                  sentAt: email.sentAt,
-                  sender: email.sender,
-                  recipients: email.recipients,
-                  contentText: email.contentText,
-                  messageId: email.messageId || undefined,
-                  references: email.references || undefined,
-                  replyTo: email.replyTo || undefined,
-                }"
-                :reply-all="replyAll"
-                :default-from-id="thread.defaultFromId || undefined"
+                :existing-draft="item.draft"
+                :default-from-id="defaultFromId"
                 @close="closeComposer"
-                @discarded="onDraftDiscarded"
-                @sent="onDraftSaved"
+                @discarded="closeComposer"
+                @sent="closeComposer"
               />
             </div>
 
-            <!-- Inline composer for forwarding -->
-            <div v-if="forwardingEmailId === email.id" class="inline-composer">
-              <EmailComposer
-                :thread-id="thread.id"
-                :forward-email="{
-                  id: email.id,
-                  subject: email.subject,
-                  sentAt: email.sentAt,
-                  sender: email.sender,
-                  recipients: email.recipients,
-                  contentText: email.contentText,
-                  contentHtml: email.contentHtml,
-                  messageId: email.messageId || undefined,
-                  references: email.references || undefined,
-                  attachments: email.attachments,
-                }"
-                :default-from-id="thread.defaultFromId || undefined"
-                @close="closeComposer"
-                @discarded="onDraftDiscarded"
-                @sent="onDraftSaved"
-              />
-            </div>
-
-            <!-- Inline composer for editing draft -->
-            <div v-if="editingDraftId === email.id && email.status === 'draft'" class="inline-composer">
-              <EmailComposer
-                :thread-id="thread.id"
-                :existing-draft="{
-                  id: email.id,
-                  subject: email.subject,
-                  contentText: email.contentText,
-                  contentHtml: email.contentHtml,
-                  sender: email.sender,
-                  recipients: email.recipients.map(r => ({ id: r.id, email: r.email, name: r.name, role: r.role || 'to' })),
-                  attachments: email.attachments,
-                }"
-                :default-from-id="thread.defaultFromId || undefined"
-                @close="closeComposer"
-                @discarded="onDraftDiscarded"
-                @sent="onDraftSaved"
-              />
-            </div>
+            <!-- A reply that has been sent from this device but not yet picked up by the server -->
+            <article v-else-if="item.draft.sending" class="draft-email">
+              <div class="queued-badge">Queued</div>
+              <div class="draft-preview">
+                <div class="draft-subject">{{ item.draft.subject || '(No subject)' }}</div>
+                <div class="draft-snippet">{{ item.draft.contentText.slice(0, 100) || '(No content)' }}</div>
+              </div>
+            </article>
 
             <!-- Draft email - show as editable -->
-            <article v-if="email.status === 'draft' && editingDraftId !== email.id" class="draft-email" @click="handleEditDraft(email.id)">
+            <article v-else class="draft-email" @click="handleEditDraft(item.draft.id)">
               <div class="draft-badge">Draft</div>
               <div class="draft-preview">
-                <div class="draft-to" v-if="email.recipients.length">
-                  To: {{ email.recipients.filter(r => r.role === 'to').map(r => r.name || r.email).join(', ') || 'No recipients' }}
+                <div class="draft-to" v-if="item.draft.recipients.length">
+                  To: {{ item.draft.recipients.filter(r => r.role === 'to').map(r => r.name || r.email).join(', ') || 'No recipients' }}
                 </div>
-                <div class="draft-subject">{{ email.subject || '(No subject)' }}</div>
-                <div class="draft-snippet">{{ email.contentText?.slice(0, 100) || '(No content)' }}</div>
+                <div class="draft-subject">{{ item.draft.subject || '(No subject)' }}</div>
+                <div class="draft-snippet">{{ item.draft.contentText.slice(0, 100) || '(No content)' }}</div>
               </div>
               <button class="edit-draft-btn">Edit</button>
             </article>
-
-            <!-- Queued email - show like regular email with status badge -->
-            <div v-else-if="email.status === 'queued'" class="queued-email-wrapper">
-              <div class="queued-status-bar">
-                <span class="queued-badge">Queued</span>
-                <span v-if="email.lastSendError" class="queued-error">
-                  Send failed: {{ email.lastSendError }}
-                  <span class="retry-info">(Retrying automatically)</span>
-                </span>
-              </div>
-              <EmailMessage
-                :email="email"
-                :show-reply-buttons="false"
-              />
-            </div>
-
-            <!-- Regular sent email -->
-            <EmailMessage
-              v-else
-              :email="email"
-              :show-reply-buttons="true"
-              @reply="handleReply"
-              @forward="handleForward"
-              @delete="handleDeleteEmail"
-            />
           </template>
         </div>
       </template>

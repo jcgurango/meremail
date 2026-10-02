@@ -1,43 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import { getMeContacts, createDraft } from '@/utils/api'
+import { uuid } from '@/local/uuid'
 
 const router = useRouter()
-const composing = ref(false)
 
-async function compose() {
-  if (composing.value) return
-  composing.value = true
-
-  try {
-    // Use offline-aware getMeContacts
-    const { data } = await getMeContacts()
-    const senderId = data.contacts[0]?.id
-    if (!senderId) {
-      alert('No sender identity found. Please sync while online first.')
-      return
-    }
-
-    // Create draft (works offline with negative IDs)
-    const result = await createDraft({ senderId })
-
-    // Navigate to draft page (handles both positive and negative IDs)
-    router.push(`/draft/${result.draftId}`)
-  } catch (e) {
-    console.error('Failed to create draft:', e)
-    alert('Failed to create new message')
-  } finally {
-    composing.value = false
-  }
+function compose() {
+  // A new draft gets its ID up front; it is only stored once something is written
+  router.push(`/draft/${uuid()}`)
 }
 </script>
 
 <template>
   <nav class="bottom-nav">
-    <button class="nav-pill compose" @click="compose" :disabled="composing">
+    <button class="nav-pill compose" @click="compose">
       <span class="nav-icon">✏️</span>
-      <span class="nav-label">{{ composing ? 'Creating...' : 'Compose' }}</span>
+      <span class="nav-label">Compose</span>
     </button>
     <RouterLink to="/contacts" class="nav-pill contacts">
       <span class="nav-icon">👤</span>

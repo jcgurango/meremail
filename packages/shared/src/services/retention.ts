@@ -1,8 +1,7 @@
-import { existsSync, unlinkSync } from 'fs'
-import { sql, and, lt, inArray, eq } from 'drizzle-orm'
+import { sql, and, lt, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { resolveAttachmentPath } from '../config'
-import { emailThreads, emails, emailContacts, emailThreadContacts, attachments } from '../db/schema'
+import { emailThreads } from '../db/schema'
+import { deleteThread } from './delete'
 
 // Folder IDs
 const JUNK_FOLDER_ID = 2
@@ -32,6 +31,8 @@ export async function cleanupExpiredItems(): Promise<CleanupResult> {
 
   const cutoffDate = new Date()
   cutoffDate.setDate(cutoffDate.getDate() - RETENTION_DAYS)
+  // Timestamp columns are stored in seconds
+  const cutoff = Math.floor(cutoffDate.getTime() / 1000)
 
   // Find threads that have been in Trash/Junk for more than RETENTION_DAYS
   // For Trash: use trashedAt
@@ -41,9 +42,9 @@ export async function cleanupExpiredItems(): Promise<CleanupResult> {
     .from(emailThreads)
     .where(
       sql`(
-        (${emailThreads.folderId} = ${TRASH_FOLDER_ID} AND ${emailThreads.trashedAt} < ${cutoffDate.getTime()})
+        (${emailThreads.folderId} = ${TRASH_FOLDER_ID} AND ${emailThreads.trashedAt} < ${cutoff})
         OR
-        (${emailThreads.folderId} = ${JUNK_FOLDER_ID} AND ${emailThreads.createdAt} < ${cutoffDate.getTime()})
+        (${emailThreads.folderId} = ${JUNK_FOLDER_ID} AND ${emailThreads.createdAt} < ${cutoff})
       )`
     )
     .all()
@@ -52,62 +53,9 @@ export async function cleanupExpiredItems(): Promise<CleanupResult> {
 
   for (const thread of expiredThreads) {
     try {
-      // Get all emails in this thread
-      const threadEmails = db
-        .select({ id: emails.id })
-        .from(emails)
-        .where(eq(emails.threadId, thread.id))
-        .all()
-
-      const emailIds = threadEmails.map(e => e.id)
-
-      if (emailIds.length > 0) {
-        // Get all attachments for these emails
-        const threadAttachments = db
-          .select({ id: attachments.id, filePath: attachments.filePath })
-          .from(attachments)
-          .where(inArray(attachments.emailId, emailIds))
-          .all()
-
-        // Delete attachment files from disk
-        for (const attachment of threadAttachments) {
-          try {
-            const resolvedPath = resolveAttachmentPath(attachment.filePath)
-            if (existsSync(resolvedPath)) {
-              unlinkSync(resolvedPath)
-              result.attachmentsDeleted++
-            }
-          } catch (err) {
-            result.errors.push(`Failed to delete file ${attachment.filePath}: ${err}`)
-          }
-        }
-
-        // Delete attachment records
-        db.delete(attachments)
-          .where(inArray(attachments.emailId, emailIds))
-          .run()
-
-        // Delete email contacts
-        db.delete(emailContacts)
-          .where(inArray(emailContacts.emailId, emailIds))
-          .run()
-      }
-
-      // Delete thread contacts
-      db.delete(emailThreadContacts)
-        .where(eq(emailThreadContacts.threadId, thread.id))
-        .run()
-
-      // Delete emails
-      const deleteEmailsResult = db.delete(emails)
-        .where(eq(emails.threadId, thread.id))
-        .run()
-      result.emailsDeleted += deleteEmailsResult.changes
-
-      // Delete thread
-      db.delete(emailThreads)
-        .where(eq(emailThreads.id, thread.id))
-        .run()
+      const deleted = deleteThread(thread.id)
+      result.emailsDeleted += deleted.emailsDeleted
+      result.attachmentsDeleted += deleted.attachmentsDeleted
       result.threadsDeleted++
 
     } catch (err) {

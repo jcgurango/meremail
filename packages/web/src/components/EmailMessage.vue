@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from '../utils/sanitize'
 import {
   parseIcs,
   isIcsAttachment,
@@ -32,14 +32,14 @@ interface Email {
   subject: string
   content: string
   contentText?: string
-  sentAt: string | null
-  receivedAt: string | null
+  // Epoch milliseconds from the local store, or an ISO string straight from the server
+  sentAt: number | string | null
+  receivedAt: number | string | null
   isRead: boolean
   sender: Participant | null
   recipients: Participant[]
   attachments: Attachment[]
   replyTo?: string | null
-  headers?: { key: string, value: string }[] | null
   messageId?: string | null
   references?: string[] | null
 }
@@ -57,6 +57,25 @@ const emit = defineEmits<{
 
 const showQuoted = ref(false)
 const showHeaders = ref(false)
+
+// Raw headers aren't kept on the device; they're fetched when asked for
+const headers = ref<{ key: string, value: string }[] | null>(null)
+const headersError = ref<string | null>(null)
+
+async function toggleHeaders() {
+  showHeaders.value = !showHeaders.value
+  if (!showHeaders.value || headers.value) return
+
+  headersError.value = null
+  try {
+    const response = await fetch(`/api/emails/${props.email.id}/headers`)
+    if (!response.ok) throw new Error(`Server error (${response.status})`)
+    const data = await response.json() as { headers: { key: string, value: string }[] }
+    headers.value = data.headers
+  } catch {
+    headersError.value = 'Headers need a connection to the server.'
+  }
+}
 
 // ICS event parsing
 const icsEvents = ref<Map<number, IcsEvent[]>>(new Map())
@@ -173,25 +192,6 @@ async function handleAddToRule(rule: Rule) {
   }
 }
 
-function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      'a', 'abbr', 'address', 'b', 'blockquote', 'br', 'caption', 'cite', 'code',
-      'col', 'colgroup', 'dd', 'del', 'dfn', 'div', 'dl', 'dt', 'em', 'figcaption',
-      'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'kbd',
-      'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'samp', 'small', 'span', 'strong',
-      'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
-      'var', 'wbr', 'font', 'center',
-    ],
-    ALLOWED_ATTR: [
-      'href', 'src', 'alt', 'title', 'class', 'id', 'style', 'width', 'height',
-      'colspan', 'rowspan', 'target', 'rel', 'color', 'size', 'face', 'align',
-      'valign', 'bgcolor', 'border', 'cellpadding', 'cellspacing',
-    ],
-    ALLOW_DATA_ATTR: false,
-  })
-}
-
 const QUOTE_PATTERNS = [
   /On\s+.{1,250}\s+wrote:\s*/i,
   /From:\s*[^\n]+\n\s*(Sent|Date):\s*[^\n]+\n\s*(To|Subject):/i,
@@ -268,7 +268,7 @@ function getRecipientsByRole(recipients: Participant[], role: string): Participa
   return recipients.filter(r => r.role === role)
 }
 
-function formatDateTime(dateStr: string | null): string {
+function formatDateTime(dateStr: number | string | null): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   const now = new Date()
@@ -335,7 +335,7 @@ function formatFileSize(bytes: number | null): string {
           <button
             class="headers-toggle"
             :class="{ active: showHeaders }"
-            @click="showHeaders = !showHeaders"
+            @click="toggleHeaders"
             title="Show email headers"
           >
             ⓘ
@@ -450,10 +450,12 @@ function formatFileSize(bytes: number | null): string {
       </div>
     </div>
 
-    <div v-if="showHeaders && email.headers" class="headers-panel">
+    <div v-if="showHeaders" class="headers-panel">
       <div class="headers-title">Email Headers</div>
+      <div v-if="headersError">{{ headersError }}</div>
+      <div v-else-if="!headers">Loading...</div>
       <dl class="headers-list">
-        <template v-for="header in email.headers">
+        <template v-for="header in headers || []">
           <template v-if="header">
             <dt>{{ header.key }}</dt>
             <dd>{{ header.value }}</dd>
@@ -805,6 +807,17 @@ function formatFileSize(bytes: number | null): string {
 
 .email-content :deep(a:hover) {
   text-decoration: underline;
+}
+
+/* The app-wide reset strips list padding, which hides the markers */
+.email-content :deep(ul),
+.email-content :deep(ol) {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.email-content :deep(li) {
+  margin: 4px 0;
 }
 
 .email-content :deep(blockquote) {

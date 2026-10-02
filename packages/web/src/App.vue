@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import OfflineIndicator from '@/components/OfflineIndicator.vue'
+import SyncFailures from '@/components/SyncFailures.vue'
 import BottomNav from '@/components/BottomNav.vue'
-import { setNavigationHandler, initializeNotifications } from '@/composables/useOffline'
+import { useOffline, setNavigationHandler, initializeNotifications } from '@/composables/useOffline'
+import { onAuthRequired } from '@/local/sync'
+import { resetAuthState } from '@/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,13 +23,16 @@ onMounted(async () => {
     router.push(url)
   })
 
-  // Initialize new sync system (proactively fetches all data)
-  try {
-    const { initializeSync } = await import('@/composables/useSyncInit')
-    initializeSync()
-  } catch (e) {
-    console.error('Failed to initialize sync:', e)
-  }
+  // Listen for service worker messages (sync requests, notification clicks)
+  useOffline()
+
+  // If the session has expired, sync can't continue until the user logs in again
+  onAuthRequired(() => {
+    resetAuthState()
+    if (route.name !== 'login') {
+      router.push({ name: 'login', query: { redirect: route.fullPath } })
+    }
+  })
 
   // Initialize notifications (request permission and register periodic sync)
   try {
@@ -40,8 +45,8 @@ onMounted(async () => {
 
 <template>
   <div class="app-wrapper">
-    <OfflineIndicator class="offline-indicator-fixed" />
     <RouterView />
+    <SyncFailures />
     <BottomNav v-if="showBottomNav" />
   </div>
 </template>
@@ -65,12 +70,5 @@ body {
 
 .app-wrapper {
   position: relative;
-}
-
-.offline-indicator-fixed {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 1000;
 }
 </style>

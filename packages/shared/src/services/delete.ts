@@ -10,13 +10,17 @@ import {
   emailThreadContacts,
   attachments,
 } from '../db/schema'
+import { deleteDraftsForThreads } from './drafts'
 
 /**
- * Delete attachment files from disk for given attachment IDs
+ * Delete attachment files from disk for given attachment IDs.
+ * Forwarded emails share files with the original, so a file is only removed
+ * once no attachment outside this set still points at it.
  */
 function deleteAttachmentFiles(attachmentIds: number[]): { deleted: number; errors: number } {
   let deleted = 0
   let errors = 0
+  const deleting = new Set(attachmentIds)
 
   for (const id of attachmentIds) {
     const attachment = db
@@ -26,6 +30,14 @@ function deleteAttachmentFiles(attachmentIds: number[]): { deleted: number; erro
       .get()
 
     if (attachment?.filePath) {
+      const stillUsed = db
+        .select({ id: attachments.id })
+        .from(attachments)
+        .where(eq(attachments.filePath, attachment.filePath))
+        .all()
+        .some(other => !deleting.has(other.id))
+      if (stillUsed) continue
+
       const resolvedPath = resolveAttachmentPath(attachment.filePath)
       if (existsSync(resolvedPath)) {
         try {
@@ -127,6 +139,9 @@ export function deleteThread(threadId: number): { success: boolean; emailsDelete
   // Delete all emails (and their attachments)
   const result = deleteEmails(emailIds)
 
+  // Delete unsent drafts replying into this thread
+  deleteDraftsForThreads([threadId])
+
   // Delete email_thread_contacts junction records
   db.delete(emailThreadContacts).where(eq(emailThreadContacts.threadId, threadId)).run()
 
@@ -153,6 +168,9 @@ export function deleteThreads(threadIds: number[]): { threadsDeleted: number; em
 
   // Delete all emails (and their attachments)
   const result = deleteEmails(emailIds)
+
+  // Delete unsent drafts replying into these threads
+  deleteDraftsForThreads(threadIds)
 
   // Delete email_thread_contacts junction records
   db.delete(emailThreadContacts).where(inArray(emailThreadContacts.threadId, threadIds)).run()

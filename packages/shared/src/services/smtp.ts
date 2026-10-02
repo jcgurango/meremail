@@ -9,6 +9,8 @@ export interface EmailRecipient {
 }
 
 export interface SendableEmail {
+  /** Message-ID to send with; generated if not provided */
+  messageId?: string
   from: EmailRecipient
   to: EmailRecipient[]
   cc: EmailRecipient[]
@@ -77,7 +79,7 @@ export function generateMessageId(): string {
  */
 export async function sendEmail(email: SendableEmail): Promise<{ messageId: string }> {
   const transport = getSmtpTransporter()
-  const messageId = generateMessageId()
+  const messageId = email.messageId || generateMessageId()
 
   const result = await transport.sendMail({
     messageId,

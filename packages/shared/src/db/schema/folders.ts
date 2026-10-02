@@ -11,5 +11,7 @@ export const folders = sqliteTable('folders', {
   notificationsEnabled: integer('notifications_enabled', { mode: 'boolean' }).notNull().default(false),
   showUnreadCount: integer('show_unread_count', { mode: 'boolean' }).notNull().default(true),
   syncOffline: integer('sync_offline', { mode: 'boolean' }).notNull().default(true),
+  // Sync revision - bumped by triggers on every change (see sync migration)
+  rev: integer('rev').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })

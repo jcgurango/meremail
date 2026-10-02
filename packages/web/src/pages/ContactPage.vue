@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { goBackOr } from '@/utils/navigation'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import EmailMessage from '@/components/EmailMessage.vue'
@@ -149,7 +150,7 @@ async function loadThreads(reset = false) {
 }
 
 function goBack() {
-  router.back()
+  goBackOr(router, '/contacts')
 }
 </script>
 

@@ -1,65 +1,106 @@
 <script setup lang="ts">
-import { computed, onMounted, watch, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, watch, ref } from 'vue'
+import { RouterLink, useRoute, useRouter, type LocationQuery, type LocationQueryRaw } from 'vue-router'
 import ThreadList from '@/components/ThreadList.vue'
 import FolderNav from '@/components/FolderNav.vue'
 import SearchToolbar, { type SearchFilters } from '@/components/SearchToolbar.vue'
-import { getFolders, markAllAsRead } from '@/utils/api'
+import { db } from '@/local/db'
+import { useLiveQuery } from '@/local/live'
+import { enqueue } from '@/local/actions'
+import { searchLocal, searchServer, mergeResults, lastSearch, refreshReadState, type EmailSearchFilters, type EmailSearchResult } from '@/local/search'
+import { formatListDate } from '@/utils/format'
 
 const props = defineProps<{
   folderId?: number
   name?: string  // Folder name from route param
 }>()
 
-// Dynamic folder data for title
-interface Folder {
-  id: number
-  name: string
+const { data: folders, loaded: foldersLoaded } = useLiveQuery(() => db.folders.orderBy('position').toArray(), [])
+
+const route = useRoute()
+const router = useRouter()
+
+// The search lives in the URL (?q=...&in=...), so it survives opening a
+// result and coming back, reloading, and can be linked to.
+function queryString(value: LocationQuery[string] | undefined): string {
+  return typeof value === 'string' ? value : ''
 }
 
-interface SearchResult {
-  type: 'email'
-  id: number
-  threadId: number
-  subject: string
-  snippet: string
-  senderName: string | null
-  senderEmail: string
-  sentAt: string | null
-  isRead: boolean
+function filtersFromQuery(query: LocationQuery): SearchFilters | null {
+  const text = queryString(query.q)
+  const senderId = Number(queryString(query.sender)) || null
+  const dateFrom = queryString(query.from)
+  const dateTo = queryString(query.to)
+  if (!text && !senderId && !dateFrom && !dateTo) return null
+
+  const folders = queryString(query.in)
+  return {
+    query: text,
+    senderId,
+    senderName: queryString(query.senderName) || null,
+    dateFrom,
+    dateTo,
+    sortBy: query.sort === 'date' ? 'date' : 'relevance',
+    folderIds: folders && folders !== 'all' ? folders.split(',').map(Number).filter(id => !isNaN(id)) : [],
+  }
 }
 
-const folders = ref<Folder[]>([])
-const foldersLoaded = ref(false)
+function filtersToQuery(filters: SearchFilters | null): LocationQueryRaw {
+  const query: LocationQueryRaw = {}
+  if (filters) {
+    if (filters.query) query.q = filters.query
+    if (filters.senderId) {
+      query.sender = String(filters.senderId)
+      if (filters.senderName) query.senderName = filters.senderName
+    }
+    if (filters.dateFrom) query.from = filters.dateFrom
+    if (filters.dateTo) query.to = filters.dateTo
+    if (filters.sortBy === 'date') query.sort = 'date'
+    query.in = filters.folderIds.length > 0 ? filters.folderIds.join(',') : 'all'
+  }
+  if (unreadOnly.value) query.unread = '1'
+  return query
+}
 
 // Search state
-const showSearchToolbar = ref(false)
-const searchActive = ref(false)
-const searchFilters = ref<SearchFilters | null>(null)
-const searchResults = ref<SearchResult[]>([])
-const searchLoading = ref(false)
+const searchFilters = ref<SearchFilters | null>(filtersFromQuery(route.query))
+const searchActive = computed(() => searchFilters.value !== null)
+const showSearchToolbar = ref(searchActive.value)
+// Bumped when the search changes from outside the toolbar (back/forward), so the toolbar picks it up
+const toolbarKey = ref(0)
+let lastToolbarSearch = JSON.stringify(searchFilters.value)
+const localResults = ref<EmailSearchResult[]>([])
+const serverResults = ref<EmailSearchResult[]>([])
+const searchingLocal = ref(false)
+const searchingServer = ref(false)
+const serverSearchFailed = ref(false)
 const searchHasMore = ref(false)
-const searchOffset = ref(0)
-const SEARCH_LIMIT = 25
-const unreadOnly = ref(false)
+const unreadOnly = computed({
+  get: () => route.query.unread === '1',
+  set: (value: boolean) => {
+    const query = { ...route.query }
+    if (value) query.unread = '1'
+    else delete query.unread
+    router.replace({ query })
+  },
+})
+// Bumped on every new search so that late responses to an old one are ignored
+let searchRun = 0
+
+const searchResults = computed(() => {
+  const merged = mergeResults(localResults.value, serverResults.value)
+  if (searchFilters.value?.sortBy === 'date') {
+    return [...merged].sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))
+  }
+  return merged
+})
 
 // Mark all as read state
 const showMarkAllConfirm = ref(false)
-const markingAllAsRead = ref(false)
-const threadListKey = ref(0)
 
 async function handleMarkAllAsRead() {
-  markingAllAsRead.value = true
-  try {
-    await markAllAsRead(currentFolderId.value)
-    showMarkAllConfirm.value = false
-    // Force ThreadList to reload
-    threadListKey.value++
-  } catch (e) {
-    console.error('Failed to mark all as read:', e)
-  } finally {
-    markingAllAsRead.value = false
-  }
+  await enqueue({ type: 'folder.markAllRead', payload: { folderId: currentFolderId.value } })
+  showMarkAllConfirm.value = false
 }
 
 // Determine current folder ID from props or route param
@@ -87,121 +128,131 @@ const pageTitle = computed(() => {
   return currentFolder.value?.name ?? 'Inbox'
 })
 
-async function loadFolders() {
-  try {
-    const result = await getFolders()
-    folders.value = result.data.folders
-    foldersLoaded.value = true
-  } catch (e) {
-    console.error('Failed to load folders:', e)
-  }
+// Search functionality
+function currentFilters(): EmailSearchFilters | null {
+  if (!searchFilters.value) return null
+  const { query, senderId, dateFrom, dateTo, sortBy, folderIds } = searchFilters.value
+  return { query, senderId, dateFrom, dateTo, sortBy, folderIds, unreadOnly: unreadOnly.value }
 }
 
-// Search functionality
-async function onSearch(filters: SearchFilters) {
-  searchFilters.value = filters
-  searchActive.value = true
-  searchOffset.value = 0
-  searchResults.value = []
-  await performSearch(true)
+function onSearch(filters: SearchFilters) {
+  lastToolbarSearch = JSON.stringify(filters)
+  router.replace({ query: filtersToQuery(filters) })
 }
 
 function onClearSearch() {
-  searchActive.value = false
-  searchFilters.value = null
-  searchResults.value = []
-  searchOffset.value = 0
-  searchHasMore.value = false
+  lastToolbarSearch = JSON.stringify(null)
+  if (searchActive.value) {
+    router.replace({ query: filtersToQuery(null) })
+  }
   // Keep toolbar visible - only hide via toggle button
 }
 
-async function performSearch(reset = true) {
-  if (!searchFilters.value) return
+function resetSearchState() {
+  searchRun++
+  localResults.value = []
+  serverResults.value = []
+  searchHasMore.value = false
+  searchingLocal.value = false
+  searchingServer.value = false
+}
 
-  if (reset) {
-    searchOffset.value = 0
-    searchResults.value = []
+// What's on this device answers straight away; the server then fills in the
+// rest of the archive (and the threads it finds are kept locally)
+async function performSearch() {
+  const filters = currentFilters()
+  if (!filters) return
+  const run = ++searchRun
+  const key = JSON.stringify(filters)
+
+  // Returning to the search we just ran (e.g. Back from a result): show the same list again
+  if (lastSearch.key === key) {
+    searchingLocal.value = false
+    searchingServer.value = false
+    serverSearchFailed.value = false
+    searchHasMore.value = lastSearch.hasMore
+    localResults.value = lastSearch.local
+    serverResults.value = lastSearch.server
+    const [local, server] = await Promise.all([refreshReadState(lastSearch.local), refreshReadState(lastSearch.server)])
+    if (run !== searchRun) return
+    localResults.value = lastSearch.local = local
+    serverResults.value = lastSearch.server = server
+    return
   }
 
-  searchLoading.value = true
+  lastSearch.key = ''
+  serverResults.value = []
+  searchHasMore.value = false
+  serverSearchFailed.value = false
+  searchingLocal.value = true
+  searchingServer.value = true
+
   try {
-    const params = new URLSearchParams({
-      type: 'email',
-      limit: String(SEARCH_LIMIT),
-      offset: String(searchOffset.value),
-    })
-
-    // Only set folderIds if specific folders are selected (empty = all folders)
-    if (searchFilters.value.folderIds.length > 0) {
-      params.set('folderIds', searchFilters.value.folderIds.join(','))
-    }
-
-    if (searchFilters.value.query) params.set('q', searchFilters.value.query)
-    if (searchFilters.value.senderId) params.set('senderId', String(searchFilters.value.senderId))
-    if (searchFilters.value.dateFrom) params.set('dateFrom', searchFilters.value.dateFrom)
-    if (searchFilters.value.dateTo) params.set('dateTo', searchFilters.value.dateTo)
-    if (unreadOnly.value) params.set('unreadOnly', 'true')
-    if (searchFilters.value.sortBy) params.set('sortBy', searchFilters.value.sortBy)
-
-    const response = await fetch(`/api/search?${params}`)
-    if (response.ok) {
-      const data = await response.json() as { results: SearchResult[]; hasMore: boolean }
-      if (reset) {
-        searchResults.value = data.results
-      } else {
-        searchResults.value.push(...data.results)
-      }
-      searchHasMore.value = data.hasMore
-      searchOffset.value += data.results.length
-    }
+    const results = await searchLocal(filters)
+    if (run !== searchRun) return
+    localResults.value = results
   } catch (e) {
-    console.error('Search failed:', e)
+    console.error('Local search failed:', e)
   } finally {
-    searchLoading.value = false
+    if (run === searchRun) searchingLocal.value = false
+  }
+
+  await searchServerPage(filters, run)
+}
+
+async function searchServerPage(filters: EmailSearchFilters, run: number) {
+  searchingServer.value = true
+  try {
+    const page = await searchServer(filters, serverResults.value.length)
+    if (run !== searchRun) return
+    serverResults.value.push(...page.results)
+    searchHasMore.value = page.hasMore
+
+    // Remember the finished search (only once the server has answered, so a
+    // device-only result set from an offline attempt isn't mistaken for complete)
+    lastSearch.key = JSON.stringify(filters)
+    lastSearch.local = localResults.value
+    lastSearch.server = serverResults.value
+    lastSearch.hasMore = page.hasMore
+  } catch (e) {
+    if (run !== searchRun) return
+    console.error('Server search failed:', e)
+    serverSearchFailed.value = true
+  } finally {
+    if (run === searchRun) searchingServer.value = false
   }
 }
 
 function loadMoreResults() {
-  performSearch(false)
+  const filters = currentFilters()
+  if (filters) searchServerPage(filters, searchRun)
 }
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (days === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } else if (days === 1) {
-    return 'Yesterday'
-  } else if (days < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' })
-  } else if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  } else {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-}
-
-onMounted(() => {
-  loadFolders()
-})
 
 // Update title when folder changes
 watch([pageTitle, foldersLoaded], () => {
   if (foldersLoaded.value) {
     document.title = `${pageTitle.value} - MereMail`
   }
-})
+}, { immediate: true })
 
-// Reload folders when switching (to get updated counts)
-// Also clear search when switching folders
-watch(() => props.name, () => {
-  loadFolders()
-  onClearSearch()
-})
+// The URL is the source of truth: run whatever search it describes
+watch(() => route.query, (query) => {
+  const filters = filtersFromQuery(query)
+  searchFilters.value = filters
+
+  // Changed by navigation rather than by typing in the toolbar: re-seed the toolbar
+  if (JSON.stringify(filters) !== lastToolbarSearch) {
+    lastToolbarSearch = JSON.stringify(filters)
+    toolbarKey.value++
+    if (filters) showSearchToolbar.value = true
+  }
+
+  if (filters) {
+    performSearch()
+  } else {
+    resetSearchState()
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -224,10 +275,8 @@ watch(() => props.name, () => {
       <div class="spacer"></div>
       <div v-if="showMarkAllConfirm" class="mark-all-confirm">
         <span>Mark all as read?</span>
-        <button class="confirm-btn" @click="handleMarkAllAsRead" :disabled="markingAllAsRead">
-          {{ markingAllAsRead ? 'Marking...' : 'Yes' }}
-        </button>
-        <button class="cancel-btn" @click="showMarkAllConfirm = false" :disabled="markingAllAsRead">No</button>
+        <button class="confirm-btn" @click="handleMarkAllAsRead">Yes</button>
+        <button class="cancel-btn" @click="showMarkAllConfirm = false">No</button>
       </div>
       <button v-else class="mark-all-btn" @click="showMarkAllConfirm = true">
         Mark all read
@@ -236,8 +285,11 @@ watch(() => props.name, () => {
 
     <SearchToolbar
       v-if="showSearchToolbar"
+      :key="`${currentFolderId}-${toolbarKey}`"
+      :initial="searchFilters"
       :folder-id="currentFolderId"
       :folders="folders"
+      :searching-server="searchActive && searchingServer"
       @search="onSearch"
       @clear="onClearSearch"
     />
@@ -245,15 +297,15 @@ watch(() => props.name, () => {
     <main class="main">
       <!-- Search results -->
       <template v-if="searchActive">
-        <div v-if="searchLoading && searchResults.length === 0" class="loading">
+        <div v-if="searchingLocal && searchResults.length === 0" class="loading">
           Searching...
         </div>
 
-        <div v-else-if="searchResults.length === 0 && !searchLoading" class="empty">
+        <div v-else-if="searchResults.length === 0 && !searchingServer" class="empty">
           No emails found
         </div>
 
-        <ul v-else class="search-results">
+        <ul v-if="searchResults.length > 0" class="search-results">
           <li
             v-for="result in searchResults"
             :key="result.id"
@@ -263,7 +315,7 @@ watch(() => props.name, () => {
             <RouterLink :to="`/thread/${result.threadId}`" class="result-link">
               <div class="result-header">
                 <span class="result-sender">{{ result.senderName || result.senderEmail }}</span>
-                <span class="result-date">{{ formatDate(result.sentAt) }}</span>
+                <span class="result-date">{{ formatListDate(result.sentAt) }}</span>
               </div>
               <div class="result-subject">{{ result.subject }}</div>
               <div class="result-snippet">{{ result.snippet }}</div>
@@ -271,21 +323,25 @@ watch(() => props.name, () => {
           </li>
         </ul>
 
-        <div v-if="searchHasMore && !searchLoading" class="load-more">
+        <div v-if="searchingServer" class="loading-more">
+          Searching the rest of your mail...
+        </div>
+
+        <div v-else-if="serverSearchFailed" class="loading-more">
+          Showing only what's on this device. The rest of your mail couldn't be searched right now.
+        </div>
+
+        <div v-else-if="searchHasMore" class="load-more">
           <button @click="loadMoreResults" class="load-more-btn">
             Load More
           </button>
-        </div>
-
-        <div v-if="searchLoading && searchResults.length > 0" class="loading-more">
-          Loading...
         </div>
       </template>
 
       <!-- Regular thread list -->
       <ThreadList
         v-else-if="foldersLoaded"
-        :key="`${currentFolderId}-${unreadOnly}-${threadListKey}`"
+        :key="`${currentFolderId}-${unreadOnly}`"
         :folder-id="currentFolderId"
         :unread-only="unreadOnly"
         empty-message="No threads yet"

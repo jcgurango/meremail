@@ -1,5 +1,5 @@
 import { eq, and, or, isNull, lte, inArray, sql } from 'drizzle-orm'
-import { db, emails, emailContacts, contacts, attachments, emailThreads, resolveAttachmentPath } from '@meremail/shared'
+import { db, emails, emailContacts, contacts, attachments, emailThreads, drafts, resolveAttachmentPath } from '@meremail/shared'
 import { sendEmail, generateMessageId } from '@meremail/shared/services'
 import type { SendableEmail, EmailRecipient } from '@meremail/shared/services'
 
@@ -150,6 +150,7 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
   const email = db
     .select({
       id: emails.id,
+      messageId: emails.messageId,
       subject: emails.subject,
       contentText: emails.contentText,
       contentHtml: emails.contentHtml,
@@ -344,6 +345,7 @@ async function buildSendableEmail(emailId: number): Promise<SendableEmail | null
   }
 
   return {
+    messageId: email.messageId || undefined,
     from: {
       email: senderData.email,
       name: senderData.name || undefined,
@@ -428,17 +430,22 @@ export async function processQueuedEmails(): Promise<{ processed: number; errors
       // If this was a reply in a thread, check if we should unflag reply-later
       if (email.threadId) {
         // Check if there are any remaining drafts or queued emails in this thread
-        const remainingDrafts = db
+        const remainingQueued = db
           .select({ id: emails.id })
           .from(emails)
           .where(and(
             eq(emails.threadId, email.threadId),
-            inArray(emails.status, ['draft', 'queued'])
+            eq(emails.status, 'queued')
           ))
+          .all()
+        const remainingDrafts = db
+          .select({ id: drafts.id })
+          .from(drafts)
+          .where(eq(drafts.threadId, email.threadId))
           .all()
 
         // If no more drafts, unflag reply-later on the thread
-        if (remainingDrafts.length === 0) {
+        if (remainingDrafts.length === 0 && remainingQueued.length === 0) {
           db.update(emailThreads)
             .set({ replyLaterAt: null })
             .where(eq(emailThreads.id, email.threadId))

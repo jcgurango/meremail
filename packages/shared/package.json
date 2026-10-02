@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./db": "./src/db/index.ts",
     "./types": "./src/types/index.ts",
+    "./sync-types": "./src/types/sync.ts",
     "./services": "./src/services/index.ts",
     "./config": "./src/config.ts"
   },

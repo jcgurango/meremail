@@ -1,48 +1,19 @@
 <script setup lang="ts">
+import { goBackOr } from '@/utils/navigation'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailComposer from '@/components/EmailComposer.vue'
-import { getDraft as apiGetDraft } from '@/utils/api'
-import { isLocalId } from '@/utils/sync-db'
-
-interface Recipient {
-  id?: number
-  name: string | null
-  email: string
-  role: string
-}
-
-interface Attachment {
-  id: number
-  filename: string
-  mimeType: string | null
-  size: number | null
-  isInline: boolean | null
-}
-
-interface Draft {
-  id: number
-  subject: string
-  contentText: string
-  contentHtml: string | null
-  sender: {
-    id: number
-    name: string | null
-    email: string
-  } | null
-  recipients: Recipient[]
-  attachments: Attachment[]
-}
+import { db, type LocalDraft } from '@/local/db'
 
 const route = useRoute()
 const router = useRouter()
 
-// Draft ID can be positive (server) or negative (local-only)
-const draftId = computed(() => Number(route.params.id))
+const draftId = computed(() => String(route.params.id))
 
-const draft = ref<Draft | null>(null)
+// The draft as it was when the page opened. An ID with no draft behind it is
+// a new message that hasn't been written yet.
+const draft = ref<LocalDraft | null>(null)
 const pending = ref(true)
-const error = ref<Error | null>(null)
 
 const pageTitle = computed(() => {
   if (draft.value?.subject) {
@@ -51,60 +22,29 @@ const pageTitle = computed(() => {
   return 'New Message - MereMail'
 })
 
-onMounted(async () => {
+async function loadDraft() {
+  pending.value = true
+  draft.value = (await db.drafts.get(draftId.value)) ?? null
+  pending.value = false
+}
+
+onMounted(() => {
   document.title = pageTitle.value
-  await loadDraft()
+  loadDraft()
 })
+
+watch(draftId, loadDraft)
 
 watch(pageTitle, (newTitle) => {
   document.title = newTitle
 })
 
-const isFromCache = ref(false)
-// Local drafts (negative IDs) are always pending sync
-const isOfflineDraft = computed(() => draft.value && isLocalId(draft.value.id))
-
-async function loadDraft() {
-  pending.value = true
-  error.value = null
-  isFromCache.value = false
-
-  try {
-    if (!draftId.value) {
-      throw new Error('No draft ID provided')
-    }
-
-    // getDraft handles both server and local (negative ID) drafts
-    const result = await apiGetDraft(draftId.value)
-    if (result) {
-      draft.value = result.data
-      isFromCache.value = result.fromCache
-    } else {
-      throw new Error('Draft not found')
-    }
-  } catch (e) {
-    error.value = e as Error
-  } finally {
-    pending.value = false
-  }
-}
-
-function onClose() {
-  router.push('/')
-}
-
-function onDiscarded() {
-  router.push('/')
-}
-
-function onSent() {
-  // After sending, the draft becomes part of a thread
-  // Navigate to inbox since we don't know the thread ID from here
-  router.push('/')
+function leave() {
+  goBackOr(router, '/')
 }
 
 function goBack() {
-  router.back()
+  goBackOr(router, '/')
 }
 </script>
 
@@ -120,32 +60,19 @@ function goBack() {
     <main class="main">
       <div v-if="pending" class="loading">Loading...</div>
 
-      <div v-else-if="error" class="error">
-        Failed to load draft: {{ error.message }}
+      <div v-else-if="draft?.sending" class="offline-notice">
+        This message is on its way out.
       </div>
 
-      <div v-if="isOfflineDraft" class="offline-notice">
-        Draft created offline - will sync when back online
-      </div>
-      <div v-else-if="isFromCache" class="offline-notice">
-        Viewing cached version (offline)
-      </div>
-
-      <div v-if="draft" class="composer-wrapper">
+      <div v-else class="composer-wrapper">
         <EmailComposer
-          :existing-draft="{
-            id: draft.id,
-            subject: draft.subject,
-            contentText: draft.contentText,
-            contentHtml: draft.contentHtml,
-            sender: draft.sender,
-            recipients: draft.recipients.map(r => ({ id: r.id, email: r.email, name: r.name, role: r.role || 'to' })),
-            attachments: draft.attachments,
-          }"
-          :default-from-id="draft.sender?.id"
-          @close="onClose"
-          @discarded="onDiscarded"
-          @sent="onSent"
+          :key="draftId"
+          :draft-id="draftId"
+          :existing-draft="draft ?? undefined"
+          :default-from-id="draft?.senderId"
+          @close="leave"
+          @discarded="leave"
+          @sent="leave"
         />
       </div>
     </main>
