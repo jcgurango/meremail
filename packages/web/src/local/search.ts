@@ -1,4 +1,14 @@
-import { db, type LocalEmail } from './db'
+import { INBOX_FOLDER_ID } from '@meremail/shared/sync-types'
+import {
+  parseQuery,
+  matchesText,
+  dateRange,
+  searchSnippet,
+  type SearchQuery,
+  type SearchDocument,
+  type EmailSearchHit,
+} from '@meremail/shared/search'
+import { db, type LocalEmail, type LocalDraft, type LocalContact } from './db'
 import { makeSnippet } from './store'
 import { ensureThreads } from './sync'
 
@@ -6,97 +16,148 @@ import { ensureThreads } from './sync'
  * Two-tier search: what's on this device answers immediately, and the server
  * is asked for the rest of the archive. Threads the server turns up are
  * stored locally, like anything else the user goes looking for.
+ *
+ * Both tiers read the query the same way (see @meremail/shared/search), and
+ * both give one result per thread.
  */
 
 export interface EmailSearchFilters {
+  /** In the search query language, e.g. `from:alice invoice` */
   query: string
-  senderId: number | null
-  /** yyyy-mm-dd */
-  dateFrom: string
-  /** yyyy-mm-dd */
-  dateTo: string
-  sortBy: 'relevance' | 'date'
-  /** Empty means all folders */
-  folderIds: number[]
   unreadOnly: boolean
 }
 
-export interface EmailSearchResult {
-  id: number
-  threadId: number
-  subject: string
-  snippet: string
-  senderName: string | null
-  senderEmail: string
-  sentAt: number | null
-  isRead: boolean
+export type EmailSearchResult = EmailSearchHit
+
+/** What identifies a result: its thread, or the draft if it has no thread */
+export function resultKey(result: EmailSearchResult): string {
+  return result.threadId !== null ? `thread:${result.threadId}` : `draft:${result.draftId}`
 }
 
-function toResult(email: LocalEmail): EmailSearchResult {
+function people(list: { name: string | null; email: string }[]): string {
+  return list.map(person => `${person.name ?? ''} ${person.email}`).join('\n')
+}
+
+export function emailDocument(email: LocalEmail): SearchDocument {
   return {
-    id: email.id,
-    threadId: email.threadId,
     subject: email.subject,
-    snippet: makeSnippet(email).replace(/\s+/g, ' ').trim(),
-    senderName: email.sender?.name ?? null,
-    senderEmail: email.sender?.email ?? '',
-    sentAt: email.sentAt ?? email.date,
-    isRead: !email.unread,
+    body: email.contentText,
+    sender: email.sender ? people([email.sender]) : '',
+    recipients: people(email.recipients),
+    filenames: email.attachments.filter(a => !a.isInline).map(a => a.filename).join('\n'),
   }
 }
 
-export function matchesQuery(email: Pick<LocalEmail, 'subject' | 'contentText' | 'sender'>, tokens: string[]): boolean {
-  if (tokens.length === 0) return true
-  const haystack = `${email.subject}\n${email.contentText}\n${email.sender?.name ?? ''}\n${email.sender?.email ?? ''}`.toLowerCase()
-  return tokens.every(token => haystack.includes(token))
+export function draftDocument(draft: LocalDraft, sender: LocalContact | undefined): SearchDocument {
+  return {
+    subject: draft.subject,
+    body: draft.contentText,
+    sender: sender ? people([sender]) : '',
+    recipients: people(draft.recipients),
+    filenames: draft.attachments.filter(a => !a.isInline).map(a => a.filename).join('\n'),
+  }
 }
 
-export function tokenize(query: string): string[] {
-  return query.toLowerCase().split(/\s+/).filter(Boolean)
+function emailResult(email: LocalEmail, query: SearchQuery): EmailSearchResult {
+  return {
+    emailId: email.id,
+    threadId: email.threadId,
+    draftId: null,
+    subject: email.subject,
+    snippet: searchSnippet(email.contentText || makeSnippet(email), query),
+    senderName: email.sender?.name ?? null,
+    senderEmail: email.sender?.email ?? '',
+    date: email.sentAt ?? email.date,
+    isRead: !email.unread,
+    matches: 1,
+  }
+}
+
+function draftResult(draft: LocalDraft, sender: LocalContact | undefined, query: SearchQuery): EmailSearchResult {
+  return {
+    emailId: null,
+    threadId: draft.threadId,
+    draftId: draft.id,
+    subject: draft.subject || '(No subject)',
+    snippet: searchSnippet(draft.contentText, query),
+    senderName: sender?.name ?? null,
+    senderEmail: sender?.email ?? '',
+    date: draft.updatedAt,
+    isRead: true,
+    matches: 1,
+  }
 }
 
 /**
- * Search the emails held on this device
+ * One result per thread: its newest match, or its oldest when sorting oldest
+ * first. Used for what one tier finds (counting matches) and for combining
+ * the two tiers (which may each have counted the same messages).
+ */
+function groupByThread(results: EmailSearchResult[], sort: SearchQuery['sort'], count: 'sum' | 'max'): EmailSearchResult[] {
+  const before = (a: EmailSearchResult, b: EmailSearchResult) => sort === 'oldest' ? a.date < b.date : a.date > b.date
+  const groups = new Map<string, EmailSearchResult>()
+  for (const result of results) {
+    const key = resultKey(result)
+    const existing = groups.get(key)
+    if (!existing) {
+      groups.set(key, result)
+    } else {
+      const matches = count === 'sum' ? existing.matches + result.matches : Math.max(existing.matches, result.matches)
+      groups.set(key, { ...(before(result, existing) ? result : existing), matches })
+    }
+  }
+  return [...groups.values()].sort((a, b) => sort === 'oldest' ? a.date - b.date : b.date - a.date)
+}
+
+/**
+ * Search the emails and drafts held on this device
  */
 export async function searchLocal(filters: EmailSearchFilters): Promise<EmailSearchResult[]> {
-  const tokens = filters.query.trim().length >= 2 ? tokenize(filters.query) : []
-  const from = filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`).getTime() : null
-  const to = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59`).getTime() : null
+  const query = parseQuery(filters.query)
+  const unread = filters.unreadOnly ? true : query.unread
+  const { from, to } = dateRange(query)
+  const inRange = (date: number) => (from === null || date >= from) && (to === null || date <= to)
 
+  let folderIds: Set<number> | null = null
   let allowedThreads: Set<number> | null = null
-  if (filters.folderIds.length > 0) {
-    allowedThreads = new Set(await db.threads.where('folderId').anyOf(filters.folderIds).primaryKeys())
+  if (query.folders.length > 0) {
+    const folders = await db.folders.filter(f => query.folders.includes(f.name.toLowerCase())).toArray()
+    folderIds = new Set(folders.map(f => f.id))
+    allowedThreads = new Set(await db.threads.where('folderId').anyOf([...folderIds]).primaryKeys())
   }
 
-  const matches = await db.emails
+  const emails = await db.emails
     .filter((email) => {
       if (allowedThreads && !allowedThreads.has(email.threadId)) return false
-      if (filters.senderId && email.sender?.id !== filters.senderId) return false
-      if (filters.unreadOnly && !email.unread) return false
-      const sentAt = email.sentAt ?? email.date
-      if (from !== null && sentAt < from) return false
-      if (to !== null && sentAt > to) return false
-      return matchesQuery(email, tokens)
+      if (unread !== null && !!email.unread !== unread) return false
+      if (query.hasAttachment && !email.attachments.some(a => !a.isInline)) return false
+      if (!inRange(email.sentAt ?? email.date)) return false
+      return matchesText(emailDocument(email), query)
     })
     .toArray()
 
-  return matches
-    .sort((a, b) => (b.sentAt ?? b.date) - (a.sentAt ?? a.date))
-    .map(toResult)
+  const results = emails.map(email => emailResult(email, query))
+
+  // Drafts only exist as drafts here and on the server's drafts table, which
+  // the server search doesn't cover - so this is the only place they're found.
+  // A draft counts as read, and one without a thread shows in the Inbox.
+  if (unread !== true) {
+    const drafts = await db.drafts.toArray()
+    const senders = new Map((await db.contacts.bulkGet(drafts.map(d => d.senderId))).map((c, i) => [drafts[i]!.id, c]))
+    for (const draft of drafts) {
+      if (draft.threadId !== null ? allowedThreads && !allowedThreads.has(draft.threadId) : folderIds && !folderIds.has(INBOX_FOLDER_ID)) continue
+      if (query.hasAttachment && !draft.attachments.some(a => !a.isInline)) continue
+      if (!inRange(draft.updatedAt)) continue
+      const sender = senders.get(draft.id)
+      if (matchesText(draftDocument(draft, sender), query)) results.push(draftResult(draft, sender, query))
+    }
+  }
+
+  return groupByThread(results, query.sort, 'sum')
 }
 
 interface ServerSearchResponse {
-  results: {
-    type: string
-    id: number
-    threadId: number
-    subject: string
-    snippet: string
-    senderName: string | null
-    senderEmail: string
-    sentAt: string | null
-    isRead: boolean
-  }[]
+  results: (EmailSearchHit & { type: string })[]
   hasMore: boolean
 }
 
@@ -108,14 +169,17 @@ export async function searchServer(
   offset: number,
   limit = 25
 ): Promise<{ results: EmailSearchResult[]; hasMore: boolean }> {
-  const params = new URLSearchParams({ type: 'email', limit: String(limit), offset: String(offset) })
-  if (filters.folderIds.length > 0) params.set('folderIds', filters.folderIds.join(','))
-  if (filters.query) params.set('q', filters.query)
-  if (filters.senderId) params.set('senderId', String(filters.senderId))
-  if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
-  if (filters.dateTo) params.set('dateTo', filters.dateTo)
+  const params = new URLSearchParams({
+    type: 'email',
+    q: filters.query,
+    limit: String(limit),
+    offset: String(offset),
+  })
   if (filters.unreadOnly) params.set('unreadOnly', 'true')
-  if (filters.sortBy) params.set('sortBy', filters.sortBy)
+  // Days in the query are this device's days, not the server's
+  const { from, to } = dateRange(parseQuery(filters.query))
+  if (from !== null) params.set('from', String(from))
+  if (to !== null) params.set('to', String(to))
 
   const response = await fetch(`/api/search?${params}`)
   if (!response.ok) throw new Error(`Search failed (${response.status})`)
@@ -123,30 +187,20 @@ export async function searchServer(
 
   const results = data.results
     .filter(r => r.type === 'email')
-    .map(r => ({
-      id: r.id,
-      threadId: r.threadId,
-      subject: r.subject,
-      snippet: r.snippet,
-      senderName: r.senderName,
-      senderEmail: r.senderEmail,
-      sentAt: r.sentAt ? new Date(r.sentAt).getTime() : null,
-      isRead: r.isRead,
-    }))
+    .map(({ type: _type, ...result }) => result)
 
   // Keep whatever turned up, so it opens instantly and works offline
-  await ensureThreads([...new Set(results.map(r => r.threadId))])
+  await ensureThreads([...new Set(results.map(r => r.threadId).filter((id): id is number => id !== null))])
 
   return { results, hasMore: data.hasMore }
 }
 
 /**
- * Combine local and server results: server order first (it ranks by
- * relevance), then anything only found locally.
+ * Combine local and server results into one list with one entry per thread,
+ * in the order the query asks for.
  */
-export function mergeResults(local: EmailSearchResult[], server: EmailSearchResult[]): EmailSearchResult[] {
-  const seen = new Set(server.map(r => r.id))
-  return [...server, ...local.filter(r => !seen.has(r.id))]
+export function mergeResults(local: EmailSearchResult[], server: EmailSearchResult[], sort: SearchQuery['sort']): EmailSearchResult[] {
+  return groupByThread([...server, ...local], sort, 'max')
 }
 
 /**
@@ -165,7 +219,7 @@ export const lastSearch: {
  * Bring remembered results up to date with what has been read since
  */
 export async function refreshReadState(results: EmailSearchResult[]): Promise<EmailSearchResult[]> {
-  const emails = await db.emails.bulkGet(results.map(r => r.id))
+  const emails = await db.emails.bulkGet(results.map(r => r.emailId ?? -1))
   return results.map((result, i) => {
     const email = emails[i]
     return email ? { ...result, isRead: !email.unread } : result

@@ -1,26 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
-import { searchContacts } from '@/local/queries'
-
-interface Contact {
-  id: number
-  name: string | null
-  email: string
-}
+import { ref, computed, onMounted } from 'vue'
+import { parseQuery, hasCriteria, setOperator } from '@meremail/shared/search'
 
 interface Folder {
   id: number
   name: string
-}
-
-export interface SearchFilters {
-  query: string
-  senderId: number | null
-  senderName: string | null
-  dateFrom: string
-  dateTo: string
-  sortBy: 'relevance' | 'date'
-  folderIds: number[]  // empty array means all folders
 }
 
 const props = defineProps<{
@@ -28,92 +12,44 @@ const props = defineProps<{
   folders: Folder[]
   /** True while the server is being searched (results from this device show first) */
   searchingServer?: boolean
-  /** Filters to start with, when a search is being restored (e.g. coming back to the page) */
-  initial?: SearchFilters | null
+  /** Query to start with, when a search is being restored (e.g. coming back to the page) */
+  initial?: string | null
 }>()
 
 const emit = defineEmits<{
-  (e: 'search', filters: SearchFilters): void
+  /** The query, in the search query language (see @meremail/shared/search) */
+  (e: 'search', query: string): void
   (e: 'clear'): void
 }>()
 
-// Search state
-const searchQuery = ref(props.initial?.query ?? '')
-const dateFrom = ref(props.initial?.dateFrom ?? '')
-const dateTo = ref(props.initial?.dateTo ?? '')
-const sortBy = ref<'relevance' | 'date'>(props.initial?.sortBy ?? 'relevance')
-const selectedFolderIds = ref<Set<number>>(new Set(props.initial ? props.initial.folderIds : props.folderId ? [props.folderId] : []))
-const showFolderDropdown = ref(false)
+// A new search starts in the folder being looked at
+function defaultQuery(): string {
+  const folder = props.folders.find(f => f.id === props.folderId)
+  return folder ? setOperator('', 'in', [folder.name.toLowerCase()]) : ''
+}
 
-// Sender filter state
-const senderSearch = ref('')
-const senderResults = ref<Contact[]>([])
-const senderSearchLoading = ref(false)
-const selectedSender = ref<Contact | null>(
-  props.initial?.senderId
-    ? { id: props.initial.senderId, name: props.initial.senderName, email: props.initial.senderName ?? '' }
-    : null
-)
-const showSenderDropdown = ref(false)
-let senderDebounce: ReturnType<typeof setTimeout> | null = null
+// The query text is the whole search: folders, people, dates and order are
+// all operators typed into it
+const searchQuery = ref(props.initial ?? defaultQuery())
+const searchInput = ref<HTMLInputElement | null>(null)
+const showHelp = ref(false)
 
-// Track if any filters are active
-const hasActiveFilters = computed(() => {
-  return searchQuery.value.length >= 2 ||
-    selectedSender.value !== null ||
-    dateFrom.value !== '' ||
-    dateTo.value !== ''
+// Ready to type, after whatever the box starts with
+onMounted(() => {
+  if (props.initial) return
+  searchInput.value?.focus()
+  searchInput.value?.setSelectionRange(searchQuery.value.length, searchQuery.value.length)
 })
 
-// Folder selection display text
-const folderDisplayText = computed(() => {
-  if (selectedFolderIds.value.size === 0) return 'All folders'
-  if (selectedFolderIds.value.size === props.folders.length) return 'All folders'
-  if (selectedFolderIds.value.size === 1) {
-    const id = [...selectedFolderIds.value][0]
-    return props.folders.find(f => f.id === id)?.name ?? 'Selected'
-  }
-  return `${selectedFolderIds.value.size} folders`
-})
+const hasActiveFilters = computed(() => hasCriteria(parseQuery(searchQuery.value)))
 
-function toggleFolder(folderId: number) {
-  const newSet = new Set(selectedFolderIds.value)
-  if (newSet.has(folderId)) {
-    newSet.delete(folderId)
-  } else {
-    newSet.add(folderId)
-  }
-  selectedFolderIds.value = newSet
-  emitSearch()
-}
-
-function selectAllFolders() {
-  selectedFolderIds.value = new Set()
-  emitSearch()
-}
-
-function isFolderSelected(folderId: number): boolean {
-  // If no folders selected, all are effectively selected
-  if (selectedFolderIds.value.size === 0) return true
-  return selectedFolderIds.value.has(folderId)
-}
-
-// Emit search when filters change
 function emitSearch() {
   if (!hasActiveFilters.value) {
     emit('clear')
     return
   }
 
-  emit('search', {
-    query: searchQuery.value,
-    senderId: selectedSender.value?.id ?? null,
-    senderName: selectedSender.value?.name ?? selectedSender.value?.email ?? null,
-    dateFrom: dateFrom.value,
-    dateTo: dateTo.value,
-    sortBy: sortBy.value,
-    folderIds: [...selectedFolderIds.value],
-  })
+  emit('search', searchQuery.value)
 }
 
 // Debounce search input
@@ -125,72 +61,10 @@ function onSearchInput() {
   }, 300)
 }
 
-// Watch filter changes (immediate, no debounce)
-watch([dateFrom, dateTo, sortBy], () => {
-  emitSearch()
-})
-
-// Sender search with debounce
-async function onSenderSearchInput() {
-  if (senderDebounce) clearTimeout(senderDebounce)
-
-  if (senderSearch.value.length < 2) {
-    senderResults.value = []
-    return
-  }
-
-  senderDebounce = setTimeout(async () => {
-    senderSearchLoading.value = true
-    try {
-      const contacts = await searchContacts(senderSearch.value, 10)
-      senderResults.value = contacts.map(c => ({ id: c.id, name: c.name, email: c.email }))
-    } catch {
-      senderResults.value = []
-    } finally {
-      senderSearchLoading.value = false
-    }
-  }, 300)
-}
-
-function selectSender(contact: Contact) {
-  selectedSender.value = contact
-  senderSearch.value = ''
-  senderResults.value = []
-  showSenderDropdown.value = false
-  emitSearch()
-}
-
-function clearSender() {
-  selectedSender.value = null
-  emitSearch()
-}
-
-function clearAllFilters() {
-  searchQuery.value = ''
-  selectedSender.value = null
-  dateFrom.value = ''
-  dateTo.value = ''
-  sortBy.value = 'relevance'
-  selectedFolderIds.value = new Set(props.folderId ? [props.folderId] : [])
+function clearSearch() {
+  searchQuery.value = defaultQuery()
   emit('clear')
-}
-
-function onFolderDropdownBlur(e: FocusEvent) {
-  setTimeout(() => {
-    if (!e.relatedTarget || !(e.relatedTarget as HTMLElement).closest('.folder-dropdown')) {
-      showFolderDropdown.value = false
-    }
-  }, 150)
-}
-
-// Close dropdown when clicking outside
-function onBlur(e: FocusEvent) {
-  // Delay to allow click events on dropdown items
-  setTimeout(() => {
-    if (!e.relatedTarget || !(e.relatedTarget as HTMLElement).closest('.sender-dropdown')) {
-      showSenderDropdown.value = false
-    }
-  }, 150)
+  searchInput.value?.focus()
 }
 </script>
 
@@ -201,9 +75,10 @@ function onBlur(e: FocusEvent) {
       <div class="search-input-wrapper">
         <span class="search-icon">🔍</span>
         <input
+          ref="searchInput"
           v-model="searchQuery"
           type="text"
-          placeholder="Search emails..."
+          placeholder="Search mail, e.g. invoice from:alice"
           class="search-input"
           @input="onSearchInput"
         />
@@ -211,110 +86,33 @@ function onBlur(e: FocusEvent) {
           <span class="server-search-spinner"></span>
           Searching server…
         </span>
+        <button
+          type="button"
+          class="help-btn"
+          :class="{ active: showHelp }"
+          title="Search tips"
+          @click="showHelp = !showHelp"
+        >?</button>
       </div>
 
-      <!-- Clear all button -->
       <button
         v-if="hasActiveFilters"
         class="clear-all-btn"
-        @click="clearAllFilters"
+        @click="clearSearch"
       >
         Clear
       </button>
     </div>
 
-    <div class="toolbar-row filters-row">
-      <!-- Folder filter -->
-      <div class="filter-group folder-filter">
-        <label>In</label>
-        <div class="folder-select-wrapper">
-          <button
-            type="button"
-            class="folder-select-btn"
-            @click="showFolderDropdown = !showFolderDropdown"
-            @blur="onFolderDropdownBlur"
-          >
-            <span>{{ folderDisplayText }}</span>
-            <span class="dropdown-arrow">▾</span>
-          </button>
-          <div v-if="showFolderDropdown" class="folder-dropdown">
-            <button
-              type="button"
-              class="folder-option"
-              :class="{ selected: selectedFolderIds.size === 0 }"
-              @mousedown.prevent="selectAllFolders"
-            >
-              <span class="check-box">{{ selectedFolderIds.size === 0 ? '✓' : '' }}</span>
-              <span>All folders</span>
-            </button>
-            <div class="folder-divider"></div>
-            <button
-              v-for="folder in folders"
-              :key="folder.id"
-              type="button"
-              class="folder-option"
-              :class="{ selected: isFolderSelected(folder.id) && selectedFolderIds.size > 0 }"
-              @mousedown.prevent="toggleFolder(folder.id)"
-            >
-              <span class="check-box">{{ selectedFolderIds.has(folder.id) ? '✓' : '' }}</span>
-              <span>{{ folder.name }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- From filter -->
-      <div class="filter-group sender-filter">
-        <label>From</label>
-        <div class="sender-input-wrapper">
-          <div v-if="selectedSender" class="selected-sender">
-            <span>{{ selectedSender.name || selectedSender.email }}</span>
-            <button class="clear-btn" @click="clearSender">×</button>
-          </div>
-          <div v-else class="sender-search-wrapper">
-            <input
-              v-model="senderSearch"
-              type="text"
-              placeholder="Any sender"
-              class="filter-input"
-              @input="onSenderSearchInput"
-              @focus="showSenderDropdown = true"
-              @blur="onBlur"
-            />
-            <div v-if="showSenderDropdown && (senderResults.length > 0 || senderSearchLoading)" class="sender-dropdown">
-              <div v-if="senderSearchLoading" class="dropdown-loading">Searching...</div>
-              <button
-                v-for="contact in senderResults"
-                :key="contact.id"
-                class="dropdown-option"
-                @mousedown.prevent="selectSender(contact)"
-              >
-                <span class="option-name">{{ contact.name || contact.email }}</span>
-                <span v-if="contact.name" class="option-email">{{ contact.email }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Date filter -->
-      <div class="filter-group date-filter">
-        <label>Date</label>
-        <div class="date-inputs">
-          <input type="date" v-model="dateFrom" class="filter-input date-input" />
-          <span class="date-sep">–</span>
-          <input type="date" v-model="dateTo" class="filter-input date-input" />
-        </div>
-      </div>
-
-      <!-- Sort by -->
-      <div class="filter-group" v-if="hasActiveFilters">
-        <label>Sort</label>
-        <select v-model="sortBy" class="filter-select">
-          <option value="relevance">Relevance</option>
-          <option value="date">Date</option>
-        </select>
-      </div>
+    <div v-if="showHelp" class="search-help">
+      <span><code>invoice march</code> every word, anywhere in the message</span>
+      <span><code>"exact phrase"</code></span>
+      <span><code>from:alice</code> <code>to:bob@example.com</code> name or address</span>
+      <span><code>subject:word</code> <code>filename:report.pdf</code></span>
+      <span><code>in:inbox</code> one folder; leave out for all folders</span>
+      <span><code>has:attachment</code> <code>is:unread</code> <code>is:read</code></span>
+      <span><code>after:2026-01-31</code> <code>before:2026-02-28</code> including those days</span>
+      <span><code>sort:oldest</code> oldest first, instead of newest</span>
     </div>
   </div>
 </template>
@@ -330,10 +128,6 @@ function onBlur(e: FocusEvent) {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.toolbar-row + .toolbar-row {
-  margin-top: 10px;
 }
 
 .server-search-indicator {
@@ -384,6 +178,43 @@ function onBlur(e: FocusEvent) {
   font-size: 14px;
 }
 
+.help-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.help-btn:hover,
+.help-btn.active {
+  border-color: #999;
+  color: #333;
+}
+
+.search-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #666;
+}
+
+.search-help code {
+  padding: 1px 4px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #333;
+}
+
 .clear-all-btn {
   padding: 6px 12px;
   background: none;
@@ -397,229 +228,5 @@ function onBlur(e: FocusEvent) {
 .clear-all-btn:hover {
   border-color: #999;
   color: #333;
-}
-
-.filters-row {
-  flex-wrap: wrap;
-}
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.filter-group > label {
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
-}
-
-.sender-filter {
-  min-width: 180px;
-}
-
-.sender-input-wrapper {
-  position: relative;
-}
-
-.sender-search-wrapper {
-  position: relative;
-}
-
-.filter-input {
-  padding: 5px 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  background: #fff;
-}
-
-.filter-input:focus {
-  outline: none;
-  border-color: #999;
-}
-
-.date-inputs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.date-input {
-  width: 130px;
-}
-
-.date-sep {
-  color: #999;
-}
-
-.sender-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  min-width: 200px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 100;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.dropdown-loading {
-  padding: 10px 12px;
-  color: #666;
-  font-size: 13px;
-}
-
-.dropdown-option {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  padding: 8px 12px;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.dropdown-option:hover {
-  background: #f5f5f5;
-}
-
-.option-name {
-  font-size: 13px;
-  color: #000;
-}
-
-.option-email {
-  font-size: 11px;
-  color: #666;
-}
-
-.selected-sender {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: #e5e5e5;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.clear-btn {
-  background: none;
-  border: none;
-  color: #666;
-  cursor: pointer;
-  padding: 0 2px;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.clear-btn:hover {
-  color: #000;
-}
-
-.filter-select {
-  padding: 5px 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  background: #fff;
-}
-
-.folder-filter {
-  position: relative;
-}
-
-.folder-select-wrapper {
-  position: relative;
-}
-
-.folder-select-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  background: #fff;
-  cursor: pointer;
-  min-width: 120px;
-}
-
-.folder-select-btn:hover {
-  border-color: #999;
-}
-
-.dropdown-arrow {
-  font-size: 10px;
-  color: #666;
-  margin-left: auto;
-}
-
-.folder-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  min-width: 160px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 100;
-  max-height: 250px;
-  overflow-y: auto;
-  margin-top: 2px;
-}
-
-.folder-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.folder-option:hover {
-  background: #f5f5f5;
-}
-
-.folder-option.selected {
-  background: #f0f7ff;
-}
-
-.folder-option .check-box {
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid #999;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: #4338ca;
-  flex-shrink: 0;
-}
-
-.folder-option.selected .check-box {
-  border-color: #4338ca;
-  background: #e0e7ff;
-}
-
-.folder-divider {
-  height: 1px;
-  background: #e5e5e5;
-  margin: 4px 0;
 }
 </style>

@@ -3,11 +3,12 @@ import { computed, watch, ref } from 'vue'
 import { RouterLink, useRoute, useRouter, type LocationQuery, type LocationQueryRaw } from 'vue-router'
 import ThreadList from '@/components/ThreadList.vue'
 import FolderNav from '@/components/FolderNav.vue'
-import SearchToolbar, { type SearchFilters } from '@/components/SearchToolbar.vue'
+import SearchToolbar from '@/components/SearchToolbar.vue'
 import { db } from '@/local/db'
 import { useLiveQuery } from '@/local/live'
 import { enqueue } from '@/local/actions'
-import { searchLocal, searchServer, mergeResults, lastSearch, refreshReadState, type EmailSearchFilters, type EmailSearchResult } from '@/local/search'
+import { parseQuery, hasCriteria, highlight } from '@meremail/shared/search'
+import { searchLocal, searchServer, mergeResults, resultKey, lastSearch, refreshReadState, type EmailSearchFilters, type EmailSearchResult } from '@/local/search'
 import { formatListDate } from '@/utils/format'
 
 const props = defineProps<{
@@ -20,55 +21,32 @@ const { data: folders, loaded: foldersLoaded } = useLiveQuery(() => db.folders.o
 const route = useRoute()
 const router = useRouter()
 
-// The search lives in the URL (?q=...&in=...), so it survives opening a
+// The search lives in the URL (?q=...), so it survives opening a
 // result and coming back, reloading, and can be linked to.
 function queryString(value: LocationQuery[string] | undefined): string {
   return typeof value === 'string' ? value : ''
 }
 
-function filtersFromQuery(query: LocationQuery): SearchFilters | null {
+function searchFromQuery(query: LocationQuery): string | null {
   const text = queryString(query.q)
-  const senderId = Number(queryString(query.sender)) || null
-  const dateFrom = queryString(query.from)
-  const dateTo = queryString(query.to)
-  if (!text && !senderId && !dateFrom && !dateTo) return null
-
-  const folders = queryString(query.in)
-  return {
-    query: text,
-    senderId,
-    senderName: queryString(query.senderName) || null,
-    dateFrom,
-    dateTo,
-    sortBy: query.sort === 'date' ? 'date' : 'relevance',
-    folderIds: folders && folders !== 'all' ? folders.split(',').map(Number).filter(id => !isNaN(id)) : [],
-  }
+  // A choice of folders alone is not a search
+  return hasCriteria(parseQuery(text)) ? text : null
 }
 
-function filtersToQuery(filters: SearchFilters | null): LocationQueryRaw {
+function searchToQuery(search: string | null): LocationQueryRaw {
   const query: LocationQueryRaw = {}
-  if (filters) {
-    if (filters.query) query.q = filters.query
-    if (filters.senderId) {
-      query.sender = String(filters.senderId)
-      if (filters.senderName) query.senderName = filters.senderName
-    }
-    if (filters.dateFrom) query.from = filters.dateFrom
-    if (filters.dateTo) query.to = filters.dateTo
-    if (filters.sortBy === 'date') query.sort = 'date'
-    query.in = filters.folderIds.length > 0 ? filters.folderIds.join(',') : 'all'
-  }
+  if (search !== null) query.q = search
   if (unreadOnly.value) query.unread = '1'
   return query
 }
 
 // Search state
-const searchFilters = ref<SearchFilters | null>(filtersFromQuery(route.query))
-const searchActive = computed(() => searchFilters.value !== null)
+const searchText = ref<string | null>(searchFromQuery(route.query))
+const searchActive = computed(() => searchText.value !== null)
 const showSearchToolbar = ref(searchActive.value)
 // Bumped when the search changes from outside the toolbar (back/forward), so the toolbar picks it up
 const toolbarKey = ref(0)
-let lastToolbarSearch = JSON.stringify(searchFilters.value)
+let lastToolbarSearch = searchText.value
 const localResults = ref<EmailSearchResult[]>([])
 const serverResults = ref<EmailSearchResult[]>([])
 const searchingLocal = ref(false)
@@ -87,13 +65,17 @@ const unreadOnly = computed({
 // Bumped on every new search so that late responses to an old one are ignored
 let searchRun = 0
 
-const searchResults = computed(() => {
-  const merged = mergeResults(localResults.value, serverResults.value)
-  if (searchFilters.value?.sortBy === 'date') {
-    return [...merged].sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))
-  }
-  return merged
-})
+const parsedQuery = computed(() => parseQuery(searchText.value ?? ''))
+
+const searchResults = computed(() =>
+  mergeResults(localResults.value, serverResults.value, parsedQuery.value.sort).map(result => ({
+    ...result,
+    key: resultKey(result),
+    link: result.threadId !== null ? `/thread/${result.threadId}` : `/draft/${result.draftId}`,
+    subjectParts: highlight(result.subject, parsedQuery.value, 'subject'),
+    snippetParts: highlight(result.snippet, parsedQuery.value, 'body'),
+  }))
+)
 
 // Mark all as read state
 const showMarkAllConfirm = ref(false)
@@ -130,20 +112,19 @@ const pageTitle = computed(() => {
 
 // Search functionality
 function currentFilters(): EmailSearchFilters | null {
-  if (!searchFilters.value) return null
-  const { query, senderId, dateFrom, dateTo, sortBy, folderIds } = searchFilters.value
-  return { query, senderId, dateFrom, dateTo, sortBy, folderIds, unreadOnly: unreadOnly.value }
+  if (searchText.value === null) return null
+  return { query: searchText.value, unreadOnly: unreadOnly.value }
 }
 
-function onSearch(filters: SearchFilters) {
-  lastToolbarSearch = JSON.stringify(filters)
-  router.replace({ query: filtersToQuery(filters) })
+function onSearch(search: string) {
+  lastToolbarSearch = search
+  router.replace({ query: searchToQuery(search) })
 }
 
 function onClearSearch() {
-  lastToolbarSearch = JSON.stringify(null)
+  lastToolbarSearch = null
   if (searchActive.value) {
-    router.replace({ query: filtersToQuery(null) })
+    router.replace({ query: searchToQuery(null) })
   }
   // Keep toolbar visible - only hide via toggle button
 }
@@ -237,17 +218,17 @@ watch([pageTitle, foldersLoaded], () => {
 
 // The URL is the source of truth: run whatever search it describes
 watch(() => route.query, (query) => {
-  const filters = filtersFromQuery(query)
-  searchFilters.value = filters
+  const search = searchFromQuery(query)
+  searchText.value = search
 
   // Changed by navigation rather than by typing in the toolbar: re-seed the toolbar
-  if (JSON.stringify(filters) !== lastToolbarSearch) {
-    lastToolbarSearch = JSON.stringify(filters)
+  if (search !== lastToolbarSearch) {
+    lastToolbarSearch = search
     toolbarKey.value++
-    if (filters) showSearchToolbar.value = true
+    if (search !== null) showSearchToolbar.value = true
   }
 
-  if (filters) {
+  if (search !== null) {
     performSearch()
   } else {
     resetSearchState()
@@ -265,7 +246,7 @@ watch(() => route.query, (query) => {
     <div class="search-toggle-bar">
       <button class="search-toggle-btn" @click="showSearchToolbar ? (showSearchToolbar = false, onClearSearch()) : showSearchToolbar = true">
         <span class="search-icon">🔍</span>
-        <span>{{ showSearchToolbar ? 'Hide Search' : 'Search & Filter' }}</span>
+        <span>{{ showSearchToolbar ? 'Hide Search' : 'Search' }}</span>
       </button>
       <label class="unread-toggle">
         <input type="checkbox" v-model="unreadOnly" />
@@ -286,7 +267,7 @@ watch(() => route.query, (query) => {
     <SearchToolbar
       v-if="showSearchToolbar"
       :key="`${currentFolderId}-${toolbarKey}`"
-      :initial="searchFilters"
+      :initial="searchText"
       :folder-id="currentFolderId"
       :folders="folders"
       :searching-server="searchActive && searchingServer"
@@ -308,17 +289,25 @@ watch(() => route.query, (query) => {
         <ul v-if="searchResults.length > 0" class="search-results">
           <li
             v-for="result in searchResults"
-            :key="result.id"
+            :key="result.key"
             class="result-item"
             :class="{ unread: !result.isRead }"
           >
-            <RouterLink :to="`/thread/${result.threadId}`" class="result-link">
+            <RouterLink :to="result.link" class="result-link">
               <div class="result-header">
-                <span class="result-sender">{{ result.senderName || result.senderEmail }}</span>
-                <span class="result-date">{{ formatListDate(result.sentAt) }}</span>
+                <span class="result-sender">
+                  <span v-if="result.draftId" class="draft-badge">Draft</span>
+                  {{ result.senderName || result.senderEmail }}
+                </span>
+                <span class="result-date">{{ formatListDate(result.date) }}</span>
               </div>
-              <div class="result-subject">{{ result.subject }}</div>
-              <div class="result-snippet">{{ result.snippet }}</div>
+              <div class="result-subject">
+                <template v-for="(part, i) in result.subjectParts" :key="i"><mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template>
+                <span v-if="result.matches > 1" class="result-matches">{{ result.matches }} matching messages</span>
+              </div>
+              <div class="result-snippet">
+                <template v-for="(part, i) in result.snippetParts" :key="i"><mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template>
+              </div>
             </RouterLink>
           </li>
         </ul>
@@ -592,6 +581,32 @@ watch(() => route.query, (query) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.result-item mark {
+  background: #fef08a;
+  color: inherit;
+  border-radius: 2px;
+}
+
+.result-matches {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #888;
+}
+
+.draft-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-right: 6px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  vertical-align: middle;
 }
 
 .load-more {
