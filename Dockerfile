@@ -5,7 +5,7 @@ FROM node:22-alpine AS deps
 RUN apk add --no-cache python3 make g++
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.26.0 --activate
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN pnpm -F @meremail/web build
 FROM node:22-alpine AS runtime
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.26.0 --activate
 
 WORKDIR /app
 
