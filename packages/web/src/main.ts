@@ -2,35 +2,13 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { routes } from './router'
+import { checkAuth } from './auth'
+import { startSync } from './local/sync'
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
 })
-
-// Auth state - cached to avoid checking on every navigation
-let isAuthenticated: boolean | null = null
-
-async function checkAuth(): Promise<boolean> {
-  // Return cached value if we've already checked
-  if (isAuthenticated !== null) {
-    return isAuthenticated
-  }
-
-  try {
-    const response = await fetch('/api/auth/me')
-    isAuthenticated = response.ok
-    return isAuthenticated
-  } catch {
-    isAuthenticated = false
-    return false
-  }
-}
-
-// Reset auth state (call after logout)
-export function resetAuthState() {
-  isAuthenticated = null
-}
 
 // Navigation guard
 router.beforeEach(async (to, _from, next) => {
@@ -50,6 +28,9 @@ router.beforeEach(async (to, _from, next) => {
     })
   }
 
+  // Start syncing straight away, then keep going in the background. The app
+  // shows what's stored locally and never waits for this. (No-op once running.)
+  startSync()
   next()
 })
 

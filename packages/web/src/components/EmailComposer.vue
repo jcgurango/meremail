@@ -5,14 +5,13 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
-import {
-  getMeContacts,
-  searchContacts as apiSearchContacts,
-  createDraft as apiCreateDraft,
-  updateDraft as apiUpdateDraft,
-  deleteDraft as apiDeleteDraft,
-  sendDraft as apiSendDraft,
-} from '@/utils/api'
+import type { SyncDraftInput } from '@meremail/shared/sync-types'
+import { getMeta, type LocalDraft } from '@/local/db'
+import { listIdentities, searchContacts } from '@/local/queries'
+import { enqueue, saveDraft as queueSaveDraft, sendDraft as queueSendDraft, discardDraft as queueDiscardDraft, removeDraftAttachment } from '@/local/actions'
+import { putFile, draftAttachmentKey } from '@/local/files'
+import { syncNow, isOnline } from '@/local/sync'
+import { uuid } from '@/local/uuid'
 
 interface Contact {
   id: number
@@ -29,7 +28,7 @@ interface Recipient {
 interface OriginalEmail {
   id: number
   subject: string
-  sentAt: string | null
+  sentAt: number | null
   sender: Contact | null
   recipients: (Contact & { role: string })[]
   contentText: string
@@ -41,28 +40,11 @@ interface OriginalEmail {
 interface ForwardEmail {
   id: number
   subject: string
-  sentAt: string | null
-  sender: Contact | null
-  recipients: (Contact & { role: string })[]
-  contentText: string
-  contentHtml?: string | null
   messageId?: string
-  references?: string[]
-  attachments?: { id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean | null }[]
-}
-
-interface ExistingDraft {
-  id: number
-  subject: string
-  contentText: string
-  contentHtml?: string | null
-  sender: { id: number } | null
-  recipients: { id?: number; email: string; name: string | null; role: string }[]
-  attachments?: { id: number; filename: string; mimeType: string | null; size: number | null; isInline: boolean | null }[]
 }
 
 interface UploadedFile {
-  id: string | number
+  id: string
   filename: string
   mimeType: string
   size: number
@@ -71,19 +53,39 @@ interface UploadedFile {
 }
 
 const props = defineProps<{
+  /** ID this draft is (or will be) stored under */
+  draftId: string
   threadId?: number  // Optional for standalone drafts
   originalEmail?: OriginalEmail
   forwardEmail?: ForwardEmail
   replyAll?: boolean
   defaultFromId?: number
-  existingDraft?: ExistingDraft
+  existingDraft?: LocalDraft
 }>()
 
 const emit = defineEmits<{
   close: []
-  sent: [draftId: number]
+  sent: []
   discarded: []
 }>()
+
+// What this draft is a reply to / forward of. For an existing draft this
+// comes from the draft itself; otherwise from the email being answered.
+const threading = props.existingDraft
+  ? {
+      threadId: props.existingDraft.threadId,
+      inReplyTo: props.existingDraft.inReplyTo,
+      references: props.existingDraft.references,
+      forwardedMessageId: props.existingDraft.forwardedMessageId,
+    }
+  : {
+      threadId: props.threadId ?? null,
+      inReplyTo: props.originalEmail?.messageId ?? null,
+      references: props.originalEmail
+        ? [...(props.originalEmail.references || []), props.originalEmail.messageId].filter((r): r is string => !!r)
+        : [],
+      forwardedMessageId: props.forwardEmail?.messageId ?? null,
+    }
 
 // From identities
 const meContacts = ref<Contact[]>([])
@@ -111,6 +113,7 @@ function selectFromContact(contact: Contact) {
   selectedFromId.value = contact.id
   fromSearchQuery.value = ''
   fromDropdownOpen.value = false
+  triggerAutoSave()
 }
 
 function handleFromInputFocus() {
@@ -140,7 +143,6 @@ const bodyText = ref('')
 // Attachments
 const attachments = ref<UploadedFile[]>([])
 const uploading = ref(false)
-const uploadProgress = ref(0)
 const uploadError = ref<string | null>(null)
 
 // Contact search
@@ -151,10 +153,12 @@ const activeField = ref<'to' | 'cc' | 'bcc' | null>(null)
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 // Saving state
-const saving = ref(false)
-const draftId = ref<number | null>(null)  // ID in sync cache (negative for local-only, positive for server)
-const isPending = ref(false)  // True if draft is pending sync
-const sending = ref(false)  // True while queueing send
+// True once the draft exists in the local database
+const saved = ref(!!props.existingDraft)
+// True once the draft has been sent or discarded - nothing more should be saved
+let finished = false
+// Don't save while the form is still being filled in from props
+let initializing = true
 let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Whether the draft can be sent (has recipients and sender)
@@ -195,7 +199,7 @@ const editor = useEditor({
           event.preventDefault()
           const file = item.getAsFile()
           if (file) {
-            uploadAndInsertImage(file)
+            attachAndInsertImage(file)
           }
           return true
         }
@@ -211,7 +215,7 @@ const editor = useEditor({
 
       event.preventDefault()
       for (const file of imageFiles) {
-        uploadAndInsertImage(file)
+        attachAndInsertImage(file)
       }
       return true
     },
@@ -221,104 +225,65 @@ const editor = useEditor({
   },
 })
 
-// Ensure draft exists before uploading (so we can link the attachment)
-// Note: This requires being online since attachments need server upload
-async function ensureDraftExists(): Promise<number> {
-  if (draftId.value && draftId.value > 0) return draftId.value
-
-  // Create a minimal draft first
+// Attach a file to the draft. The file is stored on this device and its
+// upload is queued, so this works offline.
+async function attachFile(file: File, isInline: boolean): Promise<UploadedFile> {
   if (!selectedFromId.value) {
     throw new Error('No sender selected')
   }
 
-  const recipients = [
-    ...toRecipients.value.map(r => ({ ...r, role: 'to' as const })),
-    ...ccRecipients.value.map(r => ({ ...r, role: 'cc' as const })),
-    ...bccRecipients.value.map(r => ({ ...r, role: 'bcc' as const })),
-  ]
-
-  const result = await apiCreateDraft({
-    threadId: props.threadId,
-    senderId: selectedFromId.value,
-    subject: subject.value,
-    contentText: isRichText.value ? getPlainText() : bodyText.value,
-    contentHtml: isRichText.value ? getEditorContent() : undefined,
-    inReplyTo: props.originalEmail?.messageId,
-    references: props.originalEmail?.references,
-    recipients,
-  })
-
-  draftId.value = result.draftId
-  isPending.value = result.pending
-
-  // Attachments require a server ID (positive number)
-  if (result.draftId < 0) {
-    throw new Error('Cannot upload attachments while offline')
+  const maxSize = (await getMeta('config'))?.maxAttachmentSize
+  if (maxSize && file.size > maxSize) {
+    throw new Error(`File too large. Maximum size is ${Math.round(maxSize / 1024 / 1024)}MB`)
   }
 
-  return result.draftId
-}
+  // The draft has to exist before something can be attached to it
+  await saveDraft({ force: true })
 
-// Upload file and return metadata with progress tracking
-async function uploadFile(file: File, isInline: boolean): Promise<UploadedFile> {
-  // Ensure draft exists so we can link the attachment
-  const emailId = await ensureDraftExists()
-
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('emailId', emailId.toString())
-  formData.append('isInline', isInline.toString())
-
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
-        uploadProgress.value = Math.round((e.loaded / e.total) * 100)
-      }
-    })
-
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const result = JSON.parse(xhr.responseText)
-          resolve(result)
-        } catch {
-          reject(new Error('Invalid response'))
-        }
-      } else {
-        try {
-          const error = JSON.parse(xhr.responseText)
-          reject({ data: error })
-        } catch {
-          reject(new Error(`Upload failed: ${xhr.status}`))
-        }
-      }
-    })
-
-    xhr.addEventListener('error', () => {
-      reject(new Error('Network error'))
-    })
-
-    xhr.open('POST', '/api/uploads')
-    xhr.send(formData)
+  const attachmentId = uuid()
+  const mimeType = file.type || 'application/octet-stream'
+  await putFile(draftAttachmentKey(attachmentId), file, file.name)
+  await enqueue({
+    type: 'draft.upload',
+    payload: {
+      draftId: props.draftId,
+      attachmentId,
+      filename: file.name || 'unnamed',
+      mimeType,
+      size: file.size,
+      isInline,
+    },
   })
+
+  return {
+    id: attachmentId,
+    filename: file.name || 'unnamed',
+    mimeType,
+    size: file.size,
+    url: `/api/draft-attachments/${attachmentId}`,
+    isInline,
+  }
 }
 
-// Upload image and insert into editor
-async function uploadAndInsertImage(file: File) {
+// Attach image and insert into editor
+async function attachAndInsertImage(file: File) {
   uploading.value = true
-  uploadProgress.value = 0
   uploadError.value = null
 
   try {
-    const uploaded = await uploadFile(file, true)
-    attachments.value.push(uploaded)
+    const attached = await attachFile(file, true)
+    attachments.value.push(attached)
 
-    editor.value?.chain().focus().setImage({ src: uploaded.url, alt: uploaded.filename }).run()
-  } catch (e: any) {
-    uploadError.value = e.data?.message || 'Failed to upload image'
-    console.error('Upload failed:', e)
+    // The image is shown from its upload URL. The service worker serves that
+    // from this device; without one, wait for the upload so the URL works.
+    if (!navigator.serviceWorker?.controller && isOnline.value) {
+      await syncNow()
+    }
+
+    editor.value?.chain().focus().setImage({ src: attached.url, alt: attached.filename }).run()
+  } catch (e) {
+    uploadError.value = e instanceof Error ? e.message : 'Failed to attach image'
+    console.error('Attach failed:', e)
   } finally {
     uploading.value = false
   }
@@ -336,18 +301,15 @@ async function handleFileSelect(event: Event) {
   if (!files || files.length === 0) return
 
   uploading.value = true
-  uploadProgress.value = 0
   uploadError.value = null
 
   try {
     for (const file of files) {
-      uploadProgress.value = 0
-      const uploaded = await uploadFile(file, false)
-      attachments.value.push(uploaded)
+      attachments.value.push(await attachFile(file, false))
     }
-  } catch (e: any) {
-    uploadError.value = e.data?.message || 'Failed to upload file'
-    console.error('Upload failed:', e)
+  } catch (e) {
+    uploadError.value = e instanceof Error ? e.message : 'Failed to attach file'
+    console.error('Attach failed:', e)
   } finally {
     uploading.value = false
     // Reset input so same file can be selected again
@@ -360,16 +322,6 @@ async function removeAttachment(index: number) {
   const att = attachments.value[index]
   if (!att) return
 
-  // If it's saved to DB (numeric ID), delete via API
-  if (typeof att.id === 'number') {
-    try {
-      await fetch(`/api/attachments/${att.id}`, { method: 'DELETE' })
-    } catch (e) {
-      console.error('Failed to delete attachment:', e)
-      // Continue with local removal even if API fails
-    }
-  }
-
   // If it's an inline image, remove from editor too
   if (att.isInline && editor.value) {
     const html = editor.value.getHTML()
@@ -377,6 +329,8 @@ async function removeAttachment(index: number) {
     editor.value.commands.setContent(newHtml)
   }
   attachments.value.splice(index, 1)
+
+  await removeDraftAttachment(props.draftId, att.id)
 }
 
 // Format file size for display
@@ -388,13 +342,12 @@ function formatFileSize(bytes: number): string {
 
 // Load "me" contacts for From dropdown
 async function loadMeContacts() {
-  const result = await getMeContacts()
-  const contacts = result.data.contacts
+  const contacts = await listIdentities()
 
   meContacts.value = contacts
 
   // Set default From
-  if (props.defaultFromId) {
+  if (props.defaultFromId && contacts.some(c => c.id === props.defaultFromId)) {
     selectedFromId.value = props.defaultFromId
   } else if (contacts.length > 0 && contacts[0]) {
     selectedFromId.value = contacts[0].id
@@ -486,12 +439,8 @@ function initializeForward() {
   const subjectPrefix = fwd.subject.toLowerCase().startsWith('fwd:') ? '' : 'Fwd: '
   subject.value = subjectPrefix + fwd.subject
 
-  // For forward, recipients are left empty (user will add them)
-  // No need to set toRecipients, ccRecipients, bccRecipients
-
-  // Attachments from the original email are copied server-side when
-  // the draft is created with forwardedMessageId. We don't pre-load
-  // them here to avoid stale IDs that could accidentally delete originals.
+  // For forward, recipients are left empty (user will add them).
+  // The original email's attachments are added by the server when it sends.
 }
 
 // Load existing draft for editing
@@ -499,7 +448,6 @@ function loadExistingDraft() {
   if (!props.existingDraft) return
 
   const draft = props.existingDraft
-  draftId.value = draft.id || null
   subject.value = draft.subject
 
   // Load content
@@ -512,17 +460,14 @@ function loadExistingDraft() {
   }
 
   // Set sender (only if it's a valid "me" contact)
-  if (draft.sender) {
-    const senderIsMe = meContacts.value.some(m => m.id === draft.sender!.id)
-    if (senderIsMe) {
-      selectedFromId.value = draft.sender.id
-    }
-    // If sender isn't in meContacts, keep the default that was set by loadMeContacts
+  if (meContacts.value.some(m => m.id === draft.senderId)) {
+    selectedFromId.value = draft.senderId
   }
+  // If sender isn't in meContacts, keep the default that was set by loadMeContacts
 
   // Load recipients
   for (const r of draft.recipients) {
-    const recipient: Recipient = { id: r.id, email: r.email, name: r.name }
+    const recipient: Recipient = { id: r.contactId, email: r.email, name: r.name }
     if (r.role === 'to') {
       toRecipients.value.push(recipient)
     } else if (r.role === 'cc') {
@@ -535,17 +480,15 @@ function loadExistingDraft() {
   }
 
   // Load attachments
-  if (draft.attachments) {
-    for (const att of draft.attachments) {
-      attachments.value.push({
-        id: att.id,
-        filename: att.filename,
-        mimeType: att.mimeType || 'application/octet-stream',
-        size: att.size || 0,
-        url: `/api/attachments/${att.id}`,
-        isInline: att.isInline || false,
-      })
-    }
+  for (const att of draft.attachments) {
+    attachments.value.push({
+      id: att.id,
+      filename: att.filename,
+      mimeType: att.mimeType || 'application/octet-stream',
+      size: att.size || 0,
+      url: `/api/draft-attachments/${att.id}`,
+      isInline: att.isInline,
+    })
   }
 }
 
@@ -589,7 +532,7 @@ function insertImage() {
   input.onchange = async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0]
     if (file) {
-      await uploadAndInsertImage(file)
+      await attachAndInsertImage(file)
     }
   }
   input.click()
@@ -634,12 +577,11 @@ async function doContactSearch() {
       ...bccRecipients.value.map(r => r.id),
     ].filter(Boolean))
 
-    const result = await apiSearchContacts(searchQuery.value, 10)
-    const contacts = result.data.contacts
+    const contacts = await searchContacts(searchQuery.value, 20)
 
-    searchResults.value = contacts.filter(c =>
-      !addedIds.has(c.id) && !meContacts.value.some(m => m.id === c.id)
-    )
+    searchResults.value = contacts
+      .filter(c => !addedIds.has(c.id) && !meContacts.value.some(m => m.id === c.id))
+      .slice(0, 10)
   } catch (e) {
     searchResults.value = []
   } finally {
@@ -721,51 +663,60 @@ function hasContent(): boolean {
   return text.trim().length > 0 || toRecipients.value.length > 0 || attachments.value.length > 0
 }
 
-// Auto-save draft
-async function saveDraft() {
-  if (!selectedFromId.value) return
-  if (!hasContent() && !draftId.value) return
+// The draft as it currently stands in the form
+function currentDraft(): SyncDraftInput | null {
+  if (!selectedFromId.value) return null
 
-  saving.value = true
+  const toDraftRecipient = (role: 'to' | 'cc' | 'bcc') => (r: Recipient) => ({
+    contactId: r.id,
+    email: r.email,
+    name: r.name ?? null,
+    role,
+  })
+
+  return {
+    id: props.draftId,
+    threadId: threading.threadId,
+    senderId: selectedFromId.value,
+    subject: subject.value,
+    contentText: isRichText.value ? getPlainText() : bodyText.value,
+    contentHtml: isRichText.value ? getEditorContent() : null,
+    inReplyTo: threading.inReplyTo,
+    forwardedMessageId: threading.forwardedMessageId,
+    references: threading.references,
+    recipients: [
+      ...toRecipients.value.map(toDraftRecipient('to')),
+      ...ccRecipients.value.map(toDraftRecipient('cc')),
+      ...bccRecipients.value.map(toDraftRecipient('bcc')),
+    ],
+  }
+}
+
+// Save the draft. It is written to this device immediately and sent to the
+// server in the background.
+async function saveDraft(options: { force?: boolean } = {}) {
+  if (finished || initializing) return
+  if (autoSaveTimeout) {
+    clearTimeout(autoSaveTimeout)
+    autoSaveTimeout = null
+  }
+
+  const draft = currentDraft()
+  if (!draft) return
+  // Nothing written yet - don't create an empty draft
+  if (!options.force && !hasContent() && !saved.value) return
+
   try {
-    const recipients = [
-      ...toRecipients.value.map(r => ({ ...r, role: 'to' as const })),
-      ...ccRecipients.value.map(r => ({ ...r, role: 'cc' as const })),
-      ...bccRecipients.value.map(r => ({ ...r, role: 'bcc' as const })),
-    ]
-
-    const draftData = {
-      threadId: props.threadId,
-      senderId: selectedFromId.value,
-      subject: subject.value,
-      contentText: isRichText.value ? getPlainText() : bodyText.value,
-      contentHtml: isRichText.value ? getEditorContent() : undefined,
-      inReplyTo: props.originalEmail?.messageId,
-      references: props.originalEmail?.references,
-      forwardedMessageId: props.forwardEmail?.messageId,
-      recipients,
-      attachmentIds: attachments.value.map(a => typeof a.id === 'number' ? a.id : parseInt(a.id as string)).filter(id => !isNaN(id)),
-    }
-
-    if (draftId.value) {
-      // Update existing draft
-      const result = await apiUpdateDraft(draftId.value, draftData)
-      isPending.value = result.pending
-    } else {
-      // Create new draft
-      const result = await apiCreateDraft(draftData)
-      draftId.value = result.draftId
-      isPending.value = result.pending
-    }
+    await queueSaveDraft(draft)
+    saved.value = true
   } catch (e) {
     console.error('Failed to save draft:', e)
-  } finally {
-    saving.value = false
   }
 }
 
 // Trigger auto-save with debounce
 function triggerAutoSave() {
+  if (finished || initializing) return
   if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
   autoSaveTimeout = setTimeout(saveDraft, 1000)
 }
@@ -773,10 +724,11 @@ function triggerAutoSave() {
 // Delete draft and close
 async function discardDraft() {
   if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
+  finished = true
 
-  if (draftId.value) {
+  if (saved.value) {
     try {
-      await apiDeleteDraft(draftId.value)
+      await queueDiscardDraft(props.draftId)
       emit('discarded')
     } catch (e) {
       console.error('Failed to delete draft:', e)
@@ -788,32 +740,30 @@ async function discardDraft() {
 }
 
 // Close without deleting (keep draft)
-function closeKeepDraft() {
-  if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
-  saveDraft()
+async function closeKeepDraft() {
+  await saveDraft()
+  finished = true
   emit('close')
 }
 
 // Queue draft for sending
 async function handleSend() {
-  if (!canSend.value || sending.value) return
+  if (!canSend.value || finished) return
 
-  // Save draft first if needed
-  await saveDraft()
+  const draft = currentDraft()
+  if (!draft) return
 
-  if (!draftId.value) {
-    console.error('Cannot send: no draft ID')
-    return
-  }
+  if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
+  finished = true
 
-  sending.value = true
   try {
-    await apiSendDraft(draftId.value)
-    emit('sent', draftId.value)
+    // The Message-ID is chosen here so the sent email can be recognised when it comes back
+    const domain = selectedFromContact.value?.email.split('@')[1] || 'meremail.local'
+    await queueSendDraft(draft, `<${uuid()}@${domain}>`)
+    emit('sent')
   } catch (e) {
+    finished = false
     console.error('Failed to queue send:', e)
-  } finally {
-    sending.value = false
   }
 }
 
@@ -824,7 +774,6 @@ function getRecipientDisplay(r: Recipient): string {
 // Watch for changes and trigger auto-save
 watch([toRecipients, ccRecipients, bccRecipients, subject], triggerAutoSave, { deep: true })
 watch(bodyText, triggerAutoSave)
-watch(attachments, triggerAutoSave, { deep: true })
 
 // Initialize on mount
 onMounted(async () => {
@@ -836,11 +785,14 @@ onMounted(async () => {
   } else {
     initializeReply()
   }
+  // Let the watchers triggered by filling in the form run before saving is enabled
+  setTimeout(() => { initializing = false }, 0)
 })
 
 // Cleanup on unmount
 onUnmounted(() => {
-  if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
+  // Leaving with unsaved typing (e.g. via the back button) shouldn't lose it
+  if (autoSaveTimeout) saveDraft()
   editor.value?.destroy()
 })
 </script>
@@ -850,10 +802,8 @@ onUnmounted(() => {
     <div class="composer-header">
       <h3>{{ existingDraft ? 'Edit Draft' : (forwardEmail ? 'Forward' : (originalEmail ? (replyAll ? 'Reply All' : 'Reply') : 'New Email')) }}</h3>
       <div class="header-right">
-        <span v-if="uploading" class="uploading-indicator">Uploading...</span>
-        <span v-else-if="saving" class="saving-indicator">Saving...</span>
-        <span v-else-if="isPending" class="pending-indicator">Saved locally</span>
-        <span v-else-if="draftId" class="saved-indicator">Draft saved</span>
+        <span v-if="uploading" class="uploading-indicator">Attaching...</span>
+        <span v-else-if="saved" class="saved-indicator">Draft saved</span>
         <button class="close-btn" @click="closeKeepDraft" title="Close (draft saved)">×</button>
       </div>
     </div>
@@ -1121,14 +1071,6 @@ onUnmounted(() => {
         <span class="mode-label">{{ isRichText ? 'Rich text' : 'Plain text' }}</span>
       </div>
 
-      <!-- Upload progress -->
-      <div v-if="uploading" class="upload-progress">
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
-        </div>
-        <span class="progress-text">Uploading... {{ uploadProgress }}%</span>
-      </div>
-
       <!-- Upload error -->
       <div v-if="uploadError" class="upload-error">
         {{ uploadError }}
@@ -1163,8 +1105,8 @@ onUnmounted(() => {
 
     <!-- Actions -->
     <div class="composer-actions">
-      <button class="send-btn" @click="handleSend" :disabled="!canSend || sending">
-        {{ sending ? 'Sending...' : 'Send' }}
+      <button class="send-btn" @click="handleSend" :disabled="!canSend">
+        Send
       </button>
       <button class="discard-btn" @click="discardDraft">Discard</button>
     </div>

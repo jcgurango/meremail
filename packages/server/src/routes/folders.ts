@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
-import { eq, sql, inArray } from 'drizzle-orm'
-import { db, folders, emailThreads, emails, emailContacts, emailThreadContacts, attachments, resolveAttachmentPath } from '@meremail/shared'
+import { eq, sql } from 'drizzle-orm'
+import { db, folders, emailThreads, emails, deleteThreads } from '@meremail/shared'
 
 export const foldersRoutes = new Hono()
 
@@ -185,52 +185,7 @@ foldersRoutes.delete('/:id', async (c) => {
 
   const threadIds = folderThreads.map(t => t.id)
 
-  if (threadIds.length > 0) {
-    // Get all emails in these threads
-    const folderEmails = db
-      .select({ id: emails.id })
-      .from(emails)
-      .where(inArray(emails.threadId, threadIds))
-      .all()
-
-    const emailIds = folderEmails.map(e => e.id)
-
-    if (emailIds.length > 0) {
-      // Get and delete attachment files
-      const folderAttachments = db
-        .select({ filePath: attachments.filePath })
-        .from(attachments)
-        .where(inArray(attachments.emailId, emailIds))
-        .all()
-
-      const { existsSync, unlinkSync } = await import('fs')
-      for (const attachment of folderAttachments) {
-        try {
-          const resolvedPath = resolveAttachmentPath(attachment.filePath)
-          if (existsSync(resolvedPath)) {
-            unlinkSync(resolvedPath)
-          }
-        } catch (err) {
-          console.error(`Failed to delete attachment file ${attachment.filePath}:`, err)
-        }
-      }
-
-      // Delete attachment records
-      db.delete(attachments).where(inArray(attachments.emailId, emailIds)).run()
-
-      // Delete email contacts
-      db.delete(emailContacts).where(inArray(emailContacts.emailId, emailIds)).run()
-    }
-
-    // Delete thread contacts
-    db.delete(emailThreadContacts).where(inArray(emailThreadContacts.threadId, threadIds)).run()
-
-    // Delete emails
-    db.delete(emails).where(inArray(emails.threadId, threadIds)).run()
-
-    // Delete threads
-    db.delete(emailThreads).where(inArray(emailThreads.id, threadIds)).run()
-  }
+  deleteThreads(threadIds)
 
   // Delete folder
   db.delete(folders).where(eq(folders.id, id)).run()

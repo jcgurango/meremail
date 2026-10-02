@@ -1,100 +1,83 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getThreads } from '@/utils/api'
-import { useSyncInit } from '@/composables/useSyncInit'
-
-interface Thread {
-  type: 'thread' | 'draft'
-  id: number
-  subject: string
-  latestEmailAt: string | null
-  unreadCount: number
-  totalCount: number
-  draftCount?: number
-  queuedCount?: number
-  participants: { id: number; name: string | null; email: string; role: string }[]
-  snippet: string
-}
+import { db } from '@/local/db'
+import { useLiveQuery } from '@/local/live'
+import { listFolderThreads, listReplyLater, type ThreadListItem } from '@/local/queries'
+import { getWatermark } from '@/local/store'
+import { isSyncing, loadOlderThreads } from '@/local/sync'
+import { formatListDate } from '@/utils/format'
 
 const props = defineProps<{
   folderId?: number
-  queue?: 'reply_later' | 'set_aside'
+  queue?: 'reply_later'
   emptyMessage?: string
   unreadOnly?: boolean
 }>()
 
-const { isInitialSyncInProgress } = useSyncInit()
-
-const threads = ref<Thread[]>([])
-const hasMore = ref(false)
-const loading = ref(true)
+// Folders that aren't kept offline are browsed straight from the server:
+// each visit pages in from the top, and this is how far back it has got.
+// Null until the first page has arrived.
+const browsedTo = ref<number | null>(null)
 const loadingMore = ref(false)
-const error = ref<Error | null>(null)
-const fromCache = ref(false)
+const loadMoreError = ref<string | null>(null)
 
-async function loadThreads() {
-  loading.value = true
-  error.value = null
-  fromCache.value = false
-
-  try {
-    const result = await getThreads({
-      folderId: props.folderId,
-      queue: props.queue,
-      offset: 0,
-      unreadOnly: props.unreadOnly,
-    })
-    threads.value = result.data.threads
-    hasMore.value = result.data.hasMore
-    fromCache.value = result.fromCache
-  } catch (e) {
-    error.value = e as Error
-  } finally {
-    loading.value = false
-  }
+interface ListState {
+  threads: ThreadListItem[]
+  /** Whether the server may have older threads than the ones shown */
+  hasMore: boolean
+  keptOffline: boolean
 }
 
+const { data: list, loaded } = useLiveQuery<ListState>(async () => {
+  if (props.queue === 'reply_later') {
+    // Everything in the queue is always held locally
+    return { threads: await listReplyLater(), hasMore: false, keptOffline: true }
+  }
+
+  const folderId = props.folderId ?? 1
+  const folder = await db.folders.get(folderId)
+  const keptOffline = folder?.syncOffline !== false
+
+  if (keptOffline) {
+    const watermark = await getWatermark(folderId)
+    return {
+      threads: await listFolderThreads(folderId, { unreadOnly: props.unreadOnly }),
+      hasMore: watermark > 0,
+      keptOffline,
+    }
+  }
+
+  // Until the first page arrives (or if we're offline), show whatever happens to be held
+  return {
+    threads: await listFolderThreads(folderId, { from: browsedTo.value ?? 0, unreadOnly: props.unreadOnly }),
+    hasMore: browsedTo.value === null || browsedTo.value > 0,
+    keptOffline,
+  }
+}, { threads: [], hasMore: false, keptOffline: true }, [browsedTo])
+
+const threads = computed(() => list.value.threads)
+
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value || fromCache.value) return
+  if (loadingMore.value || props.folderId === undefined) return
   loadingMore.value = true
+  loadMoreError.value = null
+
   try {
-    const result = await getThreads({
-      folderId: props.folderId,
-      queue: props.queue,
-      offset: threads.value.length,
-      unreadOnly: props.unreadOnly,
-    })
-    threads.value = [...threads.value, ...result.data.threads]
-    hasMore.value = result.data.hasMore
+    if (list.value.keptOffline) {
+      await loadOlderThreads(props.folderId, await getWatermark(props.folderId), { remember: true })
+    } else {
+      browsedTo.value = (await loadOlderThreads(props.folderId, browsedTo.value, { remember: false })) ?? 0
+    }
   } catch (e) {
     console.error('Failed to load more threads:', e)
+    loadMoreError.value = 'Older mail couldn\'t be loaded. It needs a connection to the server.'
   } finally {
     loadingMore.value = false
   }
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (days === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } else if (days === 1) {
-    return 'Yesterday'
-  } else if (days < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' })
-  } else if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  } else {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-}
-
-function getParticipantDisplay(participants: Thread['participants']): string {
+function getParticipantDisplay(participants: ThreadListItem['participants']): string {
   if (participants.length === 0) return 'Unknown'
   const names = participants
     .slice(0, 3)
@@ -105,41 +88,37 @@ function getParticipantDisplay(participants: Thread['participants']): string {
   return names.join(', ')
 }
 
-onMounted(() => {
-  loadThreads()
+onMounted(async () => {
+  if (props.folderId === undefined) return
+  const folder = await db.folders.get(props.folderId)
+  if (folder && !folder.syncOffline) {
+    loadMore()
+  }
 })
 </script>
 
 <template>
   <div class="thread-list-container">
-    <div v-if="loading" class="loading">Loading...</div>
+    <div v-if="!loaded" class="loading">Loading...</div>
 
-    <div v-else-if="error" class="error">
-      Failed to load threads: {{ error?.message }}
-    </div>
-
-    <div v-else-if="threads.length === 0 && isInitialSyncInProgress" class="loading">
+    <div v-else-if="threads.length === 0 && (isSyncing || loadingMore)" class="loading">
       Syncing...
     </div>
 
-    <div v-else-if="threads.length === 0" class="empty">
+    <div v-else-if="threads.length === 0 && !list.hasMore" class="empty">
       {{ emptyMessage || 'No threads' }}
     </div>
 
-    <div v-if="fromCache && !loading" class="cache-notice">
-      Showing cached data (offline)
-    </div>
-
-    <ul v-if="threads.length > 0 && !loading" class="thread-list">
+    <ul v-if="threads.length > 0" class="thread-list">
       <li
         v-for="thread in threads"
         :key="`${thread.type}-${thread.id}`"
         class="thread-item"
         :class="{
           unread: thread.unreadCount > 0,
-          'is-draft': thread.type === 'draft',
-          'is-queued': thread.queuedCount && thread.queuedCount > 0,
-          'has-draft': thread.type !== 'draft' && thread.draftCount && thread.draftCount > 0
+          'is-draft': thread.type === 'draft' && thread.draftCount > 0,
+          'is-queued': thread.queuedCount > 0,
+          'has-draft': thread.type !== 'draft' && thread.draftCount > 0
         }"
       >
         <RouterLink
@@ -148,15 +127,15 @@ onMounted(() => {
         >
           <div class="thread-header">
             <span class="thread-participants">
-              <span v-if="thread.type === 'draft'" class="draft-badge">Draft</span>
-              <span v-else-if="thread.queuedCount && thread.queuedCount > 0" class="queued-badge">Queued</span>
+              <span v-if="thread.queuedCount > 0" class="queued-badge">Queued</span>
+              <span v-else-if="thread.type === 'draft'" class="draft-badge">Draft</span>
               {{ thread.type === 'draft' && thread.participants.length === 0
                 ? 'New Message'
                 : getParticipantDisplay(thread.participants) }}
-              <span v-if="thread.type !== 'draft' && thread.draftCount && thread.draftCount > 0" class="has-draft-indicator">Draft</span>
+              <span v-if="thread.type !== 'draft' && thread.draftCount > 0" class="has-draft-indicator">Draft</span>
             </span>
             <span class="thread-date">
-              {{ formatDate(thread.latestEmailAt) }}
+              {{ formatListDate(thread.latestAt) }}
             </span>
           </div>
           <div class="thread-subject">
@@ -172,9 +151,13 @@ onMounted(() => {
       </li>
     </ul>
 
-    <div v-if="hasMore && !loading" class="load-more">
+    <div v-if="loadMoreError" class="cache-notice">
+      {{ loadMoreError }}
+    </div>
+
+    <div v-if="loaded && list.hasMore && !(threads.length === 0 && loadingMore)" class="load-more">
       <button @click="loadMore" :disabled="loadingMore" class="load-more-btn">
-        {{ loadingMore ? 'Loading...' : 'Load More' }}
+        {{ loadingMore ? 'Loading...' : 'Load older' }}
       </button>
     </div>
   </div>

@@ -42,12 +42,18 @@ Search across all emails, contacts, and attachments.
 - Reply, reply-all, and forward
 - Draft auto-save
 
-### Offline Support
+### Local-First
 
-Progressive Web App with offline capabilities:
-- Read cached emails without an internet connection
-- Compose drafts offline (synced when back online)
-- Folder and contact metadata cached for offline navigation
+The web client keeps its own copy of your recent mail and works from that, so nothing waits on the network:
+
+- Mail received in the last 30 days is stored on the device, along with everything in Reply Later and Set Aside
+- Anything older that you open or find by search is fetched and kept for 30 days from then
+- Every change you make (read, move, trash, Send to, drafts, sending) applies immediately and is queued for the server, online or off
+- Attachments download the first time they're opened and are kept on the device after that
+- Search answers from the device straight away, then fills in the rest of the archive from the server
+- A sync button shows when the device last synced and lets you sync on demand
+
+Managing folders, rules and contacts still needs a connection.
 
 ### Privacy Features
 
@@ -215,6 +221,28 @@ The demo data includes:
 
 This only works on an empty database.
 
+### Fixing Received Dates
+
+Older versions stamped imported mail with the time of the import rather than the time it was delivered. To correct mail imported that way:
+
+```bash
+pnpm db:fix-received-at
+```
+
+This re-derives each email's received date from its `Received` header (falling back to the sent date). It is safe to run more than once.
+
+### Resetting the Password
+
+```bash
+# Generate a new random password
+pnpm auth:reset-password
+
+# Or choose one
+pnpm auth:reset-password 'my new password'
+```
+
+This writes `AUTH_PASSWORD` to `.env` and rotates `AUTH_COOKIE_SECRET`, which logs out existing sessions. Restart the server afterwards. If you set these through the environment instead (e.g. Docker), change them there.
+
 ### Other Commands
 
 ```bash
@@ -263,6 +291,10 @@ pnpm -F @meremail/web dev
 
 # Type check the frontend
 pnpm -F @meremail/web build
+
+# Run the tests
+pnpm -F @meremail/server test
+pnpm -F @meremail/web test
 ```
 
 ## Architecture
@@ -281,6 +313,7 @@ packages/
 ├── server/        # Hono API server
 │   └── src/
 │       ├── routes/       # API endpoints
+│       ├── sync/         # Change feed and action handlers for clients
 │       ├── utils/        # Server utilities
 │       ├── cli/          # CLI commands
 │       └── index.ts      # Server entry point
@@ -289,8 +322,9 @@ packages/
     └── src/
         ├── pages/        # Route pages
         ├── components/   # Vue components
-        ├── composables/  # Vue composables (including offline sync)
-        └── utils/        # Client utilities (API, IndexedDB sync)
+        ├── local/        # Local database, sync engine, action queue
+        ├── composables/  # Vue composables
+        └── utils/        # Client utilities
 ```
 
 ### Key Concepts
@@ -298,10 +332,12 @@ packages/
 - **Folders** organize threads (Inbox, Junk, Trash, plus custom folders)
 - **Threads** group related emails by References/In-Reply-To headers
 - **Emails** have `readAt` timestamp (null = unread) for read tracking
+- **Drafts** are unsent messages, kept apart from emails and identified by a client-generated ID
 - **Contacts** are a simple address book of senders and recipients
 - **Rules** filter incoming emails with conditions and actions (first match wins)
 - **Trash** holds deleted items for 30 days before permanent deletion
-- **Offline Sync** caches folders, threads, emails, and contacts to IndexedDB for PWA support
+- **Sync** is a change feed: every change on the server gets the next number in a global sequence, and a client asks for everything after the last number it saw. Deletions leave tombstones. Triggers maintain all of this, so no code path can forget
+- **Actions** are how clients change things: each mutation is applied locally, queued, and sent to `/api/sync/actions` with an ID that makes retries safe
 
 ## License
 

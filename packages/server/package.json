@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --noEmit",
+    "test": "vitest run",
     "start": "NODE_ENV=production tsx src/index.ts",
     "mail:import": "tsx src/cli/import.ts",
     "mail:eml-import": "tsx src/cli/eml-import.ts",
     "mail:folders": "tsx src/cli/list-folders.ts",
     "mail:demo": "tsx src/cli/demo.ts",
-    "db:backup": "tsx src/cli/backup.ts"
+    "db:backup": "tsx src/cli/backup.ts",
+    "db:fix-received-at": "tsx src/cli/fix-received-at.ts",
+    "auth:reset-password": "tsx src/cli/reset-password.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
@@ -25,6 +28,7 @@
   },
   "devDependencies": {
     "@types/mailparser": "^3.4.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
   }
 }

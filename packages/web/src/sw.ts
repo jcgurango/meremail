@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
+import { opfsRead, opfsWrite, attachmentKey, draftAttachmentKey } from './local/opfs'
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ url: string; revision: string | null }> }
 
@@ -80,6 +81,50 @@ async function setState<T>(key: string, value: T): Promise<void> {
 // Precache static assets
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
+
+// Attachments: downloaded from the server the first time they're asked for,
+// kept in OPFS, and served from there afterwards (including offline).
+// Files attached to a draft on this device are already there before upload.
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return
+
+  const url = new URL(event.request.url)
+  if (url.origin !== self.location.origin) return
+
+  const attachment = url.pathname.match(/^\/api\/attachments\/(\d+)$/)
+  const draftAttachment = url.pathname.match(/^\/api\/draft-attachments\/([A-Za-z0-9_-]+)$/)
+  const key = attachment ? attachmentKey(attachment[1]!) : draftAttachment ? draftAttachmentKey(draftAttachment[1]!) : null
+  if (!key) return
+
+  event.respondWith(serveAttachment(event, key))
+})
+
+async function serveAttachment(event: FetchEvent, key: string): Promise<Response> {
+  const stored = await opfsRead(key)
+  if (stored) {
+    const headers: Record<string, string> = { 'Content-Type': stored.meta.type }
+    if (stored.meta.filename) {
+      headers['Content-Disposition'] = `inline; filename="${stored.meta.filename.replace(/"/g, '')}"`
+    }
+    return new Response(stored.blob, { headers })
+  }
+
+  const response = await fetch(event.request)
+
+  // Only keep complete responses (not errors, not partial ranges)
+  if (response.status === 200) {
+    const copy = response.clone()
+    const filename = response.headers.get('Content-Disposition')?.match(/filename="([^"]*)"/)?.[1]
+    event.waitUntil(
+      copy.blob().then(blob => opfsWrite(key, blob, {
+        type: response.headers.get('Content-Type') || 'application/octet-stream',
+        filename,
+      }))
+    )
+  }
+
+  return response
+}
 
 // Background Sync: when connectivity is restored, notify clients to sync
 self.addEventListener('sync', ((event: SyncEvent) => {

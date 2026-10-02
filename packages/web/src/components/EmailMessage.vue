@@ -32,14 +32,14 @@ interface Email {
   subject: string
   content: string
   contentText?: string
-  sentAt: string | null
-  receivedAt: string | null
+  // Epoch milliseconds from the local store, or an ISO string straight from the server
+  sentAt: number | string | null
+  receivedAt: number | string | null
   isRead: boolean
   sender: Participant | null
   recipients: Participant[]
   attachments: Attachment[]
   replyTo?: string | null
-  headers?: { key: string, value: string }[] | null
   messageId?: string | null
   references?: string[] | null
 }
@@ -57,6 +57,25 @@ const emit = defineEmits<{
 
 const showQuoted = ref(false)
 const showHeaders = ref(false)
+
+// Raw headers aren't kept on the device; they're fetched when asked for
+const headers = ref<{ key: string, value: string }[] | null>(null)
+const headersError = ref<string | null>(null)
+
+async function toggleHeaders() {
+  showHeaders.value = !showHeaders.value
+  if (!showHeaders.value || headers.value) return
+
+  headersError.value = null
+  try {
+    const response = await fetch(`/api/emails/${props.email.id}/headers`)
+    if (!response.ok) throw new Error(`Server error (${response.status})`)
+    const data = await response.json() as { headers: { key: string, value: string }[] }
+    headers.value = data.headers
+  } catch {
+    headersError.value = 'Headers need a connection to the server.'
+  }
+}
 
 // ICS event parsing
 const icsEvents = ref<Map<number, IcsEvent[]>>(new Map())
@@ -268,7 +287,7 @@ function getRecipientsByRole(recipients: Participant[], role: string): Participa
   return recipients.filter(r => r.role === role)
 }
 
-function formatDateTime(dateStr: string | null): string {
+function formatDateTime(dateStr: number | string | null): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   const now = new Date()
@@ -335,7 +354,7 @@ function formatFileSize(bytes: number | null): string {
           <button
             class="headers-toggle"
             :class="{ active: showHeaders }"
-            @click="showHeaders = !showHeaders"
+            @click="toggleHeaders"
             title="Show email headers"
           >
             ⓘ
@@ -450,10 +469,12 @@ function formatFileSize(bytes: number | null): string {
       </div>
     </div>
 
-    <div v-if="showHeaders && email.headers" class="headers-panel">
+    <div v-if="showHeaders" class="headers-panel">
       <div class="headers-title">Email Headers</div>
+      <div v-if="headersError">{{ headersError }}</div>
+      <div v-else-if="!headers">Loading...</div>
       <dl class="headers-list">
-        <template v-for="header in email.headers">
+        <template v-for="header in headers || []">
           <template v-if="header">
             <dt>{{ header.key }}</dt>
             <dd>{{ header.value }}</dd>

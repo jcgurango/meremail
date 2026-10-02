@@ -1,32 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getFolders, getUnreadCounts } from '@/utils/api'
+import SyncStatus from '@/components/SyncStatus.vue'
+import { useLiveQuery } from '@/local/live'
+import { getNavigation, type FolderNavItem, type Navigation } from '@/local/queries'
 
-const props = defineProps<{
+defineProps<{
   activeFolderId?: number
   activeQueue?: 'reply_later' | 'set_aside'
 }>()
 
-interface Folder {
-  id: number
-  name: string
-  imapFolder: string | null
-  position: number
-  unreadCount: number
-  showUnreadCount: boolean
-}
-
-interface QueueCounts {
-  reply_later: number
-  set_aside: number
-}
-
-const folders = ref<Folder[]>([])
-const queueCounts = ref<QueueCounts>({ reply_later: 0, set_aside: 0 })
+const { data: nav } = useLiveQuery<Navigation>(getNavigation, { folders: [], replyLaterCount: 0, setAsideCount: 0 })
 
 // Icon mapping for folders
-function getFolderIcon(folder: Folder): string {
+function getFolderIcon(folder: FolderNavItem): string {
   const name = folder.name.toLowerCase()
   if (name === 'inbox') return '📥'
   if (name === 'junk' || name === 'spam') return '🗑️'
@@ -38,42 +24,17 @@ function getFolderIcon(folder: Folder): string {
 }
 
 // Route for folder
-function getFolderRoute(folder: Folder): string {
+function getFolderRoute(folder: FolderNavItem): string {
   if (folder.id === 1) return '/'
   return `/folder/${folder.name.toLowerCase()}`
 }
-
-async function loadData() {
-  try {
-    const [foldersResult, countsResult] = await Promise.all([
-      getFolders(),
-      getUnreadCounts(),
-    ])
-    folders.value = foldersResult.data.folders
-    queueCounts.value = {
-      reply_later: countsResult.data.reply_later,
-      set_aside: countsResult.data.set_aside,
-    }
-  } catch (e) {
-    console.error('Failed to load navigation data:', e)
-  }
-}
-
-onMounted(() => {
-  loadData()
-})
-
-// Reload when active item changes
-watch([() => props.activeFolderId, () => props.activeQueue], () => {
-  loadData()
-})
 </script>
 
 <template>
   <nav class="folder-nav">
     <!-- Folder pills -->
     <RouterLink
-      v-for="folder in folders"
+      v-for="folder in nav.folders"
       :key="folder.id"
       :to="getFolderRoute(folder)"
       class="nav-pill"
@@ -95,7 +56,7 @@ watch([() => props.activeFolderId, () => props.activeQueue], () => {
     >
       <span class="nav-icon">⏰</span>
       <span class="nav-label">Reply Later</span>
-      <span v-if="queueCounts.reply_later" class="nav-count">{{ queueCounts.reply_later }}</span>
+      <span v-if="nav.replyLaterCount" class="nav-count">{{ nav.replyLaterCount }}</span>
     </RouterLink>
 
     <!-- Set Aside -->
@@ -106,12 +67,18 @@ watch([() => props.activeFolderId, () => props.activeQueue], () => {
     >
       <span class="nav-icon">📌</span>
       <span class="nav-label">Set Aside</span>
-      <span v-if="queueCounts.set_aside" class="nav-count">{{ queueCounts.set_aside }}</span>
+      <span v-if="nav.setAsideCount" class="nav-count">{{ nav.setAsideCount }}</span>
     </RouterLink>
+
+    <SyncStatus class="nav-sync" />
   </nav>
 </template>
 
 <style scoped>
+.nav-sync {
+  margin-left: auto;
+}
+
 .folder-nav {
   display: flex;
   gap: 8px;

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import { resolvePath, cleanupExpiredItems } from '@meremail/shared'
 import { createBackup, cleanupOldBackups } from '../cli/backup'
+import { cleanupSyncData } from '../sync/maintenance'
 
 // State file to track last run
 const STATE_FILE = resolvePath('data/.daily-scheduler-state.json')
@@ -75,6 +76,13 @@ async function runRetentionCleanup(): Promise<void> {
     }
   } catch (error) {
     console.error('[DailyScheduler] Retention cleanup failed:', error)
+  }
+
+  try {
+    const result = cleanupSyncData()
+    console.log(`[DailyScheduler] Sync cleanup: ${result.tombstones} tombstones, ${result.actions} applied actions, ${result.uploads} orphaned uploads removed`)
+  } catch (error) {
+    console.error('[DailyScheduler] Sync cleanup failed:', error)
   }
 }
 

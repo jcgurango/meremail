@@ -15,6 +15,8 @@
     "mail:folders": "pnpm -F @meremail/server mail:folders",
     "mail:demo": "pnpm -F @meremail/server mail:demo",
     "db:backup": "pnpm -F @meremail/server db:backup",
+    "db:fix-received-at": "pnpm -F @meremail/server db:fix-received-at",
+    "auth:reset-password": "pnpm -F @meremail/server auth:reset-password",
     "reset": "rm -rf data/* && pnpm db:migrate"
   },
   "devDependencies": {

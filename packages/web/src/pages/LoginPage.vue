@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { resetAuthState } from '@/main'
+import { resetAuthState } from '@/auth'
 
 const router = useRouter()
 const route = useRoute()

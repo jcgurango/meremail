@@ -1,12 +1,13 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
 import { emailThreads } from './email-threads'
 
-// Email status: 'draft' for unsent, 'queued' for pending send, 'sent' for sent/received emails
-export type EmailStatus = 'draft' | 'queued' | 'sent'
+// Email status: 'queued' for pending send, 'sent' for sent/received emails.
+// Unsent drafts live in the drafts table.
+export type EmailStatus = 'queued' | 'sent'
 
 export const emails = sqliteTable('emails', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  threadId: integer('thread_id').references(() => emailThreads.id),  // Nullable for standalone drafts
+  threadId: integer('thread_id').references(() => emailThreads.id),
   senderId: integer('sender_id').notNull(),
   messageId: text('message_id').unique(),
   inReplyTo: text('in_reply_to'),
@@ -27,13 +28,11 @@ export const emails = sqliteTable('emails', {
   sendAttempts: integer('send_attempts').default(0),
   lastSendError: text('last_send_error'),
   lastSendAttemptAt: integer('last_send_attempt_at', { mode: 'timestamp' }),
-  // Pending recipients (email-only, not yet created as contacts)
-  // Stored as JSON array: [{email: string, name: string | null, role: 'to'|'cc'|'bcc'}]
-  pendingRecipients: text('pending_recipients', { mode: 'json' }).$type<Array<{
-    email: string
-    name: string | null
-    role: 'to' | 'cc' | 'bcc'
-  }>>(),
   // Trash timestamp - NULL = not trashed, timestamp = when trashed (for 30-day retention)
   trashedAt: integer('trashed_at', { mode: 'timestamp' }),
+  // Sync revisions - bumped by triggers (see sync migration).
+  // rev covers the email itself; metaRev covers read state only, so marking
+  // mail read doesn't resend bodies to clients.
+  rev: integer('rev').notNull().default(0),
+  metaRev: integer('meta_rev').notNull().default(0),
 })

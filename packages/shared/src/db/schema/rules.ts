@@ -15,6 +15,8 @@ export const emailRules = sqliteTable('email_rules', {
   // Order for "first match wins" evaluation
   position: integer('position').notNull().default(0),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  // Sync revision - bumped by triggers on every change (see sync migration)
+  rev: integer('rev').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
