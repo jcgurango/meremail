@@ -34,6 +34,10 @@ class ImapIdleService {
   private idleRestartTimer: NodeJS.Timeout | null = null
   private pollTimer: NodeJS.Timeout | null = null
   private lastPollTime: Record<string, Date> = {}
+  // Highest INBOX UID seen on the current connection; new mail is fetched from here
+  private lastUid = 0
+  // EXISTS handlers run one after another so each sees the UIDs the previous one fetched
+  private newMailChain: Promise<void> = Promise.resolve()
 
   /**
    * Check if IMAP is configured
@@ -126,15 +130,16 @@ class ImapIdleService {
     console.log('[ImapIdle] Connected, selecting INBOX...')
     const mailbox = await this.client.mailboxOpen('INBOX')
     console.log(`[ImapIdle] INBOX opened - ${mailbox.exists} messages`)
+    this.lastUid = (mailbox.uidNext ?? 1) - 1
 
     // Do an initial fetch of recent emails
     await this.fetchRecentEmails()
 
     // Set up event handlers
-    this.client.on('exists', async (data: { path: string; count: number; prevCount: number }) => {
+    this.client.on('exists', (data: { path: string; count: number; prevCount: number }) => {
       if (data.count > data.prevCount) {
         console.log(`[ImapIdle] New mail detected! Count: ${data.prevCount} -> ${data.count}`)
-        await this.fetchNewEmails(data.prevCount)
+        this.newMailChain = this.newMailChain.then(() => this.fetchNewEmails())
       }
     })
 
@@ -209,6 +214,7 @@ class ImapIdleService {
         if (result === 'imported') imported++
         else if (result === 'skipped') skipped++
         if (result !== 'error' && message.source) retrieved.push(message.uid)
+        this.lastUid = Math.max(this.lastUid, message.uid)
       }
 
       await this.deleteFromServer(this.client, retrieved, 'INBOX')
@@ -222,14 +228,22 @@ class ImapIdleService {
   }
 
   /**
-   * Fetch new emails after EXISTS notification
+   * Fetch new emails after EXISTS notification.
+   *
+   * Fetched by UID rather than sequence number: sequence numbers shift when
+   * messages are expunged (DELETE_MODE), and a range starting past the end of
+   * the mailbox gets a BAD "Invalid messageset" from some servers. A UID range
+   * past the end is accepted but returns the newest message, so UIDs we have
+   * already seen are skipped.
    */
-  private async fetchNewEmails(prevCount: number): Promise<void> {
+  private async fetchNewEmails(): Promise<void> {
     if (!this.client) return
+    // Nothing to fetch (already retrieved and deleted); some servers reject a
+    // fetch on an empty mailbox
+    if (!this.client.mailbox || this.client.mailbox.exists === 0) return
 
     try {
-      // Fetch messages with sequence numbers > prevCount
-      const range = `${prevCount + 1}:*`
+      const range = `${this.lastUid + 1}:*`
       let imported = 0
       const retrieved: number[] = []
 
@@ -238,7 +252,10 @@ class ImapIdleService {
         source: true,
         flags: true,
         internalDate: true,
-      })) {
+      }, { uid: true })) {
+        if (message.uid <= this.lastUid) continue
+        this.lastUid = message.uid
+
         const result = await this.processMessage(message, 'INBOX')
         if (result === 'imported') imported++
         if (result !== 'error' && message.source) retrieved.push(message.uid)
