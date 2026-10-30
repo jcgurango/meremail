@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
+import { contentDisposition, parseContentDispositionFilename } from '@meremail/shared/content-disposition'
 import { opfsRead, opfsWrite, attachmentKey, draftAttachmentKey } from './local/opfs'
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ url: string; revision: string | null }> }
@@ -104,7 +105,7 @@ async function serveAttachment(event: FetchEvent, key: string): Promise<Response
   if (stored) {
     const headers: Record<string, string> = { 'Content-Type': stored.meta.type }
     if (stored.meta.filename) {
-      headers['Content-Disposition'] = `inline; filename="${stored.meta.filename.replace(/"/g, '')}"`
+      headers['Content-Disposition'] = contentDisposition(stored.meta.filename)
     }
     return new Response(stored.blob, { headers })
   }
@@ -114,7 +115,7 @@ async function serveAttachment(event: FetchEvent, key: string): Promise<Response
   // Only keep complete responses (not errors, not partial ranges)
   if (response.status === 200) {
     const copy = response.clone()
-    const filename = response.headers.get('Content-Disposition')?.match(/filename="([^"]*)"/)?.[1]
+    const filename = parseContentDispositionFilename(response.headers.get('Content-Disposition'))
     event.waitUntil(
       copy.blob().then(blob => opfsWrite(key, blob, {
         type: response.headers.get('Content-Type') || 'application/octet-stream',

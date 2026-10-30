@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { eq, desc, and, sql, or, like } from 'drizzle-orm'
 import { createReadStream, existsSync } from 'fs'
 import { Readable } from 'stream'
+import { contentDisposition } from '@meremail/shared/content-disposition'
 import { db, sqlite, attachments, emails, emailThreads, contacts, resolveAttachmentPath } from '@meremail/shared'
 
 export const attachmentsRoutes = new Hono()
@@ -233,7 +234,7 @@ attachmentsRoutes.get('/:id', async (c) => {
   return new Response(webStream, {
     headers: {
       'Content-Type': attachment.mimeType || 'application/octet-stream',
-      'Content-Disposition': `inline; filename="${attachment.filename}"`,
+      'Content-Disposition': contentDisposition(attachment.filename),
       ...(attachment.size ? { 'Content-Length': String(attachment.size) } : {}),
     },
   })

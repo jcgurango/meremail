@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { mkdir, writeFile } from 'fs/promises'
 import { createReadStream, existsSync } from 'fs'
 import { Readable } from 'stream'
+import { contentDisposition } from '@meremail/shared/content-disposition'
 import { join, extname } from 'path'
 import { eq } from 'drizzle-orm'
 import { db, config, draftAttachments, resolveAttachmentPath } from '@meremail/shared'
@@ -160,7 +161,7 @@ draftAttachmentsRoutes.get('/:id', (c) => {
   return new Response(webStream, {
     headers: {
       'Content-Type': attachment.mimeType || 'application/octet-stream',
-      'Content-Disposition': `inline; filename="${attachment.filename}"`,
+      'Content-Disposition': contentDisposition(attachment.filename),
       ...(attachment.size ? { 'Content-Length': String(attachment.size) } : {}),
     },
   })
