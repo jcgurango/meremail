@@ -242,7 +242,7 @@ async function handleSetDefault(contact: Contact) {
   display: flex;
   gap: 4px;
   margin-bottom: 20px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .tab {
@@ -251,7 +251,7 @@ async function handleSetDefault(contact: Contact) {
   background: none;
   font-size: 14px;
   font-weight: 500;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -259,24 +259,24 @@ async function handleSetDefault(contact: Contact) {
 }
 
 .tab:hover {
-  color: #333;
+  color: var(--c-text-333333);
 }
 
 .tab.active {
-  color: #000;
-  border-bottom-color: #000;
+  color: var(--c-text-000000);
+  border-bottom-color: var(--c-000000);
 }
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 8px;
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 h1 {
@@ -293,21 +293,21 @@ h1 {
   width: 100%;
   padding: 10px 14px;
   font-size: 14px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
   outline: none;
   transition: border-color 0.15s;
 }
 
 .search-box input:focus {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .empty-state,
 .loading-state {
   text-align: center;
   padding: 60px 20px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .contacts-list {
@@ -322,8 +322,8 @@ h1 {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
 }
 
@@ -346,7 +346,7 @@ h1 {
 
 .contact-email {
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -358,24 +358,24 @@ h1 {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #999;
+  color: var(--c-text-999999);
   flex-wrap: wrap;
 }
 
 .me-badge {
   padding: 2px 8px;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .default-badge {
   display: inline-block;
   padding: 2px 8px;
-  background: #dcfce7;
-  color: #166534;
+  background: var(--c-dcfce7);
+  color: var(--c-text-166534);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
@@ -385,8 +385,8 @@ h1 {
 
 .set-default-btn {
   padding: 6px 12px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
   border: none;
   border-radius: 4px;
   font-size: 13px;
@@ -396,7 +396,7 @@ h1 {
 }
 
 .set-default-btn:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .load-more {
@@ -406,8 +406,8 @@ h1 {
 
 .load-more button {
   padding: 12px 32px;
-  background: #000;
-  color: #fff;
+  background: var(--c-000000);
+  color: var(--c-on-inverse);
   border: none;
   border-radius: 6px;
   font-size: 14px;

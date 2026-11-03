@@ -481,14 +481,14 @@ async function moveFolder(folder: Folder, direction: 'up' | 'down') {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 8px;
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 h1 {
@@ -499,7 +499,7 @@ h1 {
 
 .subtitle {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   margin: 0;
 }
 
@@ -518,12 +518,12 @@ h1 {
 }
 
 .btn-primary {
-  background: #6366f1;
-  color: #fff;
+  background: var(--c-6366f1);
+  color: var(--c-text-ffffff);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #4f46e5;
+  background: var(--c-4f46e5);
 }
 
 .btn-primary:disabled {
@@ -532,21 +532,21 @@ h1 {
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
 }
 
 .btn-secondary:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .btn-danger {
-  background: #dc2626;
-  color: #fff;
+  background: var(--c-dc2626);
+  color: var(--c-text-ffffff);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--c-b91c1c);
 }
 
 .btn-danger:disabled {
@@ -559,7 +559,7 @@ h1 {
 .error-state {
   text-align: center;
   padding: 60px 20px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
 }
 
 .empty-state.small {
@@ -569,7 +569,7 @@ h1 {
 .error-state button {
   margin-top: 16px;
   padding: 8px 16px;
-  background: #f3f4f6;
+  background: var(--c-f3f4f6);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -582,7 +582,7 @@ h1 {
 .folder-section h2 {
   font-size: 14px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 12px;
@@ -599,13 +599,13 @@ h1 {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 8px;
 }
 
 .folder-card.system {
-  background: #f9fafb;
+  background: var(--c-f9fafb);
 }
 
 .folder-order {
@@ -617,8 +617,8 @@ h1 {
 .order-btn {
   padding: 4px 8px;
   border: none;
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-6b7280);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -626,8 +626,8 @@ h1 {
 }
 
 .order-btn:hover:not(:disabled) {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--c-e5e7eb);
+  color: var(--c-text-374151);
 }
 
 .order-btn:disabled {
@@ -660,12 +660,12 @@ h1 {
 }
 
 .unread-badge {
-  color: #6366f1;
+  color: var(--c-text-6366f1);
   font-weight: 500;
 }
 
 .system-badge {
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
 }
 
 .folder-actions {
@@ -683,36 +683,36 @@ h1 {
 }
 
 .action-btn.edit {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
 }
 
 .action-btn.edit:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .action-btn.delete {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--c-fee2e2);
+  color: var(--c-text-dc2626);
 }
 
 .action-btn.delete:hover {
-  background: #fecaca;
+  background: var(--c-fecaca);
 }
 
 .action-btn.settings {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
 }
 
 .action-btn.settings:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 /* Settings modal */
 .settings-group {
   padding: 16px 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--c-e5e7eb);
 }
 
 .settings-group:first-child {
@@ -745,12 +745,12 @@ h1 {
 
 .toggle-text strong {
   font-size: 14px;
-  color: #374151;
+  color: var(--c-text-374151);
 }
 
 .toggle-desc {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
 }
 
 /* Modal styles */
@@ -768,7 +768,7 @@ h1 {
 .modal-content {
   width: 100%;
   max-width: 500px;
-  background: #fff;
+  background: var(--c-ffffff);
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
 }
@@ -782,7 +782,7 @@ h1 {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--c-e5e7eb);
 }
 
 .modal-header h2 {
@@ -798,17 +798,17 @@ h1 {
   align-items: center;
   justify-content: center;
   border: none;
-  background: #f3f4f6;
+  background: var(--c-f3f4f6);
   border-radius: 6px;
   font-size: 20px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .close-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--c-e5e7eb);
+  color: var(--c-text-374151);
 }
 
 .modal-body {
@@ -827,7 +827,7 @@ h1 {
   display: block;
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--c-text-374151);
   margin-bottom: 6px;
 }
 
@@ -835,19 +835,19 @@ h1 {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 6px;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--c-6366f1);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .warning-message {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--c-fef2f2);
+  border: 1px solid var(--c-fecaca);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 20px;
@@ -860,7 +860,7 @@ h1 {
 .warning-text {
   margin-top: 8px !important;
   font-size: 14px;
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .modal-footer {
@@ -880,7 +880,7 @@ h1 {
     justify-content: flex-end;
     margin-top: 8px;
     padding-top: 12px;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--c-e5e7eb);
   }
 
   .modal-footer {

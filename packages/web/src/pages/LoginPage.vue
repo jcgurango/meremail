@@ -98,14 +98,14 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   padding: 20px;
 }
 
 .login-container {
   width: 100%;
   max-width: 360px;
-  background: #fff;
+  background: var(--c-ffffff);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   padding: 32px;
@@ -120,12 +120,12 @@ async function handleSubmit() {
   margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
-  color: #111;
+  color: var(--c-text-111111);
 }
 
 .login-header p {
   margin: 0;
-  color: #666;
+  color: var(--c-text-666666);
   font-size: 14px;
 }
 
@@ -137,10 +137,10 @@ async function handleSubmit() {
 
 .error-message {
   padding: 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--c-fef2f2);
+  border: 1px solid var(--c-fecaca);
   border-radius: 6px;
-  color: #dc2626;
+  color: var(--c-text-dc2626);
   font-size: 14px;
   text-align: center;
 }
@@ -154,12 +154,12 @@ async function handleSubmit() {
 .form-group label {
   font-size: 14px;
   font-weight: 500;
-  color: #333;
+  color: var(--c-text-333333);
 }
 
 .form-group input {
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -167,20 +167,20 @@ async function handleSubmit() {
 
 .form-group input:focus {
   outline: none;
-  border-color: #2563eb;
+  border-color: var(--c-2563eb);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
 .form-group input:disabled {
-  background: #f9fafb;
+  background: var(--c-f9fafb);
   cursor: not-allowed;
 }
 
 .login-button {
   margin-top: 8px;
   padding: 12px;
-  background: #2563eb;
-  color: #fff;
+  background: var(--c-2563eb);
+  color: var(--c-text-ffffff);
   border: none;
   border-radius: 6px;
   font-size: 14px;
@@ -190,11 +190,11 @@ async function handleSubmit() {
 }
 
 .login-button:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--c-1d4ed8);
 }
 
 .login-button:disabled {
-  background: #93c5fd;
+  background: var(--c-93c5fd);
   cursor: not-allowed;
 }
 </style>

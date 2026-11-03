@@ -169,11 +169,11 @@ onMounted(async () => {
 .empty {
   padding: 40px 20px;
   text-align: center;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .error {
-  color: #991b1b;
+  color: var(--c-text-991b1b);
 }
 
 .thread-list {
@@ -183,7 +183,7 @@ onMounted(async () => {
 }
 
 .thread-item {
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--c-f0f0f0);
 }
 
 .thread-item.unread .thread-participants {
@@ -197,7 +197,7 @@ onMounted(async () => {
 .thread-item:not(.unread) .thread-participants,
 .thread-item:not(.unread) .thread-subject,
 .thread-item:not(.unread) .thread-snippet {
-  color: #888;
+  color: var(--c-text-888888);
 }
 
 .thread-item:not(.unread) .thread-participants {
@@ -213,7 +213,7 @@ onMounted(async () => {
 }
 
 .thread-link:hover {
-  background-color: #fafafa;
+  background-color: var(--c-fafafa);
 }
 
 .thread-header {
@@ -226,31 +226,31 @@ onMounted(async () => {
 .thread-participants {
   font-weight: 600;
   font-size: 14px;
-  color: #1a1a1a;
+  color: var(--c-text-1a1a1a);
 }
 
 .thread-date {
   font-size: 12px;
-  color: #888;
+  color: var(--c-text-888888);
   flex-shrink: 0;
   margin-left: 12px;
 }
 
 .thread-subject {
   font-size: 14px;
-  color: #333;
+  color: var(--c-text-333333);
   margin-bottom: 4px;
   font-weight: 500;
 }
 
 .unread-count {
   font-weight: 400;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .thread-snippet {
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -259,45 +259,45 @@ onMounted(async () => {
 .load-more {
   padding: 24px 20px;
   text-align: center;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--c-f0f0f0);
 }
 
 .load-more-btn {
   padding: 10px 24px;
   font-size: 14px;
   font-weight: 500;
-  color: #333;
-  background: #fff;
-  border: 1px solid #ddd;
+  color: var(--c-text-333333);
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-dddddd);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background: #fafafa;
-  border-color: #ccc;
+  background: var(--c-fafafa);
+  border-color: var(--c-cccccc);
 }
 
 .load-more-btn:disabled {
-  color: #999;
+  color: var(--c-text-999999);
   cursor: not-allowed;
 }
 
 .thread-item.is-draft {
-  background: #fffbeb;
+  background: var(--c-fffbeb);
 }
 
 .thread-item.is-draft:hover {
-  background: #fef3c7;
+  background: var(--c-fef3c7);
 }
 
 .draft-badge {
   display: inline-block;
   padding: 2px 6px;
   margin-right: 6px;
-  background: #f59e0b;
-  color: #fff;
+  background: var(--c-f59e0b);
+  color: var(--c-text-ffffff);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -309,8 +309,8 @@ onMounted(async () => {
   display: inline-block;
   padding: 2px 6px;
   margin-right: 6px;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--c-3b82f6);
+  color: var(--c-text-ffffff);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -319,15 +319,15 @@ onMounted(async () => {
 }
 
 .thread-item.is-queued {
-  background: #eff6ff;
+  background: var(--c-eff6ff);
 }
 
 .thread-item.is-queued:hover {
-  background: #dbeafe;
+  background: var(--c-dbeafe);
 }
 
 .thread-item.has-draft {
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid var(--c-f59e0b);
 }
 
 .has-draft-indicator {
@@ -335,21 +335,21 @@ onMounted(async () => {
   padding: 1px 5px;
   margin-left: 6px;
   background: transparent;
-  color: #b45309;
+  color: var(--c-text-b45309);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--c-f59e0b);
   border-radius: 3px;
   vertical-align: middle;
 }
 
 .cache-notice {
   padding: 8px 20px;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--c-fef3c7);
+  color: var(--c-text-92400e);
   font-size: 13px;
   text-align: center;
-  border-bottom: 1px solid #fde68a;
+  border-bottom: 1px solid var(--c-fde68a);
 }
 </style>

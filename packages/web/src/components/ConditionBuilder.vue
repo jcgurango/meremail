@@ -364,13 +364,13 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 <style scoped>
 .condition-builder {
   padding: 16px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--c-f9fafb);
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 8px;
 }
 
 .condition-builder.nested {
-  background: #fff;
+  background: var(--c-ffffff);
   border-style: dashed;
   margin: 8px 0;
 }
@@ -393,26 +393,26 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 }
 
 .operator-toggle.and {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--c-dbeafe);
+  color: var(--c-text-1d4ed8);
 }
 
 .operator-toggle.and:hover {
-  background: #bfdbfe;
+  background: var(--c-bfdbfe);
 }
 
 .operator-toggle.or {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--c-fef3c7);
+  color: var(--c-text-b45309);
 }
 
 .operator-toggle.or:hover {
-  background: #fde68a;
+  background: var(--c-fde68a);
 }
 
 .group-label {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
 }
 
 .conditions-list {
@@ -434,8 +434,8 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 6px;
 }
 
@@ -443,30 +443,30 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 .match-select {
   padding: 6px 10px;
   font-size: 13px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 4px;
-  background: #fff;
+  background: var(--c-ffffff);
   cursor: pointer;
 }
 
 .field-select:focus,
 .match-select:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--c-6366f1);
 }
 
 .header-name-input {
   width: 140px;
   padding: 6px 10px;
   font-size: 13px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 4px;
   font-family: monospace;
 }
 
 .header-name-input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--c-6366f1);
 }
 
 .negate-label {
@@ -474,7 +474,7 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   cursor: pointer;
   user-select: none;
 }
@@ -488,13 +488,13 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   min-width: 150px;
   padding: 6px 10px;
   font-size: 13px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 4px;
 }
 
 .value-input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--c-6366f1);
 }
 
 /* Contact list styles */
@@ -515,8 +515,8 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--c-e0e7ff);
+  color: var(--c-text-3730a3);
   border-radius: 12px;
   font-size: 12px;
 }
@@ -530,14 +530,14 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   padding: 0;
   border: none;
   background: transparent;
-  color: #6366f1;
+  color: var(--c-text-6366f1);
   font-size: 14px;
   cursor: pointer;
   border-radius: 50%;
 }
 
 .contact-chip button:hover {
-  background: #c7d2fe;
+  background: var(--c-c7d2fe);
 }
 
 .contact-search {
@@ -548,13 +548,13 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   width: 100%;
   padding: 6px 10px;
   font-size: 13px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 4px;
 }
 
 .contact-search-input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--c-6366f1);
 }
 
 .contact-dropdown {
@@ -562,8 +562,8 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   top: 100%;
   left: 0;
   right: 0;
-  background: #fff;
-  border: 1px solid #d1d5db;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-d1d5db);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 10;
@@ -579,7 +579,7 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 }
 
 .contact-option:hover {
-  background: #f3f4f6;
+  background: var(--c-f3f4f6);
 }
 
 .contact-name {
@@ -589,7 +589,7 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 
 .contact-email {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
 }
 
 .remove-btn {
@@ -600,8 +600,8 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
   align-items: center;
   justify-content: center;
   border: none;
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--c-fee2e2);
+  color: var(--c-text-dc2626);
   border-radius: 4px;
   font-size: 18px;
   cursor: pointer;
@@ -609,7 +609,7 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 }
 
 .remove-btn:hover {
-  background: #fecaca;
+  background: var(--c-fecaca);
 }
 
 .group-actions {
@@ -621,17 +621,17 @@ function handleContactInputKeydown(index: number, event: KeyboardEvent) {
 .add-btn {
   padding: 6px 12px;
   font-size: 13px;
-  border: 1px dashed #d1d5db;
+  border: 1px dashed var(--c-d1d5db);
   background: transparent;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .add-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
+  border-color: var(--c-6366f1);
+  color: var(--c-text-6366f1);
 }
 
 .add-btn.add-group {

@@ -107,41 +107,41 @@ function getFolderRoute(folder: FolderNavItem): string {
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
-  color: #666;
-  background: #f5f5f5;
+  color: var(--c-text-666666);
+  background: var(--c-f5f5f5);
   transition: all 0.15s;
 }
 
 .nav-pill:hover {
-  background: #e5e5e5;
-  color: #333;
+  background: var(--c-e5e5e5);
+  color: var(--c-text-333333);
 }
 
 .nav-pill.active {
-  background: #1a1a1a;
-  color: #fff;
+  background: var(--c-1a1a1a);
+  color: var(--c-on-inverse);
 }
 
 .nav-separator {
   width: 1px;
   height: 24px;
-  background: #e5e5e5;
+  background: var(--c-e5e5e5);
   margin: 0 4px;
 }
 
 .queue-pill {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--c-fef3c7);
+  color: var(--c-text-92400e);
 }
 
 .queue-pill:hover {
-  background: #fde68a;
-  color: #78350f;
+  background: var(--c-fde68a);
+  color: var(--c-text-78350f);
 }
 
 .queue-pill.active {
-  background: #f59e0b;
-  color: #fff;
+  background: var(--c-f59e0b);
+  color: var(--c-text-ffffff);
 }
 
 .nav-icon {
@@ -159,25 +159,25 @@ function getFolderRoute(folder: FolderNavItem): string {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  background: #ef4444;
-  color: #fff;
+  background: var(--c-ef4444);
+  color: var(--c-text-ffffff);
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;
 }
 
 .nav-pill.active .nav-count {
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--c-ffffff);
+  color: var(--c-text-1a1a1a);
 }
 
 .queue-pill .nav-count {
-  background: #d97706;
-  color: #fff;
+  background: var(--c-d97706);
+  color: var(--c-text-ffffff);
 }
 
 .queue-pill.active .nav-count {
-  background: #fff;
-  color: #92400e;
+  background: var(--c-ffffff);
+  color: var(--c-text-92400e);
 }
 </style>

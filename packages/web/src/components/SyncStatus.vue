@@ -76,15 +76,15 @@ function sync() {
   border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
-  color: #666;
-  background: #f5f5f5;
+  color: var(--c-text-666666);
+  background: var(--c-f5f5f5);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .sync-status:hover:not(:disabled) {
-  background: #e5e5e5;
-  color: #333;
+  background: var(--c-e5e5e5);
+  color: var(--c-text-333333);
 }
 
 .sync-status:disabled {
@@ -92,13 +92,13 @@ function sync() {
 }
 
 .sync-status.offline {
-  background: #fef2f2;
-  color: #991b1b;
+  background: var(--c-fef2f2);
+  color: var(--c-text-991b1b);
 }
 
 .sync-status.error {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--c-fef3c7);
+  color: var(--c-text-92400e);
 }
 
 .sync-status.syncing .sync-icon {
@@ -116,8 +116,8 @@ function sync() {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  background: #6b7280;
-  color: #fff;
+  background: var(--c-6b7280);
+  color: var(--c-text-ffffff);
   font-size: 11px;
   font-weight: 600;
   border-radius: 9px;

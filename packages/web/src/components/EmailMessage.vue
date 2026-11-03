@@ -217,6 +217,11 @@ function splitInnerContent(content: string): { visible: string; quoted: string |
   return { visible: content, quoted: null }
 }
 
+// An HTML email that sets its own colours was designed for a light page, so in
+// dark mode it is shown on a light card rather than recoloured.
+const OWN_COLORS_PATTERN = /\bbgcolor\s*=|<font[^>]*\bcolor\s*=|style\s*=\s*["'][^"']*\b(color|background)/i
+const hasOwnColors = computed(() => OWN_COLORS_PATTERN.test(props.email.content ?? ''))
+
 const splitContent = computed<SplitContent>(() => {
   const content = props.email.content
   if (!content) return { visible: '', quoted: null }
@@ -465,7 +470,7 @@ function formatFileSize(bytes: number | null): string {
     </div>
 
     <div class="email-body">
-      <div class="email-content" v-html="splitContent.visible"></div>
+      <div class="email-content" :class="{ 'theme-light email-card': hasOwnColors }" v-html="splitContent.visible"></div>
       <template v-if="splitContent.quoted">
         <button
           v-if="!showQuoted"
@@ -477,6 +482,7 @@ function formatFileSize(bytes: number | null): string {
         <div
           v-if="showQuoted"
           class="email-content quoted-content"
+          :class="{ 'theme-light email-card': hasOwnColors }"
           v-html="splitContent.quoted"
         ></div>
         <button
@@ -573,7 +579,7 @@ function formatFileSize(bytes: number | null): string {
 <style scoped>
 .email {
   padding: 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--c-eeeeee);
 }
 
 .email:last-child {
@@ -605,7 +611,7 @@ function formatFileSize(bytes: number | null): string {
 .email-sender {
   font-weight: 600;
   font-size: 14px;
-  color: #1a1a1a;
+  color: var(--c-text-1a1a1a);
 }
 
 .headers-toggle {
@@ -613,7 +619,7 @@ function formatFileSize(bytes: number | null): string {
   border: none;
   padding: 0;
   font-size: 14px;
-  color: #999;
+  color: var(--c-text-999999);
   cursor: pointer;
   opacity: 0.6;
   transition: opacity 0.15s;
@@ -622,7 +628,7 @@ function formatFileSize(bytes: number | null): string {
 .headers-toggle:hover,
 .headers-toggle.active {
   opacity: 1;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .contact-link {
@@ -636,18 +642,18 @@ function formatFileSize(bytes: number | null): string {
 
 .email-recipients {
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .recipient-label {
-  color: #999;
+  color: var(--c-text-999999);
   margin-right: 4px;
 }
 
 .reply-to-value {
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .email-date-actions {
@@ -660,7 +666,7 @@ function formatFileSize(bytes: number | null): string {
 
 .email-date {
   font-size: 12px;
-  color: #999;
+  color: var(--c-text-999999);
 }
 
 .reply-icons {
@@ -673,7 +679,7 @@ function formatFileSize(bytes: number | null): string {
   border: none;
   padding: 4px;
   cursor: pointer;
-  color: #999;
+  color: var(--c-text-999999);
   border-radius: 4px;
   transition: all 0.15s;
   display: flex;
@@ -682,13 +688,13 @@ function formatFileSize(bytes: number | null): string {
 }
 
 .reply-icon-btn:hover {
-  color: #000;
-  background: #f0f0f0;
+  color: var(--c-text-000000);
+  background: var(--c-f0f0f0);
 }
 
 .reply-icon-btn.delete-btn:hover {
-  color: #dc2626;
-  background: #fef2f2;
+  color: var(--c-text-dc2626);
+  background: var(--c-fef2f2);
 }
 
 .add-to-rule-wrapper {
@@ -700,8 +706,8 @@ function formatFileSize(bytes: number | null): string {
   top: 100%;
   right: 0;
   margin-top: 4px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -714,14 +720,14 @@ function formatFileSize(bytes: number | null): string {
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
-  border-bottom: 1px solid #e5e5e5;
+  color: var(--c-text-666666);
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .add-to-rule-empty {
   padding: 12px;
   font-size: 13px;
-  color: #999;
+  color: var(--c-text-999999);
   text-align: center;
 }
 
@@ -733,13 +739,13 @@ function formatFileSize(bytes: number | null): string {
   background: none;
   text-align: left;
   font-size: 13px;
-  color: #333;
+  color: var(--c-text-333333);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .add-to-rule-item:hover:not(:disabled) {
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
 }
 
 .add-to-rule-item:disabled {
@@ -750,7 +756,7 @@ function formatFileSize(bytes: number | null): string {
 .headers-panel {
   margin-bottom: 12px;
   padding: 12px;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   border-radius: 6px;
   font-size: 12px;
 }
@@ -758,7 +764,7 @@ function formatFileSize(bytes: number | null): string {
 .headers-title {
   font-weight: 600;
   margin-bottom: 8px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .headers-list {
@@ -772,13 +778,13 @@ function formatFileSize(bytes: number | null): string {
 
 .headers-list dt {
   font-weight: 500;
-  color: #666;
+  color: var(--c-text-666666);
   word-break: break-word;
 }
 
 .headers-list dd {
   margin: 0;
-  color: #333;
+  color: var(--c-text-333333);
   word-break: break-all;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
@@ -795,13 +801,22 @@ function formatFileSize(bytes: number | null): string {
   word-wrap: break-word;
 }
 
+@media (prefers-color-scheme: dark) {
+  .email-content.email-card {
+    background: #fff;
+    color: #1a1a1a;
+    padding: 12px;
+    border-radius: 6px;
+  }
+}
+
 .email-content :deep(img) {
   max-width: 100%;
   height: auto;
 }
 
 .email-content :deep(a) {
-  color: #2563eb;
+  color: var(--c-text-2563eb);
   text-decoration: none;
 }
 
@@ -823,13 +838,13 @@ function formatFileSize(bytes: number | null): string {
 .email-content :deep(blockquote) {
   margin: 8px 0;
   padding-left: 12px;
-  border-left: 3px solid #ddd;
-  color: #666;
+  border-left: 3px solid var(--c-dddddd);
+  color: var(--c-text-666666);
 }
 
 .email-content :deep(pre) {
   overflow-x: auto;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   padding: 8px;
   border-radius: 4px;
   white-space: pre-wrap;
@@ -840,24 +855,24 @@ function formatFileSize(bytes: number | null): string {
   display: inline-block;
   margin: 8px 0;
   padding: 2px 12px;
-  background: #f0f0f0;
-  border: 1px solid #ddd;
+  background: var(--c-f0f0f0);
+  border: 1px solid var(--c-dddddd);
   border-radius: 12px;
   font-size: 14px;
   line-height: 1;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .show-quoted-btn:hover {
-  background: #e5e5e5;
+  background: var(--c-e5e5e5);
 }
 
 .quoted-content {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #ddd;
+  border-top: 1px dashed var(--c-dddddd);
   opacity: 0.75;
 }
 
@@ -868,19 +883,19 @@ function formatFileSize(bytes: number | null): string {
   background: none;
   border: none;
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
 }
 
 .hide-quoted-btn:hover {
-  color: #000;
+  color: var(--c-text-000000);
   text-decoration: underline;
 }
 
 .attachments {
   margin-top: 16px;
   padding: 12px;
-  background: #f9f9f9;
+  background: var(--c-f9f9f9);
   border-radius: 6px;
 }
 
@@ -889,7 +904,7 @@ function formatFileSize(bytes: number | null): string {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #666;
+  color: var(--c-text-666666);
   margin-bottom: 8px;
 }
 
@@ -907,8 +922,8 @@ function formatFileSize(bytes: number | null): string {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   text-decoration: none;
   color: inherit;
@@ -917,7 +932,7 @@ function formatFileSize(bytes: number | null): string {
 }
 
 .attachment-item:hover {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .attachment-icon {
@@ -932,7 +947,7 @@ function formatFileSize(bytes: number | null): string {
 }
 
 .attachment-size {
-  color: #999;
+  color: var(--c-text-999999);
   font-size: 11px;
 }
 
@@ -943,17 +958,17 @@ function formatFileSize(bytes: number | null): string {
 
 .ics-loading {
   padding: 12px;
-  background: #f9f9f9;
+  background: var(--c-f9f9f9);
   border-radius: 6px;
-  color: #666;
+  color: var(--c-text-666666);
   font-size: 13px;
 }
 
 .ics-error {
   padding: 12px;
-  background: #fef2f2;
+  background: var(--c-fef2f2);
   border-radius: 6px;
-  color: #b91c1c;
+  color: var(--c-text-b91c1c);
   font-size: 13px;
 }
 
@@ -961,8 +976,8 @@ function formatFileSize(bytes: number | null): string {
   display: flex;
   gap: 12px;
   padding: 16px;
-  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
-  border: 1px solid #bfdbfe;
+  background: linear-gradient(135deg, var(--c-eff6ff) 0%, var(--c-f0fdf4) 100%);
+  border: 1px solid var(--c-bfdbfe);
   border-radius: 8px;
   align-items: flex-start;
 }
@@ -980,32 +995,32 @@ function formatFileSize(bytes: number | null): string {
 .ics-event-title {
   font-weight: 600;
   font-size: 15px;
-  color: #1e40af;
+  color: var(--c-text-1e40af);
   margin-bottom: 4px;
 }
 
 .ics-event-time {
   font-size: 14px;
-  color: #1e3a8a;
+  color: var(--c-text-1e3a8a);
   margin-bottom: 6px;
 }
 
 .ics-event-location {
   font-size: 13px;
-  color: #4b5563;
+  color: var(--c-text-4b5563);
   margin-bottom: 4px;
 }
 
 .ics-event-description {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   margin-top: 8px;
   line-height: 1.4;
 }
 
 .ics-event-organizer {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
   margin-top: 6px;
 }
 
@@ -1019,7 +1034,7 @@ function formatFileSize(bytes: number | null): string {
 
 .add-to-calendar-btn {
   padding: 8px 16px;
-  background: #2563eb;
+  background: var(--c-2563eb);
   color: white;
   border: none;
   border-radius: 6px;
@@ -1031,7 +1046,7 @@ function formatFileSize(bytes: number | null): string {
 }
 
 .add-to-calendar-btn:hover {
-  background: #1d4ed8;
+  background: var(--c-1d4ed8);
 }
 
 .calendar-menu {
@@ -1040,7 +1055,7 @@ function formatFileSize(bytes: number | null): string {
   right: 0;
   margin-top: 4px;
   background: white;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   min-width: 160px;
@@ -1052,16 +1067,16 @@ function formatFileSize(bytes: number | null): string {
   display: block;
   padding: 10px 14px;
   font-size: 13px;
-  color: #374151;
+  color: var(--c-text-374151);
   text-decoration: none;
   transition: background 0.15s;
 }
 
 .calendar-menu-item:hover {
-  background: #f3f4f6;
+  background: var(--c-f3f4f6);
 }
 
 .calendar-menu-item:not(:last-child) {
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--c-e5e7eb);
 }
 </style>

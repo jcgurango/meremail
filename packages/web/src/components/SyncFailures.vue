@@ -42,10 +42,10 @@ function dismiss(seq: number | undefined) {
   gap: 12px;
   max-width: 480px;
   padding: 10px 14px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--c-fef2f2);
+  border: 1px solid var(--c-fecaca);
   border-radius: 8px;
-  color: #991b1b;
+  color: var(--c-text-991b1b);
   font-size: 13px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   pointer-events: auto;

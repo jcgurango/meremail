@@ -120,8 +120,8 @@ function clearSearch() {
 <style scoped>
 .search-toolbar {
   padding: 12px 20px;
-  background: #fafafa;
-  border-bottom: 1px solid #e5e5e5;
+  background: var(--c-fafafa);
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .toolbar-row {
@@ -135,15 +135,15 @@ function clearSearch() {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   white-space: nowrap;
 }
 
 .server-search-spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid #d1d5db;
-  border-top-color: #6366f1;
+  border: 2px solid var(--c-d1d5db);
+  border-top-color: var(--c-6366f1);
   border-radius: 50%;
   animation: server-search-spin 0.8s linear infinite;
 }
@@ -160,8 +160,8 @@ function clearSearch() {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e0e0e0);
   border-radius: 6px;
 }
 
@@ -183,18 +183,18 @@ function clearSearch() {
   height: 20px;
   padding: 0;
   background: none;
-  border: 1px solid #ddd;
+  border: 1px solid var(--c-dddddd);
   border-radius: 50%;
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .help-btn:hover,
 .help-btn.active {
-  border-color: #999;
-  color: #333;
+  border-color: var(--c-999999);
+  color: var(--c-text-333333);
 }
 
 .search-help {
@@ -203,30 +203,30 @@ function clearSearch() {
   gap: 6px 16px;
   margin-top: 10px;
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .search-help code {
   padding: 1px 4px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e0e0e0);
   border-radius: 3px;
   font-size: 12px;
-  color: #333;
+  color: var(--c-text-333333);
 }
 
 .clear-all-btn {
   padding: 6px 12px;
   background: none;
-  border: 1px solid #ddd;
+  border: 1px solid var(--c-dddddd);
   border-radius: 4px;
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
 }
 
 .clear-all-btn:hover {
-  border-color: #999;
-  color: #333;
+  border-color: var(--c-999999);
+  color: var(--c-text-333333);
 }
 </style>

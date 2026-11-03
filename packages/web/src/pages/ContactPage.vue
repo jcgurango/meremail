@@ -235,7 +235,7 @@ function goBack() {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 12px;
@@ -246,7 +246,7 @@ function goBack() {
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .name-display {
@@ -263,8 +263,8 @@ function goBack() {
 
 .edit-name-btn {
   padding: 4px 10px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
   border: none;
   border-radius: 4px;
   font-size: 12px;
@@ -273,7 +273,7 @@ function goBack() {
 }
 
 .edit-name-btn:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .name-edit-form {
@@ -287,20 +287,20 @@ function goBack() {
   padding: 8px 12px;
   font-size: 18px;
   font-weight: 600;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   outline: none;
   min-width: 250px;
 }
 
 .name-input:focus {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .save-btn {
   padding: 8px 16px;
-  background: #000;
-  color: #fff;
+  background: var(--c-000000);
+  color: var(--c-on-inverse);
   border: none;
   border-radius: 4px;
   font-size: 13px;
@@ -318,8 +318,8 @@ function goBack() {
 
 .cancel-btn {
   padding: 8px 16px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
   border: none;
   border-radius: 4px;
   font-size: 13px;
@@ -327,12 +327,12 @@ function goBack() {
 }
 
 .cancel-btn:hover:not(:disabled) {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .contact-email {
   font-size: 14px;
-  color: #666;
+  color: var(--c-text-666666);
   margin-bottom: 8px;
 }
 
@@ -344,27 +344,27 @@ function goBack() {
 }
 
 .thread-count {
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .me-badge {
   padding: 2px 8px;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .loading,
 .error {
   text-align: center;
   padding: 40px 20px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .threads-list {
@@ -374,7 +374,7 @@ function goBack() {
 }
 
 .thread-section {
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -384,14 +384,14 @@ function goBack() {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #f9f9f9;
-  border-bottom: 1px solid #e5e5e5;
+  background: var(--c-f9f9f9);
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .thread-subject {
   font-weight: 600;
   font-size: 14px;
-  color: #000;
+  color: var(--c-text-000000);
   text-decoration: none;
 }
 
@@ -401,7 +401,7 @@ function goBack() {
 
 .email-count {
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .emails {
@@ -416,8 +416,8 @@ function goBack() {
 
 .load-more button {
   padding: 12px 32px;
-  background: #000;
-  color: #fff;
+  background: var(--c-000000);
+  color: var(--c-on-inverse);
   border: none;
   border-radius: 6px;
   font-size: 14px;

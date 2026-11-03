@@ -1,0 +1,199 @@
+/*
+ * Colour tokens. Each token's light value is the colour the component used
+ * before dark mode existed, so the light theme is unchanged. `--c-<hex>` is a
+ * surface (background, border, shadow); `--c-text-<hex>` is a text colour.
+ * `.theme-light` forces light colours inside it, e.g. for HTML email bodies
+ * that bring their own colours.
+ */
+:root,
+.theme-light {
+  --c-000000: #000000;
+  --c-10b981: #10b981;
+  --c-1a1a1a: #1a1a1a;
+  --c-1d4ed8: #1d4ed8;
+  --c-2563eb: #2563eb;
+  --c-3b82f6: #3b82f6;
+  --c-4f46e5: #4f46e5;
+  --c-6366f1: #6366f1;
+  --c-6b7280: #6b7280;
+  --c-93c5fd: #93c5fd;
+  --c-999999: #999999;
+  --c-b91c1c: #b91c1c;
+  --c-bfdbfe: #bfdbfe;
+  --c-c7d2fe: #c7d2fe;
+  --c-cccccc: #cccccc;
+  --c-d1d5db: #d1d5db;
+  --c-d97706: #d97706;
+  --c-dbeafe: #dbeafe;
+  --c-dc2626: #dc2626;
+  --c-dcfce7: #dcfce7;
+  --c-dddddd: #dddddd;
+  --c-e0e0e0: #e0e0e0;
+  --c-e0e7ff: #e0e7ff;
+  --c-e0f2fe: #e0f2fe;
+  --c-e5e5e5: #e5e5e5;
+  --c-e5e7eb: #e5e7eb;
+  --c-e8f4ff: #e8f4ff;
+  --c-ecfdf5: #ecfdf5;
+  --c-eeeeee: #eeeeee;
+  --c-ef4444: #ef4444;
+  --c-eff6ff: #eff6ff;
+  --c-f0f0f0: #f0f0f0;
+  --c-f0f9ff: #f0f9ff;
+  --c-f0fdf4: #f0fdf4;
+  --c-f1f5f9: #f1f5f9;
+  --c-f3f4f6: #f3f4f6;
+  --c-f59e0b: #f59e0b;
+  --c-f5f5f5: #f5f5f5;
+  --c-f9f9f9: #f9f9f9;
+  --c-f9fafb: #f9fafb;
+  --c-fafafa: #fafafa;
+  --c-fde68a: #fde68a;
+  --c-fecaca: #fecaca;
+  --c-fee2e2: #fee2e2;
+  --c-fef08a: #fef08a;
+  --c-fef2f2: #fef2f2;
+  --c-fef3c7: #fef3c7;
+  --c-fffbeb: #fffbeb;
+  --c-ffffff: #ffffff;
+  --c-on-inverse: #ffffff;
+  --c-text-000000: #000000;
+  --c-text-0369a1: #0369a1;
+  --c-text-059669: #059669;
+  --c-text-111111: #111111;
+  --c-text-15803d: #15803d;
+  --c-text-166534: #166534;
+  --c-text-1a1a1a: #1a1a1a;
+  --c-text-1d4ed8: #1d4ed8;
+  --c-text-1e3a8a: #1e3a8a;
+  --c-text-1e40af: #1e40af;
+  --c-text-22c55e: #22c55e;
+  --c-text-2563eb: #2563eb;
+  --c-text-333333: #333333;
+  --c-text-3730a3: #3730a3;
+  --c-text-374151: #374151;
+  --c-text-4338ca: #4338ca;
+  --c-text-475569: #475569;
+  --c-text-4b5563: #4b5563;
+  --c-text-6366f1: #6366f1;
+  --c-text-666666: #666666;
+  --c-text-6b7280: #6b7280;
+  --c-text-78350f: #78350f;
+  --c-text-888888: #888888;
+  --c-text-92400e: #92400e;
+  --c-text-991b1b: #991b1b;
+  --c-text-999999: #999999;
+  --c-text-9ca3af: #9ca3af;
+  --c-text-b45309: #b45309;
+  --c-text-b91c1c: #b91c1c;
+  --c-text-dc2626: #dc2626;
+  --c-text-f59e0b: #f59e0b;
+  --c-text-ffffff: #ffffff;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+.theme-light {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-000000: #ececec;
+    --c-10b981: #10b981;
+    --c-1a1a1a: #ececec;
+    --c-1d4ed8: #1d4ed8;
+    --c-2563eb: #2563eb;
+    --c-3b82f6: #3b82f6;
+    --c-4f46e5: #6366f1;
+    --c-6366f1: #6366f1;
+    --c-6b7280: #6b7280;
+    --c-93c5fd: #33599a;
+    --c-999999: #5c6067;
+    --c-b91c1c: #b91c1c;
+    --c-bfdbfe: #28467a;
+    --c-c7d2fe: #36366a;
+    --c-cccccc: #4a4d53;
+    --c-d1d5db: #3a3d42;
+    --c-d97706: #d97706;
+    --c-dbeafe: #1b2a45;
+    --c-dc2626: #dc2626;
+    --c-dcfce7: #14301f;
+    --c-dddddd: #3a3d42;
+    --c-e0e0e0: #33353a;
+    --c-e0e7ff: #2a2a52;
+    --c-e0f2fe: #15283a;
+    --c-e5e5e5: #2e3035;
+    --c-e5e7eb: #2e3035;
+    --c-e8f4ff: #17223a;
+    --c-ecfdf5: #12261a;
+    --c-eeeeee: #2a2c30;
+    --c-ef4444: #ef4444;
+    --c-eff6ff: #17223a;
+    --c-f0f0f0: #26272b;
+    --c-f0f9ff: #15222f;
+    --c-f0fdf4: #12261a;
+    --c-f1f5f9: #222327;
+    --c-f3f4f6: #222327;
+    --c-f59e0b: #f59e0b;
+    --c-f5f5f5: #222327;
+    --c-f9f9f9: #1c1d21;
+    --c-f9fafb: #1c1d21;
+    --c-fafafa: #1c1d21;
+    --c-fde68a: #54420f;
+    --c-fecaca: #5a2628;
+    --c-fee2e2: #3a1d1f;
+    --c-fef08a: #4f4712;
+    --c-fef2f2: #2e1a1c;
+    --c-fef3c7: #33290f;
+    --c-fffbeb: #2a230f;
+    --c-ffffff: #17181b;
+    --c-on-inverse: #111111;
+    --c-text-000000: #f0f0f0;
+    --c-text-0369a1: #7dd3fc;
+    --c-text-059669: #34d399;
+    --c-text-111111: #ececec;
+    --c-text-15803d: #4ade80;
+    --c-text-166534: #86efac;
+    --c-text-1a1a1a: #e8e8e8;
+    --c-text-1d4ed8: #93c5fd;
+    --c-text-1e3a8a: #bfdbfe;
+    --c-text-1e40af: #93c5fd;
+    --c-text-22c55e: #4ade80;
+    --c-text-2563eb: #60a5fa;
+    --c-text-333333: #d6d6d6;
+    --c-text-3730a3: #c7d2fe;
+    --c-text-374151: #d1d5db;
+    --c-text-4338ca: #a5b4fc;
+    --c-text-475569: #b8bec8;
+    --c-text-4b5563: #b8bec8;
+    --c-text-6366f1: #a5b4fc;
+    --c-text-666666: #a3a3a3;
+    --c-text-6b7280: #a3a8b0;
+    --c-text-78350f: #fde68a;
+    --c-text-888888: #8c8c8c;
+    --c-text-92400e: #fcd34d;
+    --c-text-991b1b: #fca5a5;
+    --c-text-999999: #858585;
+    --c-text-9ca3af: #80858e;
+    --c-text-b45309: #fbbf24;
+    --c-text-b91c1c: #fca5a5;
+    --c-text-dc2626: #f87171;
+    --c-text-f59e0b: #fbbf24;
+    --c-text-ffffff: #ffffff;
+  }
+}
+
+/*
+ * Form fields without their own background get the browser's dark field
+ * colour in dark mode, which stands out against the page. Match the page.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.theme-light) input:not([type='checkbox']):not([type='radio']),
+  :root:not(.theme-light) textarea,
+  :root:not(.theme-light) select {
+    background-color: var(--c-ffffff);
+  }
+}

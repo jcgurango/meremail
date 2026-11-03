@@ -1118,7 +1118,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #fff;
+  background: var(--c-ffffff);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -1128,7 +1128,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .composer-header h3 {
@@ -1145,41 +1145,41 @@ onUnmounted(() => {
 
 .uploading-indicator {
   font-size: 12px;
-  color: #2563eb;
+  color: var(--c-text-2563eb);
 }
 
 .saving-indicator {
   font-size: 12px;
-  color: #999;
+  color: var(--c-text-999999);
 }
 
 .saved-indicator {
   font-size: 12px;
-  color: #22c55e;
+  color: var(--c-text-22c55e);
 }
 
 .pending-indicator {
   font-size: 12px;
-  color: #f59e0b;
+  color: var(--c-text-f59e0b);
 }
 
 .close-btn {
   background: none;
   border: none;
   font-size: 24px;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   padding: 0;
   line-height: 1;
 }
 
 .close-btn:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .composer-fields {
   padding: 16px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .field-row {
@@ -1197,7 +1197,7 @@ onUnmounted(() => {
   width: 60px;
   padding-top: 8px;
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   flex-shrink: 0;
 }
 
@@ -1209,24 +1209,24 @@ onUnmounted(() => {
 .from-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   font-size: 14px;
-  background: #fff;
+  background: var(--c-ffffff);
   outline: none;
 }
 
 .from-input:focus {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .from-input::placeholder {
-  color: #000;
+  color: var(--c-text-000000);
   opacity: 1;
 }
 
 .from-input:focus::placeholder {
-  color: #999;
+  color: var(--c-text-999999);
 }
 
 .from-dropdown {
@@ -1234,8 +1234,8 @@ onUnmounted(() => {
   top: 100%;
   left: 0;
   right: 0;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -1256,21 +1256,21 @@ onUnmounted(() => {
 }
 
 .from-option:hover {
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
 }
 
 .from-option.selected {
-  background: #e8f4ff;
+  background: var(--c-e8f4ff);
 }
 
 .from-option-name {
   font-size: 14px;
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .from-option-email {
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .recipient-field {
@@ -1280,7 +1280,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   min-height: 38px;
   position: relative;
@@ -1288,7 +1288,7 @@ onUnmounted(() => {
 }
 
 .recipient-field:focus-within {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .recipient-pill {
@@ -1296,7 +1296,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: #e5e5e5;
+  background: var(--c-e5e5e5);
   border-radius: 16px;
   font-size: 13px;
 }
@@ -1306,13 +1306,13 @@ onUnmounted(() => {
   border: none;
   padding: 0;
   font-size: 14px;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   line-height: 1;
 }
 
 .remove-pill:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .recipient-input {
@@ -1329,8 +1329,8 @@ onUnmounted(() => {
   top: 100%;
   left: 0;
   right: 0;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -1340,7 +1340,7 @@ onUnmounted(() => {
 
 .search-loading {
   padding: 12px;
-  color: #666;
+  color: var(--c-text-666666);
   font-size: 13px;
 }
 
@@ -1356,26 +1356,26 @@ onUnmounted(() => {
 }
 
 .search-result:hover {
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
 }
 
 .result-name {
   font-size: 14px;
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .result-email {
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .add-field-btn {
   padding: 6px 12px;
   background: none;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   flex-shrink: 0;
   min-height: 38px;
@@ -1384,14 +1384,14 @@ onUnmounted(() => {
 }
 
 .add-field-btn:hover {
-  border-color: #999;
-  color: #000;
+  border-color: var(--c-999999);
+  color: var(--c-text-000000);
 }
 
 .subject-input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   font-size: 14px;
 }
@@ -1408,8 +1408,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 2px;
   padding: 8px 16px;
-  border-bottom: 1px solid #e5e5e5;
-  background: #fafafa;
+  border-bottom: 1px solid var(--c-e5e5e5);
+  background: var(--c-fafafa);
 }
 
 .toolbar-btn {
@@ -1422,19 +1422,19 @@ onUnmounted(() => {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  color: #666;
+  color: var(--c-text-666666);
   font-size: 14px;
   transition: all 0.15s;
 }
 
 .toolbar-btn:hover {
-  background: #e5e5e5;
-  color: #000;
+  background: var(--c-e5e5e5);
+  color: var(--c-text-000000);
 }
 
 .toolbar-btn.active {
-  background: #e5e5e5;
-  color: #000;
+  background: var(--c-e5e5e5);
+  color: var(--c-text-000000);
 }
 
 .mode-toggle {
@@ -1444,14 +1444,14 @@ onUnmounted(() => {
 
 .mode-label {
   font-size: 11px;
-  color: #999;
+  color: var(--c-text-999999);
   margin-left: 4px;
 }
 
 .toolbar-divider {
   width: 1px;
   height: 20px;
-  background: #e5e5e5;
+  background: var(--c-e5e5e5);
   margin: 0 6px;
 }
 
@@ -1464,28 +1464,28 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: #f0f9ff;
-  border-bottom: 1px solid #e5e5e5;
+  background: var(--c-f0f9ff);
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .progress-bar {
   flex: 1;
   height: 6px;
-  background: #e5e5e5;
+  background: var(--c-e5e5e5);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: #2563eb;
+  background: var(--c-2563eb);
   border-radius: 3px;
   transition: width 0.15s ease;
 }
 
 .progress-text {
   font-size: 12px;
-  color: #2563eb;
+  color: var(--c-text-2563eb);
   white-space: nowrap;
 }
 
@@ -1494,15 +1494,15 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--c-fef2f2);
+  color: var(--c-text-dc2626);
   font-size: 13px;
 }
 
 .upload-error button {
   background: none;
   border: none;
-  color: #dc2626;
+  color: var(--c-text-dc2626);
   cursor: pointer;
   font-size: 16px;
 }
@@ -1526,7 +1526,7 @@ onUnmounted(() => {
 
 .tiptap-editor :deep(.tiptap p.is-editor-empty:first-child::before) {
   content: attr(data-placeholder);
-  color: #999;
+  color: var(--c-text-999999);
   pointer-events: none;
   float: left;
   height: 0;
@@ -1535,12 +1535,12 @@ onUnmounted(() => {
 .tiptap-editor :deep(.tiptap blockquote) {
   margin: 8px 0 8px 12px;
   padding-left: 12px;
-  border-left: 2px solid #ccc;
-  color: #666;
+  border-left: 2px solid var(--c-cccccc);
+  color: var(--c-text-666666);
 }
 
 .tiptap-editor :deep(.tiptap a) {
-  color: #2563eb;
+  color: var(--c-text-2563eb);
 }
 
 .tiptap-editor :deep(.tiptap ul),
@@ -1573,14 +1573,14 @@ onUnmounted(() => {
 }
 
 .attachments-list {
-  border-top: 1px solid #e5e5e5;
+  border-top: 1px solid var(--c-e5e5e5);
   padding: 12px 16px;
 }
 
 .attachments-header {
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--c-text-666666);
   margin-bottom: 8px;
 }
 
@@ -1589,7 +1589,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   border-radius: 4px;
   margin-bottom: 6px;
 }
@@ -1608,33 +1608,33 @@ onUnmounted(() => {
 
 .attachment-size {
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .remove-attachment {
   background: none;
   border: none;
-  color: #666;
+  color: var(--c-text-666666);
   cursor: pointer;
   font-size: 16px;
   padding: 0;
 }
 
 .remove-attachment:hover {
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .composer-actions {
   display: flex;
   gap: 12px;
   padding: 16px;
-  border-top: 1px solid #e5e5e5;
+  border-top: 1px solid var(--c-e5e5e5);
 }
 
 .send-btn {
   padding: 8px 24px;
-  background: #2563eb;
-  color: #fff;
+  background: var(--c-2563eb);
+  color: var(--c-text-ffffff);
   border: none;
   border-radius: 4px;
   font-size: 13px;
@@ -1643,26 +1643,26 @@ onUnmounted(() => {
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--c-1d4ed8);
 }
 
 .send-btn:disabled {
-  background: #93c5fd;
+  background: var(--c-93c5fd);
   cursor: not-allowed;
 }
 
 .discard-btn {
   padding: 8px 16px;
-  background: #fff;
-  color: #666;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  color: var(--c-text-666666);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
 }
 
 .discard-btn:hover {
-  border-color: #dc2626;
-  color: #dc2626;
+  border-color: var(--c-dc2626);
+  color: var(--c-text-dc2626);
 }
 </style>

@@ -395,14 +395,14 @@ function clearContactFilter() {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 8px;
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 h1 {
@@ -416,7 +416,7 @@ h1 {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   border-radius: 8px;
   margin-bottom: 16px;
 }
@@ -451,8 +451,8 @@ h1 {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #ddd;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-dddddd);
   border-radius: 6px;
   font-size: 14px;
   cursor: pointer;
@@ -460,17 +460,17 @@ h1 {
 }
 
 .filter-btn:hover {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .filter-btn.active {
-  background: #f0f0f0;
-  border-color: #999;
+  background: var(--c-f0f0f0);
+  border-color: var(--c-999999);
 }
 
 .filter-btn .arrow {
   font-size: 10px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .dropdown-menu {
@@ -480,8 +480,8 @@ h1 {
   left: 0;
   margin-top: 4px;
   min-width: 180px;
-  background: #fff;
-  border: 1px solid #ddd;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-dddddd);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   z-index: 100;
@@ -497,20 +497,20 @@ h1 {
 
 .contact-search-box {
   padding: 8px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--c-eeeeee);
 }
 
 .contact-search-input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--c-dddddd);
   border-radius: 4px;
   font-size: 14px;
   outline: none;
 }
 
 .contact-search-input:focus {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .contacts-list {
@@ -530,13 +530,13 @@ h1 {
 
 .contact-email {
   font-size: 12px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .no-results,
 .searching {
   padding: 12px 14px;
-  color: #999;
+  color: var(--c-text-999999);
   font-size: 13px;
   text-align: center;
 }
@@ -559,35 +559,35 @@ h1 {
 }
 
 .dropdown-item:hover {
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
 }
 
 .dropdown-item.selected {
-  background: #f0f0f0;
+  background: var(--c-f0f0f0);
   font-weight: 500;
 }
 
 .dropdown-item.clear {
-  color: #666;
-  border-bottom: 1px solid #eee;
+  color: var(--c-text-666666);
+  border-bottom: 1px solid var(--c-eeeeee);
 }
 
 .dropdown-item .count {
-  color: #999;
+  color: var(--c-text-999999);
   font-size: 12px;
 }
 
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .attachments-list {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  background: #eee;
+  background: var(--c-eeeeee);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -597,14 +597,14 @@ h1 {
   align-items: flex-start;
   gap: 14px;
   padding: 16px;
-  background: #fff;
+  background: var(--c-ffffff);
   text-decoration: none;
   color: inherit;
   transition: background 0.15s;
 }
 
 .attachment-item:hover {
-  background: #fafafa;
+  background: var(--c-fafafa);
 }
 
 .attachment-icon {
@@ -627,7 +627,7 @@ h1 {
 
 .thread-subject {
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -636,7 +636,7 @@ h1 {
 
 .meta {
   font-size: 12px;
-  color: #999;
+  color: var(--c-text-999999);
 }
 
 .meta .dot {
@@ -650,8 +650,8 @@ h1 {
 
 .load-more button {
   padding: 12px 32px;
-  background: #000;
-  color: #fff;
+  background: var(--c-000000);
+  color: var(--c-on-inverse);
   border: none;
   border-radius: 6px;
   font-size: 14px;
