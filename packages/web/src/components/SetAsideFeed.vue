@@ -152,11 +152,11 @@ onBeforeUnmount(() => {
 .empty {
   padding: 40px 20px;
   text-align: center;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .error {
-  color: #991b1b;
+  color: var(--c-text-991b1b);
 }
 
 .email-feed {
@@ -169,22 +169,22 @@ onBeforeUnmount(() => {
 }
 
 .email-card {
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
   overflow: hidden;
 }
 
 .email-thread-link {
   padding: 12px 16px;
-  background: #f9f9f9;
-  border-bottom: 1px solid #e5e5e5;
+  background: var(--c-f9f9f9);
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .thread-subject {
   font-weight: 600;
   font-size: 14px;
-  color: #000;
+  color: var(--c-text-000000);
   text-decoration: none;
 }
 
@@ -195,37 +195,37 @@ onBeforeUnmount(() => {
 .load-more {
   padding: 24px 20px;
   text-align: center;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--c-f0f0f0);
 }
 
 .load-more-btn {
   padding: 10px 24px;
   font-size: 14px;
   font-weight: 500;
-  color: #333;
-  background: #fff;
-  border: 1px solid #ddd;
+  color: var(--c-text-333333);
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-dddddd);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background: #fafafa;
-  border-color: #ccc;
+  background: var(--c-fafafa);
+  border-color: var(--c-cccccc);
 }
 
 .load-more-btn:disabled {
-  color: #999;
+  color: var(--c-text-999999);
   cursor: not-allowed;
 }
 
 .cache-notice {
   padding: 8px 20px;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--c-fef3c7);
+  color: var(--c-text-92400e);
   font-size: 13px;
   text-align: center;
-  border-bottom: 1px solid #fde68a;
+  border-bottom: 1px solid var(--c-fde68a);
 }
 </style>

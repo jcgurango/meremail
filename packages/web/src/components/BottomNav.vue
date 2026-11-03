@@ -44,7 +44,7 @@ function compose() {
   display: flex;
   gap: 12px;
   padding: 8px;
-  background: #fff;
+  background: var(--c-ffffff);
   border-radius: 24px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -68,8 +68,8 @@ function compose() {
 }
 
 .nav-pill.compose {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--c-dcfce7);
+  color: var(--c-text-15803d);
   border: none;
   cursor: pointer;
 }
@@ -80,23 +80,23 @@ function compose() {
 }
 
 .nav-pill.contacts {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--c-e0f2fe);
+  color: var(--c-text-0369a1);
 }
 
 .nav-pill.attachments {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--c-fef3c7);
+  color: var(--c-text-b45309);
 }
 
 .nav-pill.rules {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--c-f1f5f9);
+  color: var(--c-text-475569);
 }
 
 .nav-pill.folders {
-  background: #ecfdf5;
-  color: #059669;
+  background: var(--c-ecfdf5);
+  color: var(--c-text-059669);
 }
 
 .nav-icon {
@@ -114,8 +114,8 @@ function compose() {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  background: #ef4444;
-  color: #fff;
+  background: var(--c-ef4444);
+  color: var(--c-text-ffffff);
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;

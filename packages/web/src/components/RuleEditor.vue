@@ -393,7 +393,7 @@ function formatDate(dateStr: string | null): string {
 .modal-content {
   width: 100%;
   max-width: 700px;
-  background: #fff;
+  background: var(--c-ffffff);
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
 }
@@ -403,7 +403,7 @@ function formatDate(dateStr: string | null): string {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--c-e5e7eb);
 }
 
 .modal-header h2 {
@@ -419,17 +419,17 @@ function formatDate(dateStr: string | null): string {
   align-items: center;
   justify-content: center;
   border: none;
-  background: #f3f4f6;
+  background: var(--c-f3f4f6);
   border-radius: 6px;
   font-size: 20px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .close-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--c-e5e7eb);
+  color: var(--c-text-374151);
 }
 
 .modal-body {
@@ -446,7 +446,7 @@ function formatDate(dateStr: string | null): string {
   display: block;
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--c-text-374151);
   margin-bottom: 6px;
 }
 
@@ -454,21 +454,21 @@ function formatDate(dateStr: string | null): string {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--c-d1d5db);
   border-radius: 6px;
-  background: #fff;
+  background: var(--c-ffffff);
 }
 
 .form-group select:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--c-6366f1);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .hint {
   margin-top: 6px;
   font-size: 13px;
-  color: #f59e0b;
+  color: var(--c-text-f59e0b);
 }
 
 .checkbox-group {
@@ -495,7 +495,7 @@ function formatDate(dateStr: string | null): string {
   gap: 12px;
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--c-e5e7eb);
 }
 
 .btn {
@@ -509,21 +509,21 @@ function formatDate(dateStr: string | null): string {
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
 }
 
 .btn-secondary:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .btn-primary {
-  background: #6366f1;
-  color: #fff;
+  background: var(--c-6366f1);
+  color: var(--c-text-ffffff);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #4f46e5;
+  background: var(--c-4f46e5);
 }
 
 .btn-primary:disabled {
@@ -535,17 +535,17 @@ function formatDate(dateStr: string | null): string {
 .preview-section {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--c-e5e7eb);
 }
 
 .btn-preview {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
   width: 100%;
 }
 
 .btn-preview:hover:not(:disabled) {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .btn-preview:disabled {
@@ -556,8 +556,8 @@ function formatDate(dateStr: string | null): string {
 .preview-error {
   margin-top: 12px;
   padding: 10px 12px;
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--c-fee2e2);
+  color: var(--c-text-dc2626);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -569,19 +569,19 @@ function formatDate(dateStr: string | null): string {
 .preview-summary {
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--c-text-374151);
   margin-bottom: 8px;
 }
 
 .preview-scanned {
   font-weight: normal;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
 }
 
 .preview-list {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 6px;
 }
 
@@ -591,7 +591,7 @@ function formatDate(dateStr: string | null): string {
   grid-template-rows: auto auto;
   gap: 2px 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--c-f3f4f6);
   text-decoration: none;
   color: inherit;
   cursor: pointer;
@@ -599,7 +599,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 .preview-item:hover {
-  background: #f9fafb;
+  background: var(--c-f9fafb);
 }
 
 .preview-item:last-child {
@@ -609,7 +609,7 @@ function formatDate(dateStr: string | null): string {
 .preview-sender {
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--c-text-374151);
   grid-column: 1;
   grid-row: 1;
   white-space: nowrap;
@@ -619,7 +619,7 @@ function formatDate(dateStr: string | null): string {
 
 .preview-date {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
   grid-column: 2;
   grid-row: 1;
   white-space: nowrap;
@@ -627,7 +627,7 @@ function formatDate(dateStr: string | null): string {
 
 .preview-subject {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   grid-column: 1 / -1;
   grid-row: 2;
   white-space: nowrap;
@@ -638,7 +638,7 @@ function formatDate(dateStr: string | null): string {
 .preview-empty {
   padding: 20px;
   text-align: center;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
   font-size: 13px;
 }
 
@@ -651,28 +651,28 @@ function formatDate(dateStr: string | null): string {
 
 .folder-chip {
   padding: 6px 12px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  background: var(--c-f3f4f6);
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 16px;
   font-size: 13px;
-  color: #374151;
+  color: var(--c-text-374151);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .folder-chip:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .folder-chip.selected {
-  background: #6366f1;
-  border-color: #6366f1;
-  color: #fff;
+  background: var(--c-6366f1);
+  border-color: var(--c-6366f1);
+  color: var(--c-text-ffffff);
 }
 
 .folder-chip.selected:hover {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: var(--c-4f46e5);
+  border-color: var(--c-4f46e5);
 }
 
 @media (max-width: 600px) {

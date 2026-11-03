@@ -397,14 +397,14 @@ function formatAppTime(app: RuleApplicationWithName): string {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   margin-bottom: 8px;
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 h1 {
@@ -415,7 +415,7 @@ h1 {
 
 .subtitle {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   margin: 0;
 }
 
@@ -436,21 +436,21 @@ h1 {
 }
 
 .btn-primary {
-  background: #6366f1;
-  color: #fff;
+  background: var(--c-6366f1);
+  color: var(--c-text-ffffff);
 }
 
 .btn-primary:hover {
-  background: #4f46e5;
+  background: var(--c-4f46e5);
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .btn-secondary:disabled {
@@ -463,7 +463,7 @@ h1 {
 .error-state {
   text-align: center;
   padding: 60px 20px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
 }
 
 .empty-state .hint {
@@ -474,7 +474,7 @@ h1 {
 .error-state button {
   margin-top: 16px;
   padding: 8px 16px;
-  background: #f3f4f6;
+  background: var(--c-f3f4f6);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -491,8 +491,8 @@ h1 {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 8px;
   transition: opacity 0.15s;
 }
@@ -511,8 +511,8 @@ h1 {
 .order-btn {
   padding: 4px 8px;
   border: none;
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-6b7280);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -520,8 +520,8 @@ h1 {
 }
 
 .order-btn:hover:not(:disabled) {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--c-e5e7eb);
+  color: var(--c-text-374151);
 }
 
 .order-btn:disabled {
@@ -532,7 +532,7 @@ h1 {
 .order-num {
   font-size: 12px;
   font-weight: 600;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
 }
 
 .rule-info {
@@ -542,7 +542,7 @@ h1 {
 
 .rule-summary {
   font-size: 14px;
-  color: #374151;
+  color: var(--c-text-374151);
 }
 
 .rule-actions {
@@ -568,7 +568,7 @@ h1 {
 .toggle-slider {
   position: absolute;
   inset: 0;
-  background: #d1d5db;
+  background: var(--c-d1d5db);
   border-radius: 22px;
   transition: background-color 0.2s;
 }
@@ -580,13 +580,13 @@ h1 {
   height: 18px;
   left: 2px;
   bottom: 2px;
-  background: #fff;
+  background: var(--c-ffffff);
   border-radius: 50%;
   transition: transform 0.2s;
 }
 
 .toggle-label input:checked + .toggle-slider {
-  background: #6366f1;
+  background: var(--c-6366f1);
 }
 
 .toggle-label input:checked + .toggle-slider::before {
@@ -603,13 +603,13 @@ h1 {
 }
 
 .action-btn.apply {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--c-dbeafe);
+  color: var(--c-text-1d4ed8);
   min-width: 60px;
 }
 
 .action-btn.apply:hover:not(:disabled) {
-  background: #bfdbfe;
+  background: var(--c-bfdbfe);
 }
 
 .action-btn.apply:disabled {
@@ -618,21 +618,21 @@ h1 {
 }
 
 .action-btn.edit {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--c-f3f4f6);
+  color: var(--c-text-374151);
 }
 
 .action-btn.edit:hover {
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
 }
 
 .action-btn.delete {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--c-fee2e2);
+  color: var(--c-text-dc2626);
 }
 
 .action-btn.delete:hover {
-  background: #fecaca;
+  background: var(--c-fecaca);
 }
 
 @media (max-width: 600px) {
@@ -657,13 +657,13 @@ h1 {
 .applications-section {
   margin-top: 40px;
   padding-top: 24px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--c-e5e7eb);
 }
 
 .applications-section h2 {
   font-size: 18px;
   font-weight: 600;
-  color: #374151;
+  color: var(--c-text-374151);
   margin: 0 0 16px 0;
 }
 
@@ -679,20 +679,20 @@ h1 {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--c-f9fafb);
+  border: 1px solid var(--c-e5e7eb);
   border-radius: 6px;
 }
 
 .application-card.running,
 .application-card.pending {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: var(--c-eff6ff);
+  border-color: var(--c-bfdbfe);
 }
 
 .application-card.failed {
-  background: #fef2f2;
-  border-color: #fecaca;
+  background: var(--c-fef2f2);
+  border-color: var(--c-fecaca);
 }
 
 .app-info {
@@ -704,7 +704,7 @@ h1 {
 
 .app-rule {
   font-weight: 500;
-  color: #374151;
+  color: var(--c-text-374151);
 }
 
 .app-status {
@@ -717,18 +717,18 @@ h1 {
 
 .app-status.running,
 .app-status.pending {
-  background: #3b82f6;
-  color: #fff;
+  background: var(--c-3b82f6);
+  color: var(--c-text-ffffff);
 }
 
 .app-status.completed {
-  background: #10b981;
-  color: #fff;
+  background: var(--c-10b981);
+  color: var(--c-text-ffffff);
 }
 
 .app-status.failed {
-  background: #ef4444;
-  color: #fff;
+  background: var(--c-ef4444);
+  color: var(--c-text-ffffff);
 }
 
 .app-progress {
@@ -738,7 +738,7 @@ h1 {
 
 .progress-bar {
   height: 6px;
-  background: #e5e7eb;
+  background: var(--c-e5e7eb);
   border-radius: 3px;
   overflow: hidden;
   margin-bottom: 4px;
@@ -746,18 +746,18 @@ h1 {
 
 .progress-fill {
   height: 100%;
-  background: #3b82f6;
+  background: var(--c-3b82f6);
   transition: width 0.3s;
 }
 
 .progress-text {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--c-text-6b7280);
 }
 
 .result-text {
   font-size: 13px;
-  color: #059669;
+  color: var(--c-text-059669);
 }
 
 .match-breakdown {
@@ -769,20 +769,20 @@ h1 {
 
 .breakdown-item {
   font-size: 12px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--c-text-6b7280);
+  background: var(--c-f3f4f6);
   padding: 2px 8px;
   border-radius: 4px;
 }
 
 .error-text {
   font-size: 13px;
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .app-time {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
   min-width: 80px;
   text-align: right;
 }

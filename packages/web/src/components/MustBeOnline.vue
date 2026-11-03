@@ -30,7 +30,7 @@ const { isOnline } = useOffline()
   justify-content: center;
   padding: 40px 20px;
   text-align: center;
-  background: #f9fafb;
+  background: var(--c-f9fafb);
   border-radius: 8px;
   margin: 20px;
 }
@@ -40,14 +40,14 @@ const { isOnline } = useOffline()
   padding: 12px 16px;
   margin: 0;
   gap: 8px;
-  background: #fef3c7;
-  border: 1px solid #fde68a;
+  background: var(--c-fef3c7);
+  border: 1px solid var(--c-fde68a);
 }
 
 .offline-icon {
   width: 48px;
   height: 48px;
-  color: #9ca3af;
+  color: var(--c-text-9ca3af);
   margin-bottom: 12px;
 }
 
@@ -55,18 +55,18 @@ const { isOnline } = useOffline()
   width: 20px;
   height: 20px;
   margin-bottom: 0;
-  color: #92400e;
+  color: var(--c-text-92400e);
 }
 
 .offline-text {
-  color: #6b7280;
+  color: var(--c-text-6b7280);
   font-size: 14px;
   margin: 0;
   max-width: 300px;
 }
 
 .inline .offline-text {
-  color: #92400e;
+  color: var(--c-text-92400e);
   font-size: 13px;
 }
 </style>

@@ -63,8 +63,8 @@ body {
     Ubuntu, Cantarell, sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  color: #1a1a1a;
-  background: #fff;
+  color: var(--c-text-1a1a1a);
+  background: var(--c-ffffff);
   -webkit-font-smoothing: antialiased;
 }
 

@@ -403,7 +403,7 @@ function goBack() {
 
 .header {
   padding: 20px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .header-top {
@@ -415,7 +415,7 @@ function goBack() {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   background: none;
@@ -425,7 +425,7 @@ function goBack() {
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .header-actions {
@@ -439,18 +439,18 @@ function goBack() {
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 6px;
   cursor: pointer;
-  color: #666;
+  color: var(--c-text-666666);
   transition: all 0.15s;
 }
 
 .trash-btn:hover {
-  border-color: #dc2626;
-  color: #dc2626;
-  background: #fef2f2;
+  border-color: var(--c-dc2626);
+  color: var(--c-text-dc2626);
+  background: var(--c-fef2f2);
 }
 
 .send-to-wrapper {
@@ -462,8 +462,8 @@ function goBack() {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
@@ -472,13 +472,13 @@ function goBack() {
 }
 
 .send-to-btn:hover {
-  border-color: #ccc;
+  border-color: var(--c-cccccc);
 }
 
 .send-to-btn.active {
-  background: #dbeafe;
-  border-color: #3b82f6;
-  color: #1d4ed8;
+  background: var(--c-dbeafe);
+  border-color: var(--c-3b82f6);
+  color: var(--c-text-1d4ed8);
 }
 
 .dropdown-arrow {
@@ -492,8 +492,8 @@ function goBack() {
   right: 0;
   margin-top: 4px;
   min-width: 160px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 100;
@@ -515,12 +515,12 @@ function goBack() {
 }
 
 .menu-item:hover {
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
 }
 
 .menu-divider {
   height: 1px;
-  background: #e5e5e5;
+  background: var(--c-e5e5e5);
   margin: 4px 0;
 }
 
@@ -528,7 +528,7 @@ function goBack() {
   padding: 6px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  color: #888;
+  color: var(--c-text-888888);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -536,13 +536,13 @@ function goBack() {
 .menu-check {
   width: 16px;
   text-align: center;
-  color: #22c55e;
+  color: var(--c-text-22c55e);
 }
 
 .draft-indicator {
   margin-left: auto;
   font-size: 12px;
-  color: #f59e0b;
+  color: var(--c-text-f59e0b);
   font-weight: 500;
 }
 
@@ -562,34 +562,34 @@ h1 {
 .error {
   padding: 40px 20px;
   text-align: center;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .offline-notice {
   margin: 20px;
   padding: 12px 16px;
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
+  background: var(--c-fef3c7);
+  border: 1px solid var(--c-f59e0b);
   border-radius: 8px;
-  color: #92400e;
+  color: var(--c-text-92400e);
   font-size: 14px;
   text-align: center;
 }
 
 .emails {
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
   margin: 20px;
   overflow: hidden;
 }
 
 .inline-composer {
-  background: #fafafa;
-  border-bottom: 1px solid #eee;
+  background: var(--c-fafafa);
+  border-bottom: 1px solid var(--c-eeeeee);
 }
 
 .draft-email {
@@ -597,20 +597,20 @@ h1 {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  border-bottom: 1px solid #eee;
-  background: #fffbeb;
+  border-bottom: 1px solid var(--c-eeeeee);
+  background: var(--c-fffbeb);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .draft-email:hover {
-  background: #fef3c7;
+  background: var(--c-fef3c7);
 }
 
 .draft-badge {
   padding: 4px 8px;
-  background: #f59e0b;
-  color: #fff;
+  background: var(--c-f59e0b);
+  color: var(--c-text-ffffff);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -625,7 +625,7 @@ h1 {
 
 .draft-to {
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   margin-bottom: 2px;
 }
 
@@ -637,7 +637,7 @@ h1 {
 
 .draft-snippet {
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -645,8 +645,8 @@ h1 {
 
 .edit-draft-btn {
   padding: 6px 12px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
@@ -654,11 +654,11 @@ h1 {
 }
 
 .edit-draft-btn:hover {
-  border-color: #999;
+  border-color: var(--c-999999);
 }
 
 .queued-email-wrapper {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--c-eeeeee);
 }
 
 .queued-status-bar {
@@ -666,14 +666,14 @@ h1 {
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: #eff6ff;
-  border-bottom: 1px solid #dbeafe;
+  background: var(--c-eff6ff);
+  border-bottom: 1px solid var(--c-dbeafe);
 }
 
 .queued-badge {
   padding: 4px 8px;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--c-3b82f6);
+  color: var(--c-text-ffffff);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -682,11 +682,11 @@ h1 {
 
 .queued-error {
   font-size: 13px;
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .retry-info {
-  color: #666;
+  color: var(--c-text-666666);
   font-style: italic;
   margin-left: 4px;
 }

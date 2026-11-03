@@ -216,24 +216,24 @@ function goBack() {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 .loading,
 .error {
   text-align: center;
   padding: 40px 20px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .file-header {
@@ -259,19 +259,19 @@ function goBack() {
   display: flex;
   gap: 16px;
   font-size: 14px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .mime-type {
   font-family: monospace;
-  background: #f5f5f5;
+  background: var(--c-f5f5f5);
   padding: 2px 6px;
   border-radius: 3px;
 }
 
 .preview-section {
   margin-bottom: 24px;
-  background: #f9f9f9;
+  background: var(--c-f9f9f9);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -296,8 +296,8 @@ function goBack() {
 .download-btn {
   display: inline-block;
   padding: 12px 24px;
-  background: #000;
-  color: #fff;
+  background: var(--c-000000);
+  color: var(--c-on-inverse);
   text-decoration: none;
   border-radius: 6px;
   font-size: 14px;
@@ -310,7 +310,7 @@ function goBack() {
 }
 
 .context-section {
-  background: #f9f9f9;
+  background: var(--c-f9f9f9);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 24px;
@@ -321,7 +321,7 @@ function goBack() {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #666;
+  color: var(--c-text-666666);
   margin: 0 0 12px 0;
 }
 
@@ -329,7 +329,7 @@ function goBack() {
   display: flex;
   gap: 16px;
   padding: 8px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--c-eeeeee);
 }
 
 .context-item:last-child {
@@ -340,7 +340,7 @@ function goBack() {
   flex-shrink: 0;
   width: 80px;
   font-size: 13px;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .context-value {
@@ -348,7 +348,7 @@ function goBack() {
 }
 
 .context-value a {
-  color: #000;
+  color: var(--c-text-000000);
   text-decoration: none;
 }
 
@@ -357,7 +357,7 @@ function goBack() {
 }
 
 .extracted-text {
-  background: #f9f9f9;
+  background: var(--c-f9f9f9);
   border-radius: 8px;
   padding: 16px;
 }
@@ -367,7 +367,7 @@ function goBack() {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #666;
+  color: var(--c-text-666666);
   margin: 0 0 12px 0;
 }
 

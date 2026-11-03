@@ -86,7 +86,7 @@ function goBack() {
 
 .header {
   padding: 20px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .header-top {
@@ -98,7 +98,7 @@ function goBack() {
 
 .back-link {
   display: inline-block;
-  color: #666;
+  color: var(--c-text-666666);
   text-decoration: none;
   font-size: 14px;
   background: none;
@@ -108,7 +108,7 @@ function goBack() {
 }
 
 .back-link:hover {
-  color: #000;
+  color: var(--c-text-000000);
 }
 
 h1 {
@@ -128,26 +128,26 @@ h1 {
 .error {
   padding: 40px 20px;
   text-align: center;
-  color: #666;
+  color: var(--c-text-666666);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--c-text-dc2626);
 }
 
 .offline-notice {
   margin-bottom: 20px;
   padding: 12px 16px;
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
+  background: var(--c-fef3c7);
+  border: 1px solid var(--c-f59e0b);
   border-radius: 8px;
-  color: #92400e;
+  color: var(--c-text-92400e);
   font-size: 14px;
   text-align: center;
 }
 
 .composer-wrapper {
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 8px;
   overflow: hidden;
 }

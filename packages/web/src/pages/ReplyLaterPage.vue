@@ -29,7 +29,7 @@ onMounted(() => {
 
 .header {
   padding: 24px 20px 16px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .header h1 {
