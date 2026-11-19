@@ -23,6 +23,7 @@ onUnmounted(() => {
 const offline = computed(() => !isOnline.value || serverUnreachable.value)
 
 const label = computed(() => {
+  if (pulling.value) return 'Checking mail…'
   if (isSyncing.value) return 'Syncing…'
   const last = status.value.lastSyncedAt
   const synced = last ? `Synced ${formatRelativeTime(last, now.value)}` : 'Not synced yet'
@@ -38,22 +39,41 @@ const title = computed(() => {
     lines.push(`${status.value.pending} change${status.value.pending > 1 ? 's' : ''} waiting to be sent`)
   }
   if (syncError.value) lines.push(syncError.value)
-  lines.push('Click to sync now')
+  lines.push('Click to check for new mail and sync now')
   return lines.join('\n')
 })
 
-function sync() {
+const pulling = ref(false)
+const busy = computed(() => isSyncing.value || pulling.value)
+
+/**
+ * Have the server pull from IMAP first, then sync. A failed pull (offline,
+ * IMAP not configured) still syncs.
+ */
+async function sync() {
   now.value = Date.now()
-  syncNow()
+  pulling.value = true
+  try {
+    const res = await fetch('/api/sync/imap-pull', { method: 'POST' })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      console.warn('[Sync] IMAP pull failed:', err?.error ?? res.status)
+    }
+  } catch {
+    // Offline; sync reports that itself
+  } finally {
+    pulling.value = false
+  }
+  await syncNow()
 }
 </script>
 
 <template>
   <button
     class="sync-status"
-    :class="{ syncing: isSyncing, offline, error: !!syncError && !isSyncing }"
+    :class="{ syncing: busy, offline, error: !!syncError && !busy }"
     :title="title"
-    :disabled="isSyncing"
+    :disabled="busy"
     @click="sync"
   >
     <svg class="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

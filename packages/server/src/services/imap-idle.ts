@@ -27,6 +27,12 @@ const OTHER_FOLDERS_POLL_INTERVAL = 15 * 60 * 1000 // 15 minutes
 // Folders to poll (non-INBOX)
 const POLL_FOLDERS = ['Sent', 'Sent Items', 'Sent Mail', '[Gmail]/Sent Mail', 'Junk']
 
+export interface PullResult {
+  imported: number
+  skipped: number
+  errors: number
+}
+
 class ImapIdleService {
   private client: ImapFlow | null = null
   private isRunning = false
@@ -38,6 +44,8 @@ class ImapIdleService {
   private lastUid = 0
   // EXISTS handlers run one after another so each sees the UIDs the previous one fetched
   private newMailChain: Promise<void> = Promise.resolve()
+  // The other-folders poll in progress, shared by the timer and forced pulls
+  private pollInFlight: Promise<PullResult> | null = null
 
   /**
    * Check if IMAP is configured
@@ -139,7 +147,7 @@ class ImapIdleService {
     this.client.on('exists', (data: { path: string; count: number; prevCount: number }) => {
       if (data.count > data.prevCount) {
         console.log(`[ImapIdle] New mail detected! Count: ${data.prevCount} -> ${data.count}`)
-        this.newMailChain = this.newMailChain.then(() => this.fetchNewEmails())
+        this.newMailChain = this.newMailChain.then(() => this.fetchNewEmails()).then(() => {})
       }
     })
 
@@ -191,83 +199,93 @@ class ImapIdleService {
   }
 
   /**
-   * Fetch recent emails (last 24 hours) on connect
+   * Initial INBOX fetch on connect: everything in DELETE_MODE (the mailbox
+   * only holds mail not yet retrieved), otherwise the last 24 hours.
    */
-  private async fetchRecentEmails(): Promise<void> {
-    if (!this.client) return
-
+  private async fetchRecentEmails(): Promise<PullResult> {
+    if (config.imap.deleteMode) return this.fetchInbox('1:*', 'Initial fetch')
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    console.log('[ImapIdle] Fetching recent emails since', since.toISOString())
-
-    try {
-      let imported = 0
-      let skipped = 0
-      const retrieved: number[] = []
-
-      for await (const message of this.client.fetch({ since }, {
-        uid: true,
-        source: true,
-        flags: true,
-        internalDate: true,
-      })) {
-        const result = await this.processMessage(message, 'INBOX')
-        if (result === 'imported') imported++
-        else if (result === 'skipped') skipped++
-        if (result !== 'error' && message.source) retrieved.push(message.uid)
-        this.lastUid = Math.max(this.lastUid, message.uid)
-      }
-
-      await this.deleteFromServer(this.client, retrieved, 'INBOX')
-
-      if (imported > 0 || skipped > 0) {
-        console.log(`[ImapIdle] Initial fetch: ${imported} imported, ${skipped} skipped`)
-      }
-    } catch (error) {
-      console.error('[ImapIdle] Error fetching recent emails:', error)
-    }
+    return this.fetchInbox({ since }, 'Initial fetch')
   }
 
   /**
    * Fetch new emails after EXISTS notification.
    *
-   * Fetched by UID rather than sequence number: sequence numbers shift when
-   * messages are expunged (DELETE_MODE), and a range starting past the end of
-   * the mailbox gets a BAD "Invalid messageset" from some servers. A UID range
+   * In DELETE_MODE everything still in the mailbox is fetched: retrieved mail
+   * is deleted, so whatever is left is mail we haven't stored yet (or failed
+   * to). Otherwise fetched by UID rather than sequence number: sequence
+   * numbers shift on expunge, and a range starting past the end of the
+   * mailbox gets a BAD "Invalid messageset" from some servers. A UID range
    * past the end is accepted but returns the newest message, so UIDs we have
    * already seen are skipped.
    */
-  private async fetchNewEmails(): Promise<void> {
-    if (!this.client) return
-    // Nothing to fetch (already retrieved and deleted); some servers reject a
-    // fetch on an empty mailbox
-    if (!this.client.mailbox || this.client.mailbox.exists === 0) return
+  private async fetchNewEmails(): Promise<PullResult> {
+    if (config.imap.deleteMode) return this.fetchInbox('1:*', 'New mail')
+    return this.fetchInbox(`${this.lastUid + 1}:*`, 'New mail', { onlyNewUids: true })
+  }
+
+  /**
+   * Fetch INBOX messages matching a query, import them, and delete the
+   * retrieved ones from the server in DELETE_MODE.
+   */
+  private async fetchInbox(
+    query: string | { since: Date },
+    label: string,
+    { onlyNewUids = false }: { onlyNewUids?: boolean } = {}
+  ): Promise<PullResult> {
+    const result: PullResult = { imported: 0, skipped: 0, errors: 0 }
+    const client = this.client
+    if (!client) return result
+    // Some servers reject a fetch on an empty mailbox
+    if (!client.mailbox || client.mailbox.exists === 0) return result
 
     try {
-      const range = `${this.lastUid + 1}:*`
-      let imported = 0
       const retrieved: number[] = []
-
-      for await (const message of this.client.fetch(range, {
+      for await (const message of client.fetch(query, {
         uid: true,
         source: true,
         flags: true,
         internalDate: true,
-      }, { uid: true })) {
-        if (message.uid <= this.lastUid) continue
-        this.lastUid = message.uid
+      }, { uid: typeof query === 'string' })) {
+        if (onlyNewUids && message.uid <= this.lastUid) continue
+        this.lastUid = Math.max(this.lastUid, message.uid)
 
-        const result = await this.processMessage(message, 'INBOX')
-        if (result === 'imported') imported++
-        if (result !== 'error' && message.source) retrieved.push(message.uid)
+        const outcome = await this.processMessage(message, 'INBOX')
+        if (outcome === 'imported') result.imported++
+        else if (outcome === 'skipped') result.skipped++
+        else result.errors++
+        if (outcome !== 'error' && message.source) retrieved.push(message.uid)
       }
 
-      await this.deleteFromServer(this.client, retrieved, 'INBOX')
+      await this.deleteFromServer(client, retrieved, 'INBOX')
 
-      if (imported > 0) {
-        console.log(`[ImapIdle] Imported ${imported} new email(s)`)
+      if (result.imported > 0 || result.errors > 0) {
+        console.log(`[ImapIdle] ${label}: ${result.imported} imported, ${result.skipped} skipped, ${result.errors} failed`)
       }
     } catch (error) {
-      console.error('[ImapIdle] Error fetching new emails:', error)
+      console.error(`[ImapIdle] ${label}: error fetching INBOX:`, error)
+      result.errors++
+    }
+    return result
+  }
+
+  /**
+   * Pull mail now, on request: re-fetch INBOX (everything in DELETE_MODE,
+   * otherwise the last 24 hours, catching anything an EXISTS notification
+   * missed) and poll the other folders. Duplicates are skipped on import.
+   */
+  async forcePull(): Promise<PullResult> {
+    if (!this.isConfigured()) throw new Error('IMAP is not configured')
+    if (!this.client) throw new Error('Not connected to the IMAP server')
+
+    // Queued behind any EXISTS handler so the two never fetch at once
+    const inbox = this.newMailChain.then(() => this.fetchRecentEmails())
+    this.newMailChain = inbox.then(() => {}, () => {})
+    const [fromInbox, fromOthers] = await Promise.all([inbox, this.pollOtherFolders()])
+    return {
+      imported: fromInbox.imported + fromOthers.imported,
+      skipped: fromInbox.skipped + fromOthers.skipped,
+      errors: fromInbox.errors + fromOthers.errors,
     }
   }
 
@@ -364,8 +382,18 @@ class ImapIdleService {
   /**
    * Poll non-INBOX folders for new emails
    */
-  private async pollOtherFolders(): Promise<void> {
-    if (!this.isRunning) return
+  private pollOtherFolders(): Promise<PullResult> {
+    if (!this.pollInFlight) {
+      this.pollInFlight = this.runPollOtherFolders().finally(() => {
+        this.pollInFlight = null
+      })
+    }
+    return this.pollInFlight
+  }
+
+  private async runPollOtherFolders(): Promise<PullResult> {
+    const total: PullResult = { imported: 0, skipped: 0, errors: 0 }
+    if (!this.isRunning) return total
 
     let pollClient: ImapFlow | null = null
 
@@ -381,14 +409,23 @@ class ImapIdleService {
       for (const folder of foldersToSync) {
         try {
           const lastPoll = this.lastPollTime[folder] || new Date(Date.now() - 24 * 60 * 60 * 1000)
+          const startedAt = new Date()
 
-          await pollClient.mailboxOpen(folder)
+          const mailbox = await pollClient.mailboxOpen(folder)
+          // Some servers reject a fetch on an empty mailbox
+          if (mailbox.exists === 0) {
+            this.lastPollTime[folder] = startedAt
+            continue
+          }
 
           let imported = 0
           let skipped = 0
           const retrieved: number[] = []
 
-          for await (const message of pollClient.fetch({ since: lastPoll }, {
+          // In DELETE_MODE the folder only holds mail not yet retrieved
+          const query = config.imap.deleteMode ? '1:*' : { since: lastPoll }
+
+          for await (const message of pollClient.fetch(query, {
             uid: true,
             source: true,
             flags: true,
@@ -397,22 +434,28 @@ class ImapIdleService {
             const result = await this.processMessage(message, folder)
             if (result === 'imported') imported++
             else if (result === 'skipped') skipped++
+            else total.errors++
             if (result !== 'error' && message.source) retrieved.push(message.uid)
           }
 
           await this.deleteFromServer(pollClient, retrieved, folder)
 
-          this.lastPollTime[folder] = new Date()
+          // From when this poll started, so mail arriving during it isn't missed
+          this.lastPollTime[folder] = startedAt
+          total.imported += imported
+          total.skipped += skipped
 
           if (imported > 0) {
             console.log(`[ImapIdle] ${folder}: ${imported} imported, ${skipped} skipped`)
           }
         } catch (error) {
           console.error(`[ImapIdle] Error polling folder ${folder}:`, error)
+          total.errors++
         }
       }
     } catch (error) {
       console.error('[ImapIdle] Error polling other folders:', error)
+      total.errors++
     } finally {
       if (pollClient) {
         try {
@@ -422,6 +465,7 @@ class ImapIdleService {
         }
       }
     }
+    return total
   }
 
   /**
@@ -448,6 +492,13 @@ const imapIdleService = new ImapIdleService()
  */
 export function startImapIdle(): void {
   imapIdleService.start()
+}
+
+/**
+ * Pull mail from the IMAP server now instead of waiting for IDLE or the poll
+ */
+export function forceImapPull(): Promise<PullResult> {
+  return imapIdleService.forcePull()
 }
 
 /**

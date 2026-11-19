@@ -10,6 +10,7 @@ import { db, config, draftAttachments, resolveAttachmentPath } from '@meremail/s
 import type { SyncAction, SyncDraftAttachment } from '@meremail/shared'
 import { bootstrap, changes, fetchThreads, folderPage } from '../sync/feed'
 import { applyActions } from '../sync/actions'
+import { forceImapPull } from '../services/imap-idle'
 
 export const syncRoutes = new Hono()
 export const draftAttachmentsRoutes = new Hono()
@@ -62,6 +63,16 @@ syncRoutes.get('/folder-threads', (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '25'), 100)
 
   return c.json(folderPage(folderId, before !== null && !isNaN(before) ? before : null, limit))
+})
+
+// POST /api/sync/imap-pull
+// Pull mail from the IMAP server now. Responds once it has been imported.
+syncRoutes.post('/imap-pull', async (c) => {
+  try {
+    return c.json(await forceImapPull())
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'IMAP pull failed' }, 503)
+  }
 })
 
 // POST /api/sync/actions
